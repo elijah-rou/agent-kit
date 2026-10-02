@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Static checks plus the Pi extension and Claude mod tests. Needs Node, Bun, ripgrep, and Python.
+# Static checks plus the Pi extension and Claude mod tests. Needs Node, Bun, ripgrep, zsh, and Python.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 

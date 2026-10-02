@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Static checks plus the Pi extension and Claude mod tests. Needs Node, Bun, ripgrep, zsh, and Python.
+# Static checks plus the Pi extension and Claude mod tests. Needs Bun, ripgrep, zsh, and Python.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -8,10 +8,8 @@ python3 scripts/check-public-safety --index
 python3 scripts/check-public-safety --worktree
 bun scripts/check-skills.ts
 
-# Pi loads the extensions with its Node-compatible runtime; the tests use Node's runner.
-pi_tests=()
-while IFS= read -r -d '' file; do pi_tests+=("$file"); done < <(find pi/tests -maxdepth 1 -type f -name '*.test.mjs' -print0 | sort -z)
-node --test "${pi_tests[@]}"
+# Bootstrap runs Pi on Bun, so the extensions are tested there too.
+bun test pi/tests
 
 # Claude mods are Bun TypeScript; the runtime test runs only where a `claude` CLI exists.
 bun test claude/tests

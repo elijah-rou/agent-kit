@@ -17,11 +17,11 @@ extensions, skills, prompt, and theme from it in place. Codex and Claude read li
 ## Develop
 
 ```sh
-scripts/validate   # needs Node, Bun, ripgrep, and Python
+scripts/validate   # needs Bun, ripgrep, zsh, and Python
 ```
 
-It checks for private literals, validates every skill, and runs the Pi extension tests with Node and the
-Claude Mod tests with Bun. Change a skill or extension here, then advance the pin in bootstrap's
+It checks for private literals, validates every skill, and runs the Pi extension and Claude Mod tests
+with Bun, the runtime bootstrap runs Pi on. Change a skill or extension here, then advance the pin in bootstrap's
 `catalog.tsv`.
 
 Repository-authored files are MIT licensed. Adapted skills keep their upstream licenses; see

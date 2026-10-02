@@ -4,16 +4,14 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import * as moduleApi from "node:module";
+import { mock, test } from "bun:test";
 
-moduleApi.registerHooks({
-	resolve(specifier, context, nextResolve) {
-		if (specifier !== "@mariozechner/pi-ai") return nextResolve(specifier, context);
-		return { url: new URL("../scripts/test-pi-ai-stub.mjs", import.meta.url).href, shortCircuit: true };
-	},
-});
+// The extension's model calls go to a stub; Pi supplies the real module at runtime.
+const piAiStub = await import("../scripts/test-pi-ai-stub.mjs");
+mock.module("@mariozechner/pi-ai", () => piAiStub);
 
 const { runCopy } = await import("../extensions/copy.ts");
+test("runCopy sends text and file contents to the clipboard command", async () => {
 const testDir = await mkdtemp(join(tmpdir(), "pi-copy-test-"));
 const clipboardPath = join(testDir, "clipboard");
 const copyPath = join(testDir, "copy");
@@ -27,7 +25,7 @@ try {
 	});
 	await writeFile(
 		copyPath,
-		"#!/usr/bin/env bash\n[[ \"$WAYLAND_DISPLAY\" == \"wayland-1\" ]] || { printf 'wrong WAYLAND_DISPLAY: %s\\n' \"$WAYLAND_DISPLAY\" >&2; exit 1; }\n[[ \"$1\" == \"--\" && -f \"$2\" ]] || exit 2\npython3 -c 'import pathlib, sys; pathlib.Path(sys.argv[2]).write_text(pathlib.Path(sys.argv[1]).read_text().strip())' \"$2\" \"$PI_COPY_TEST_CLIPBOARD\"\n",
+		"#!/usr/bin/env bash\n[[ \"$WAYLAND_DISPLAY\" == \"wayland-1\" ]] || { printf 'wrong WAYLAND_DISPLAY: %s\\n' \"$WAYLAND_DISPLAY\" >&2; exit 1; }\n[[ \"$1\" == \"--\" && -f \"$2\" ]] || exit 2\ncontent=\"$(cat \"$2\")\"; content=\"${content#\"${content%%[![:space:]]*}\"}\"; printf '%s' \"${content%\"${content##*[![:space:]]}\"}\" > \"$PI_COPY_TEST_CLIPBOARD\"\n",
 		{ mode: 0o700 },
 	);
 	await chmod(copyPath, 0o700);
@@ -75,3 +73,4 @@ try {
 	});
 	await rm(testDir, { recursive: true, force: true });
 }
+});

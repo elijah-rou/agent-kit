@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { stripTypeScriptTypes } from "node:module";
+const stripTypeScriptTypes = (source) => new Bun.Transpiler({ loader: "ts" }).transformSync(source);
 import vm from "node:vm";
 import test from "node:test";
 import { execFile as execFileReal } from "node:child_process";
 
-const source = stripTypeScriptTypes(readFileSync(new URL("../extensions/notify.ts", import.meta.url), "utf8"))
-  .replace("export default function", "function register");
+const source = stripTypeScriptTypes(readFileSync(new URL("../extensions/notify.ts", import.meta.url), "utf8")
+  .replace("export default function", "function register"));
 const context = { mode: "tui", hasUI: true, cwd: "/repo/project", sessionManager: { getSessionFile: () => undefined }, ui: { notify() {} } };
 
 function fixture(env = {}, platform = "linux") {

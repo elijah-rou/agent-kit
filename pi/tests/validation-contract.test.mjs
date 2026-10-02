@@ -25,6 +25,5 @@ test("LSP clean excludes skipped, unsupported, and failed work", () => {
 });
 
 test("repository validation discovers every Pi test", () => {
-  assert.match(validate, /find pi\/tests -maxdepth 1 -type f -name '\*\.test\.mjs'/);
-  assert.match(validate, /node --test "\$\{pi_tests\[@\]\}"/);
+  assert.match(validate, /bun test pi\/tests/);
 });

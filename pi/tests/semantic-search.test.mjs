@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import fs, { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
-import { syncBuiltinESMExports } from "node:module";
+import { mock } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
@@ -48,14 +48,18 @@ test("snippet reads are bounded by returned results and preserve rank and missin
   for (let index = 0; index < 10; index++) writeFileSync(join(directory, `lower-${index}.md`), "alpha\n");
   const readFileSync = fs.readFileSync;
   const reads = [];
-  fs.readFileSync = (file, ...args) => {
-    if (typeof file === "string" && file.startsWith(directory + "/")) {
-      reads.push(file);
-      if (file === tied) throw new Error("fixture snippet became unreadable");
-    }
-    return readFileSync(file, ...args);
-  };
-  syncBuiltinESMExports();
+  // Replaces node:fs in place, including the extension's already-imported named binding.
+  const original = { ...fs };
+  mock.module("node:fs", () => ({
+    ...original,
+    readFileSync: (file, ...args) => {
+      if (typeof file === "string" && file.startsWith(directory + "/")) {
+        reads.push(file);
+        if (file === tied) throw new Error("fixture snippet became unreadable");
+      }
+      return readFileSync(file, ...args);
+    },
+  }));
   try {
     const result = await run({ path: directory, query: "alpha beta", limit: 2 });
     assert.equal(result.details.count, 2);
@@ -63,7 +67,6 @@ test("snippet reads are bounded by returned results and preserve rank and missin
     assert.match(result.content[0].text, /2\. ranked\/b-best\.md:1 score=9$/);
     assert.deepEqual(reads, [best, tied]);
   } finally {
-    fs.readFileSync = readFileSync;
-    syncBuiltinESMExports();
+    mock.module("node:fs", () => original);
   }
 });

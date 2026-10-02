@@ -3,8 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const agents = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
-const research = await readFile(new URL("../skills/source-grounded-research/SKILL.md", import.meta.url), "utf8");
-const verification = await readFile(new URL("../skills/verification/SKILL.md", import.meta.url), "utf8");
+const research = await readFile(new URL("../../skills/source-grounded-research/SKILL.md", import.meta.url), "utf8");
+const verification = await readFile(new URL("../../skills/verification/SKILL.md", import.meta.url), "utf8");
 
 test("research stops on supported facts or explicit gaps", () => {
   assert.match(research, /one bounded question[^\n]*evidence requirement/i);

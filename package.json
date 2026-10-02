@@ -1,0 +1,13 @@
+{
+  "name": "agent-kit",
+  "private": true,
+  "description": "Instructions, skills, Pi extensions, and Claude Code mods shared by Pi, Codex, and Claude Code.",
+  "license": "MIT",
+  "type": "module",
+  "pi": {
+    "extensions": ["./pi/extensions/*.ts"],
+    "skills": ["./skills"],
+    "prompts": ["./pi/prompts/*.md"],
+    "themes": ["./pi/themes/*.json"]
+  }
+}

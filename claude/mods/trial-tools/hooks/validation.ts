@@ -54,7 +54,7 @@ function record(value: unknown): Record<string, unknown> {
 
 export async function runValidation($: EngineInterface, input: ValidationInput, agentId?: string) {
   const cwd = input.cwd ?? await $.session.cwd();
-  const arguments_ = ["python3", `${$.plugin.root}/hooks/project-validate.py`, "--action", input.action, "--cwd", cwd, "--timeout-ms", String(input.timeoutMs), "--actor", agentId === undefined ? "root-or-user" : `subagent:${agentId}`];
+  const arguments_ = ["bun", `${$.plugin.root}/hooks/project-validate.ts`, "--action", input.action, "--cwd", cwd, "--timeout-ms", String(input.timeoutMs), "--actor", agentId === undefined ? "root-or-user" : `subagent:${agentId}`];
   if (input.command !== undefined) arguments_.push("--command", input.command);
   // The built-in tool supplies permission checks and sandboxing; process.run would bypass that path.
   const bash = await $.tool.call({ tool: "Bash", command: arguments_.map(shellQuote).join(" "), timeout: input.timeoutMs + 60000, run_in_background: false, description: `Run bounded project ${input.action} with workspace evidence` });

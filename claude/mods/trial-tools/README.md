@@ -1,6 +1,6 @@
 # Trial tools
 
-A local Claude Code Mod with clipboard/Git commands, a throughput display, and structured validation. Tested on 2.1.285 with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`. Enable it through `scripts/claude-link --utilities` from the bootstrap checkout, then restart Claude Code. It registers one model tool for validation. It does not call models, approve permissions, or fetch quota APIs.
+A local Claude Code Mod with clipboard/Git commands, a throughput display, and structured validation. Tested on 2.1.285 with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`. Bootstrap's `--tools claude` selection links it into the Claude configuration directory and enables Mods; restart Claude Code afterwards. It registers one model tool for validation. It does not call models, approve permissions, or fetch quota APIs.
 
 | Command | Action |
 | --- | --- |
@@ -24,10 +24,10 @@ The TPS band keeps existing above-prompt content and stays out of question dialo
 `mcp__trial-tools__project_validate` accepts `action` (`test`, `lint`, or `typecheck`), optional `command` and `cwd`, and optional `timeoutMs`. Prefer a known, non-mutating command. Do not use install, fix, format-write, deployment, publication, or arbitrary chore commands. Command text is limited to 8,192 characters and directories to 4,096. Timeout defaults to 120 seconds; integer values from 1 to 300 seconds are accepted, not clamped.
 
 ```text
-/validate {"action":"test","command":"python3 tests/example_test.py","timeoutMs":30000}
+/validate {"action":"test","command":"bun test","timeoutMs":30000}
 ```
 
-The adapter calls native Bash with normal permission and sandbox checks. Denial prevents execution; it does not add allow rules or disable sandboxing. A Python 3.9+ helper runs the selected command, bounds retained output to 30,000 bytes plus a truncation marker, and terminates its owned process group on timeout or interruption. Commands still have local user permissions: this is not a read-only sandbox. Checks must not daemonize. Detached descendants or forced SIGKILL of the helper can bypass graceful cleanup.
+The adapter calls native Bash with normal permission and sandbox checks. Denial prevents execution; it does not add allow rules or disable sandboxing. A Bun helper (`hooks/project-validate.ts`) runs the selected command, bounds retained output to 30,000 bytes plus a truncation marker, and terminates its owned process group on timeout or interruption. Commands still have local user permissions: this is not a read-only sandbox. Checks must not daemonize. Detached descendants or forced SIGKILL of the helper can bypass graceful cleanup.
 
 Explicit commands use the requested directory, relative to the session directory when needed. Without a command, detection walks at most 32 parent directories within the Git repository and selects npm/pnpm/Yarn/Bun, Cargo, Go, Python, Make, or Just. An unrecognized project returns `unsupported` rather than success. UV detection disables dependency syncing, lockfile updates, and Python downloads.
 
@@ -45,4 +45,4 @@ CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin validate --strict PATH
 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test PATH
 ```
 
-Native tests stub clipboard and Git APIs; they do not change the real clipboard, access credentials, or make model requests. Drawing tests validate terminal and desktop trees, not the app's paint. Inspect the band in a fresh interactive session after changing its layout.
+Native tests stub clipboard and Git APIs; they do not change the real clipboard, access credentials, or make model requests. The runner and the real-CLI journey are tested from `claude/tests` with `bun test`. Drawing tests validate terminal and desktop trees, not the app's paint. Inspect the band in a fresh interactive session after changing its layout.

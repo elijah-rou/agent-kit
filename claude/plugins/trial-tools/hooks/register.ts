@@ -1,5 +1,6 @@
 import type { EngineInterface, Register, SessionMessage, TurnCompleteInput } from "claude-code";
 import type { TpsState } from "../types/index.js";
+import { registerValidation, VALIDATION_SPEC } from "./validation.js";
 
 export const MAX_COPY_CHARS = 1_048_576;
 export const MAX_THREAD_ROWS = 4096;
@@ -62,8 +63,11 @@ async function git($: EngineInterface, cwd: string, args: readonly string[]): Pr
 }
 
 export const register: Register = (on) => {
+  registerValidation(on);
   on("session.start", async ($, event, next) => {
     const result = await next(event);
+    await $.tool.register(VALIDATION_SPEC);
+    await $.command.register({ name: "validate", description: "Run structured validation: /validate {\"action\":\"test\",\"command\":\"…\"}", immediate: true });
     await $.command.register({ name: "clip", description: "Copy text or @file contents to the clipboard", argumentHint: "text | @path" });
     await $.command.register({ name: "copy-all", description: "Copy this thread's user/assistant text to the clipboard" });
     await $.command.register({ name: "changes", description: "Read-only Git status, diff stats, untracked files, and recent commits" });

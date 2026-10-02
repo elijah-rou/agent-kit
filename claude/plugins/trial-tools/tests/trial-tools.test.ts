@@ -73,12 +73,13 @@ test("clipboard commands refuse programmatic and unclassified origins before rea
   expect(copies).toBe(0);
 });
 
-test("session startup registers the four direct commands without starting a turn", async ($, on) => {
+test("session startup registers five direct commands without starting a turn", async ($, on) => {
   const names: string[] = [];
   on("session.start", () => ({ cwd: "/work" }));
+  on("tool.register", () => ({ value: { tool: "mcp__trial-tools__project_validate" } }));
   on("command.register", (_$, event) => { names.push(event.name); return { value: { command: event.name } }; });
   await $.session.start({ cwd: "/work", surface: "terminal", isInteractive: true });
-  expect(names).toEqual(["clip", "copy-all", "changes", "tps"]);
+  expect(names).toEqual(["validate", "clip", "copy-all", "changes", "tps"]);
 });
 
 test("thread formatting refuses ambiguous truncation and oversized content", () => {

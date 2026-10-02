@@ -1,0 +1,8 @@
+{
+  "name": "trial-tools",
+  "version": "0.1.0",
+  "description": "Clipboard commands, read-only Git changes, and turn-level token throughput.",
+  "author": { "name": "elijah-rou" },
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

@@ -1,0 +1,15 @@
+pi/skills/blast-radius
+pi/skills/make-operations-idempotent
+pi/skills/separate-before-serializing-shared-state
+claude/skills/show-me
+pi/skills/diagnosing-bugs
+pi/skills/feature-shaping
+pi/skills/how
+claude/skills/source-grounded-research
+pi/skills/technical-writing
+pi/skills/technology-selection
+pi/skills/type-system-discipline
+pi/skills/unslop
+pi/skills/verification
+pi/skills/why
+claude/skills/writing-for-agents

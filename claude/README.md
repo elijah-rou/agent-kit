@@ -20,7 +20,7 @@ The links point to this checkout. Keep it until you explicitly relink from anoth
 
 `CLAUDE.md` preserves coding, verification, authorization, workspace, delegation, and communication rules. Long runs keep progress in an existing task/plan file, continue through routine decisions, and report blockers and evidence gaps first. It does not change model, effort, paid usage, permissions, or automatic memory settings.
 
-`skills.txt` is the reviewed export manifest. Already-neutral skills reuse their source directories; research and instruction-writing have local adapters that remove provider routing and other runtimes' tool or metadata assumptions. Their source paths are an implementation detail, not a dependency on another running agent. No custom subagents, extension tools, or orchestration packages are installed.
+`skills.txt` exports fifteen skills, including `blast-radius`, `make-operations-idempotent`, `separate-before-serializing-shared-state`, and `show-me`. Already-neutral skills reuse their source directories. Research, instruction-writing, and visualization use local adapters to remove provider routing, rendering, and runtime-specific tool assumptions. Source paths do not depend on another running agent. The base linker installs no custom subagents, extension tools, or orchestration packages.
 
 On supported versions, Claude Code loads repository `AGENTS.md` when no project-path `CLAUDE.md` overrides it. User-level `~/.claude/CLAUDE.md` does not suppress that fallback. Do not add copied repository instructions merely to enable it. See the current [instruction-loading reference](https://code.claude.com/docs/en/memory#agents-md) and [skill reference](https://code.claude.com/docs/en/skills).
 

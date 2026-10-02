@@ -1,3 +1,7 @@
+pi/skills/blast-radius
+pi/skills/make-operations-idempotent
+pi/skills/separate-before-serializing-shared-state
+claude/skills/show-me
 pi/skills/diagnosing-bugs
 pi/skills/feature-shaping
 pi/skills/how

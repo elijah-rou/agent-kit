@@ -63,7 +63,7 @@ test("/tasks advertises direct-first bounded orchestration", async () => {
 			assert.match(guidance, /Choose child models and thinking levels through explicit role profiles or per-run overrides\.[^\n]*never change the parent profile, agent role, topology, tools, permissions, context, worktree, or acceptance policy\./);
 			assert.match(guidance, /no child reviewer[^\n]*one fresh reviewer[^\n]*two fresh reviewers/i);
 			for (const reason of ["user_async", "independent_parallel_lane", "manager_continuity", "unresolved_ownership", "semantic_review", "elevated_risk_review"]) assert.match(guidance, new RegExp(`\\b${reason}\\b`));
-			assert.match(guidance, /Bounded multi-file scope[^\n]*never independently justify/i);
+			assert.match(guidance, /standing request: spawn subagents without asking/i);
 			assert.match(guidance, /focused re-review[^\n]*unresolved semantic findings[^\n]*fix blast radius/i);
 			assert.match(guidance, /Do not repeat broad review waves[^\n]*machine-decided corrections/i);
 		}

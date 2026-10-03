@@ -25,8 +25,9 @@ test("verification keeps parent authority and problem-first ordering", () => {
 
 test("deterministic boundary policy explicitly covers undefined", () => {
   for (const boundary of ["limits", "one step outside", "absent input", "explicit `undefined`", "`null`", "non-finite", "fractional", "wrong primitive types"]) assert.match(verification, new RegExp(boundary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
-  assert.match(agents, /Every retained row requires executable evidence/i);
-  assert.match(agents, /reviewer prose cannot discharge it/i);
-  assert.match(agents, /Adequately covered behavior-preserving refactors add no tests/i);
-  assert.match(agents, /changed expectation requires an independently established contract change/i);
+  assert.match(verification, /Each retained row needs executable evidence/i);
+  assert.match(verification, /Adequately covered refactors add no tests/i);
+  assert.match(verification, /Do not change expectations solely to agree with an implementation/i);
+  assert.match(agents, /Do not weaken assertions or change expected values merely to match an implementation/i);
+  assert.match(agents, /`verification` when choosing tests and evidence/);
 });

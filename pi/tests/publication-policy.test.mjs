@@ -4,6 +4,7 @@ import test from "node:test";
 import register from "../extensions/git-interceptor.ts";
 
 const agents = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
+const gitWorkflow = await readFile(new URL("../../skills/git-workflow/SKILL.md", import.meta.url), "utf8");
 const worktrees = await readFile(new URL("../extensions/worktrees.ts", import.meta.url), "utf8");
 
 function interceptor() {
@@ -40,14 +41,13 @@ test("root execution is not blocked when child marker is absent", () => {
   }
 });
 
-test("root publication and repository-learning triggers are explicit", () => {
-  assert.match(agents, /Publication is root-only/);
-  assert.match(agents, /exact revision[^\n]*full workspace[^\n]*final verification/i);
-  assert.match(agents, /Mutation-capable external runners[^\n]*no-publication/i);
-  assert.match(agents, /Two materially similar[^\n]*foundation review/i);
-  assert.match(agents, /One P0\/P1 escape triggers it immediately/i);
-  assert.match(agents, /Create a short ADR only for public contracts, persisted formats, security boundaries, major dependencies, hard-to-reverse architecture, or substantial operational commitments/i);
-  assert.match(agents, /user-journey map only after agents repeatedly rediscover a complex product path/i);
+test("outward-facing actions need authorization and publication stays with the coordinating agent", () => {
+  assert.match(agents, /Explicit authorization is required for[^\n]*anything outward-facing: pushing, publishing, deploying, releasing/i);
+  assert.match(agents, /The parent owns planning, decisions, acceptance, and outward-facing actions/);
+  assert.match(agents, /`git-workflow` for worktrees, history, pushing, merging, and pull requests/);
+  assert.match(gitWorkflow, /Only the coordinating agent may push, merge[^\n]*Subagents and external mutation-capable runners never do/);
+  assert.match(gitWorkflow, /recheck the exact revision and the full workspace against the final verification/i);
+  assert.match(agents, /Write a short ADR only for public contracts, persisted formats, security boundaries, major dependencies, hard-to-reverse architecture, or substantial operational commitments/i);
 });
 
 test("worktree gardening reports at exact thresholds and never auto-removes", () => {

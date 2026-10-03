@@ -4,7 +4,8 @@
 
 - Work through the authorized outcome: implementation, relevant verification, and fixes caused by the change. Define what done means and any real stop conditions before broad work.
 - Keep going when the next step does not need user input. Put status notes alongside the next action, not in an offer to continue. Stop for a requested checkpoint, a blocker, or an unresolved product, public-contract, persistence, security, or hard-to-reverse architecture decision.
-- Routine reversible decisions do not need another approval. Destructive actions, changes outside the authorized scope, and publication require explicit authorization. Keep permission prompts and existing security boundaries intact.
+- Routine reversible decisions do not need another approval. Destructive actions (deleting data, files, or branches you did not create; force-pushing or rewriting history), changes outside the repository or authorized scope, and publication require explicit authorization. Keep permission prompts and existing security boundaries intact.
+- Before deleting anything, even when authorized, inspect every target, including branches and refs that exist only remotely, and stop on anything unexpected.
 - Scale planning to uncertainty and consequences, not file count or duration. Inspect the relevant code first. Reuse settled decisions; reopen them only when new evidence warrants it.
 - Build broad work in thin end-to-end slices and verify each before later work relies on it. Do not stop merely because a phase ended. Skills provide methods, not additional approval gates.
 - For long runs that must survive context resets or handoffs, keep progress and decisions in the repository's existing task or plan file. Update completed, open, blocked, and reopened items. If none exists, use one task-scoped checklist rather than creating a second planning system.
@@ -47,16 +48,15 @@
 
 ## Delegation
 
-- Direct work is the default. Delegate for an explicit background request, independent parallel lanes, a necessary continuity handoff, unresolved ownership after a bounded search and principal-match reading, material semantic review, or elevated-risk review.
-- Parallel lanes need disjoint ownership and independently verifiable deliverables. A continuity handoff needs a stable objective and acceptance contract, an actual interaction boundary, and separate coordination work. Record the inspected paths and unanswered question for unresolved ownership.
-- Complexity, duration, file count, or saving context alone do not justify delegation. Skip tiny handoffs whose startup and duplicated context outweigh the work saved.
-- Give children the objective, accepted decisions, authority boundary, exact paths, current state, and acceptance evidence, not a transcript or broad context bundle. Keep strategy and acceptance with the parent.
-- Use only exposed tools and supported models. Match capability and effort to the task; report unavailable combinations rather than silently changing providers or the parent's settings. Child choices do not widen scope, permissions, or acceptance authority.
-- Observe every launched child through the available completion mechanisms. Wait at real dependency barriers, not in polling loops. Send dependent follow-ups only after observing results. Do not promise persistence beyond the runtime's demonstrated lifecycle.
-- Keep review separate from acceptance. No reviewer is needed for low-risk work decided by deterministic checks. Use one fresh reviewer for unresolved semantic judgment and two with distinct evidence questions, including an alternate model, for material elevated risk.
-- Apply accepted P0/P1 findings in one coherent fix pass. Follow with deterministic checks and focused re-review for unresolved findings or the fix's impact, not recursive broad review waves.
-- Never stop with a known P0/P1: fix it, escalate the unresolved decision, or report the blocked state. Report unavailable required review capability rather than claiming an equivalent review occurred.
-- Preserve tool and permission ceilings. A read-only instruction is not enforced isolation. Use an actual read-only execution boundary when required.
+- This is a standing request: spawn subagents without asking whenever they help. Good uses are independent parallel lanes; scouting or research that would flood the main context; one unit each of a large audit, migration, or codebase-wide review; and a fresh reviewer for risky or hard-to-judge changes. Skip handoffs whose startup and duplicated context cost more than the work.
+- The parent owns planning, decisions, acceptance, publication, and merges. Children do not spawn their own subagents unless the parent explicitly delegates fanout.
+- Brief each child with its objective and deliverable; repository, cwd, and ref; authority boundary (whether it may edit, commit, push, comment, merge, publish, or launch children); decisions already made; observable acceptance; targeted validation; expected output; and when to stop and escalate. Write `none` for empty fields. Send the brief, not a transcript.
+- Keep one writer per checkout or worktree; concurrent writers need separate worktrees and disjoint ownership.
+- Child reports, CI, and review bots are evidence, not authority. Check each child's evidence (outputs, changed files, validation results, residual risks) before accepting it, and fail closed when it is missing.
+- Observe every launched child through its completion mechanism, wait at real dependency barriers rather than in polling loops, and send dependent follow-ups only after seeing results. Children return to the parent when scope, architecture, compatibility, security, publication, destructive action, or required evidence is unresolved.
+- Run a fresh reviewer before handing over risky or hard-to-judge work, and two with different questions, one on an alternate model where available, for elevated risk. Deterministic checks are enough for low-risk work. A review lists only problems that would block the merge, each with file and line, why it is wrong, and how to show it fails. If a required review cannot run, say so rather than claiming an equivalent one happened.
+- Apply accepted blocking findings in one fix pass, then rerun the checks and a focused re-review of the fix rather than another broad review. Never stop with a known blocking finding: fix it, escalate the decision, or report the blocked state.
+- Use only exposed tools and supported models, match model and effort to each task, and report unavailable combinations instead of silently substituting. Child choices do not widen scope or permissions. A read-only instruction is not enforced isolation; use a real read-only boundary when it matters.
 
 ## Workspaces and publication
 
@@ -82,7 +82,7 @@
 
 ## Repository learning
 
-- Two materially similar human corrections, escaped defects, setup failures, or recurring review findings trigger one bounded repository-foundation review. One P0/P1 escape triggers it immediately. Make the smallest durable improvement, or record why none is justified.
+- Two materially similar human corrections, escaped defects, setup failures, or recurring review findings trigger one bounded repository-foundation review. One escaped blocking defect triggers it immediately. Make the smallest durable improvement, or record why none is justified.
 - Write a short ADR only for public contracts, persisted formats, security boundaries, major dependencies, hard-to-reverse architecture, or substantial operational commitments. Record context, constraints, alternatives, consequences, and reversal conditions.
 - Add a user-journey map only after repeated rediscovery of a complex product path; link it to executable journeys. Omit it for simple repositories and libraries.
 - Promote repeated work to the smallest reviewed mechanism: static text to a prompt, repeated reasoning to a skill, deterministic action to a script/tool, dependency graph to a workflow. Do not silently create skills, memory, or schedules.

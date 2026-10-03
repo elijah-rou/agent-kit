@@ -32,7 +32,7 @@ Local adaptations use narrow automatic triggers, remove Cursor tools, model rout
 MCP assumptions, cross-skill invocation, and publication behavior, and preserve evidence
 and source boundaries. The upstream MIT license is preserved in `PSTACK-LICENSE`.
 
-The `technology-selection`, `source-grounded-research`, and `verification` skills are original to this repository.
+The `code-design`, `git-workflow`, `technology-selection`, `source-grounded-research`, and `verification` skills are original to this repository.
 
 The `feature-shaping` skill is original to this repository. Its risk-scaled design workflow
 is informed by HumanLayer's

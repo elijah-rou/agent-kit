@@ -15,3 +15,5 @@ unslop
 verification
 why
 writing-for-agents
+code-design
+git-workflow

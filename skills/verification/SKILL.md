@@ -26,7 +26,7 @@ Define expected behavior and inventory existing coverage before production edits
 
 For other code behavior changes, add problem-first coverage only for uncovered behavior and invariants. Adequately covered refactors add no tests. Mechanical preference/config edits need a parse or actual consumer check, not a manufactured failing snapshot. Behavioral and security-sensitive configuration changes use the same evidence standards as code.
 
-For new or changed deterministic input contracts, retain only relevant distinguishable rows: accepted values, limits, one step outside, absent input, explicit `undefined`, `null`, non-finite and fractional values, and wrong primitive types. Each retained row needs executable evidence, which may already exist. Do not change expectations solely to agree with an implementation.
+For new or changed deterministic input contracts, retain only relevant distinguishable rows: accepted values, limits, one step outside, absent input, explicit `undefined`, `null`, non-finite and fractional values, wrong primitive types, and the transition from valid to invalid data. Each retained row needs executable evidence, which may already exist. Do not change expectations solely to agree with an implementation.
 
 A reproducible command or runtime journey can substitute for a conventional test. Implementation-first work is a regression check, not TDD. Performance and reliability claims need a baseline and the same journey afterward.
 

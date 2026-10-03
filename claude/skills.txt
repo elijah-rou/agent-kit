@@ -13,3 +13,5 @@ skills/unslop
 skills/verification
 skills/why
 claude/skills/writing-for-agents
+skills/code-design
+skills/git-workflow

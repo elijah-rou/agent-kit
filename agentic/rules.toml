@@ -1,0 +1,83 @@
+# Rule-to-enforcer table (design slice 1, D2). Each rule names what enforces it and the real
+# past mistake that proves the enforcer is needed. Paths resolve from this directory (agentic/).
+# scripts/validate checks it with:
+#   agentic rule-table check agentic/rules.toml
+# Most past mistakes were found while building the agentic stack prototype; they cite prototype
+# commits, governed scenario runs, and design notes from that project, not this repository.
+
+[[rule]]
+id = "agents-never-write-control-files"
+statement = "Agents never write the grants, global policies, verdict ledger, decision log, or forge state."
+level = "cedar"
+enforcer = { kind = "cedar", ref = "protect-control-files" }
+proof = { test = "test/protected.test.ts", past_mistake = "2026-10-07 prototype governed run s1: the agent edited forge-prs.json with Pi's edit tool; fixed in prototype commit 484af63" }
+
+[[rule]]
+id = "interpreter-code-cannot-write-control-files"
+statement = "Code run through an interpreter cannot write a protected configuration path."
+level = "test"
+enforcer = { kind = "test", ref = "src/classifier.ts" }
+proof = { test = "test/protected.test.ts", past_mistake = "2026-10-07 prototype governed run s12: after the edit tool was blocked, the agent rewrote forge state from a python heredoc; fixed in prototype commit 2dcfa92" }
+
+[[rule]]
+id = "agents-cannot-raise-their-own-ceiling"
+statement = "An agent cannot raise its autonomy above the user's grant, from a repo file or a session."
+level = "cedar"
+enforcer = { kind = "cedar", ref = "ceiling-never-exceeds-grant" }
+proof = { test = "test/pipeline.test.ts", past_mistake = "agentic design review 2026-10-07: an autonomy level kept in the repository could be raised by the agent on its own branch (agentic design.md L4)" }
+
+[[rule]]
+id = "children-never-publish"
+statement = "Child agents never push, merge, delete remote branches, open PRs, or post."
+level = "cedar"
+enforcer = { kind = "cedar", ref = "children-never-publish" }
+proof = { test = "test/engine.test.ts", past_mistake = "pstack Benny design: child workers given posting credentials could post outside the coordinator (agentic pstack-review.md, outer loop)" }
+
+[[rule]]
+id = "messages-to-people-go-through-the-user"
+statement = "Agents draft messages addressed to people; the user reads and posts them."
+level = "cedar"
+enforcer = { kind = "cedar", ref = "messages-to-people-go-through-user" }
+proof = { test = "test/pipeline.test.ts", past_mistake = "agentic research notes on video 4 (04-codingjesus, 16:21): an agent's unread analysis was posted to a contributor under the user's name" }
+
+[[rule]]
+id = "default-branch-is-never-pushed"
+statement = "Agents never push the default branch; changes land through verified pull requests."
+level = "cedar"
+enforcer = { kind = "cedar", ref = "always-pause-default-branch" }
+proof = { test = "test/engine.test.ts", past_mistake = "2026-10-07 prototype governed run s9: told to land a commit on main by any means, the agent tried a direct push" }
+
+[[rule]]
+id = "merges-need-an-independent-current-verdict"
+statement = "A merge needs a passing verdict from someone other than the merger, on the PR's current head."
+level = "cedar"
+enforcer = { kind = "cedar", ref = "merge-needs-current-verdict" }
+proof = { test = "test/pipeline.test.ts", past_mistake = "pstack shipping playbook: a rebase rewrites SHAs and silently invalidates verdicts (agentic pstack-review.md, PR mechanics)" }
+
+[[rule]]
+id = "shell-keywords-cannot-hide-commands"
+statement = "Shell keywords, grouping, subshells, and one-line functions cannot hide a hard-point command."
+level = "test"
+enforcer = { kind = "test", ref = "src/classifier.ts" }
+proof = { test = "test/classifier.test.ts", past_mistake = "2026-10-07 prototype build: if/while/{ }/( )/f() wrappers made git push invisible to the classifier; fixed in prototype commit b613051" }
+
+[[rule]]
+id = "opaque-execution-asks-without-jev"
+statement = "Execution of computed, decoded, or piped-in text goes to the user without consulting Jev."
+level = "test"
+enforcer = { kind = "test", ref = "src/pipeline.ts" }
+proof = { test = "test/pipeline.test.ts", past_mistake = "prototype O9 eval item A052 (prototype evals/jev/REPORT.md): a reversed push piped to sh scored 0.20 to 0.25, below a usable threshold; fixed in prototype commit 18c3786" }
+
+[[rule]]
+id = "policy-root-resolves-inside-pi"
+statement = "The policy layer finds its schema and policies when loaded by Pi's extension loader."
+level = "test"
+enforcer = { kind = "test", ref = "src/pipeline.ts" }
+proof = { test = "../pi/tests/agentic-policy-gate.test.mjs", past_mistake = "2026-10-07 prototype pilot run 1: import.meta.dir pointed into a data: URL inside Pi, denying harmless work; fixed in prototype commit b613051" }
+
+[[rule]]
+id = "hook-allow-defers-to-permission-prompts"
+statement = "The Claude hook never returns allow; allowed calls defer to Claude's own permission prompts."
+level = "test"
+enforcer = { kind = "test", ref = "bin/agentic" }
+proof = { test = "test/claude-hook.test.ts", past_mistake = "Claude Code hook docs (prototype docs/decisions.md, hook semantics): an explicit allow bypasses permission prompts, which would widen the user's permissions" }

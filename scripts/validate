@@ -8,6 +8,10 @@ python3 scripts/check-public-safety --index
 python3 scripts/check-public-safety --worktree
 bun scripts/check-skills.ts
 
+# Every rule names a real enforcer and past mistake, and no skill restates a rule an enforcer owns.
+agentic/bin/agentic rule-table check agentic/rules.toml
+find skills claude/skills -name '*.md' -print0 | sort -z | xargs -0 agentic/bin/agentic rule-table duplicates --rules agentic/rules.toml
+
 # Bootstrap runs Pi on Bun, so the extensions are tested there too.
 bun test pi/tests
 

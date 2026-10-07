@@ -38,6 +38,7 @@ The Jev key is read from `TYPESAFE_API_KEY` or the macOS keychain item `typesafe
 
 Skills reach the tools through the same CLI, as `agentic <tool>` (`decision-log`, `rule-table`, `feature-map-lint`,
 `report-lint`, `upstream-drift`, `orch`, `watch-pr`, `learning`); each tool prints its usage with `--help`.
+`agentic/rules.toml` pairs each enforced rule with its enforcer and the past mistake that proves it is needed.
 
 ## Develop
 

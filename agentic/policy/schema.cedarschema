@@ -1,0 +1,87 @@
+// Entities and actions the policy layer authorizes. Only hard-point actions are modeled;
+// a tool call the classifier maps to no action is outside policy and runs unchanged.
+
+entity Agent = {
+  isChild: Bool,
+  harness: String,
+};
+
+entity Repo = {
+  origin: String,
+};
+
+entity Branch in [Repo] = {
+  name: String,
+  isDefault: Bool,
+};
+
+entity PullRequest in [Repo] = {
+  number: Long,
+  headSha: String,
+};
+
+entity Recipient = {
+  kind: String,
+};
+
+entity Target = {
+  kind: String,
+};
+
+entity ProtectedPath = {
+  kind: String,
+  path: String,
+};
+
+type Facts = {
+  userGrant: Long,
+  requestedLevel: Long,
+  sessionRaise: Long,
+  effectiveLevel: Long,
+  force: Bool,
+  verdict: String,
+  verdictSha: String,
+  isFrontier: Bool,
+};
+
+action "git.push" appliesTo {
+  principal: [Agent],
+  resource: [Branch],
+  context: Facts,
+};
+
+action "git.delete_remote_branch" appliesTo {
+  principal: [Agent],
+  resource: [Branch],
+  context: Facts,
+};
+
+action "pr.create" appliesTo {
+  principal: [Agent],
+  resource: [Repo],
+  context: Facts,
+};
+
+action "pr.merge" appliesTo {
+  principal: [Agent],
+  resource: [PullRequest],
+  context: Facts,
+};
+
+action "comment.post" appliesTo {
+  principal: [Agent],
+  resource: [Recipient],
+  context: Facts,
+};
+
+action "release.publish", "deploy", "credential.change", "data.delete" appliesTo {
+  principal: [Agent],
+  resource: [Target],
+  context: Facts,
+};
+
+action "file.write" appliesTo {
+  principal: [Agent],
+  resource: [ProtectedPath],
+  context: Facts,
+};

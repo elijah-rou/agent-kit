@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Static checks plus the Pi extension and Claude mod tests. Needs Bun, ripgrep, zsh, and Python.
+# Static checks plus the agentic policy layer, Pi extension, and Claude mod tests. Needs Bun, ripgrep, zsh, and Python.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -10,6 +10,9 @@ bun scripts/check-skills.ts
 
 # Bootstrap runs Pi on Bun, so the extensions are tested there too.
 bun test pi/tests
+
+# The agentic policy layer: library, Cedar policies, CLI, and tools.
+bun test agentic
 
 # Claude mods are Bun TypeScript; the runtime test runs only where a `claude` CLI exists.
 bun test claude/tests

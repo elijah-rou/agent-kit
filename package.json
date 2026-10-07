@@ -9,5 +9,11 @@
     "skills": ["./skills"],
     "prompts": ["./pi/prompts/*.md"],
     "themes": ["./pi/themes/*.json"]
+  },
+  "bin": {
+    "agentic": "./agentic/bin/agentic"
+  },
+  "dependencies": {
+    "@cedar-policy/cedar-wasm": "4.13.0"
   }
 }

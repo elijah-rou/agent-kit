@@ -552,8 +552,11 @@ function classifyOther(name: string, args: string[], ctx: ClassifyContext, text:
 		return result();
 	}
 	if (name === "agentic" && args[0] === "verify" && args[1] === "record") {
-		// The PR is the first bare number, wherever the options sit.
-		return actionResult("verdict.record", { kind: "PullRequest", number: Number(args.slice(2).find((arg) => /^\d+$/.test(arg)) ?? 0), headSha: "", repo: ghRepo(args, ctx) }, text);
+		// Read the PR exactly as the verify CLI does (Number of the argument after "record"); when
+		// it is not a positive integer the author check cannot run, so the call is not read as safe.
+		const pr = Number(args[2]);
+		if (!Number.isInteger(pr) || pr <= 0) return opaqueExecution(text, "agentic verify record without a pull request number the gate can read");
+		return actionResult("verdict.record", { kind: "PullRequest", number: pr, headSha: "", repo: ghRepo(args, ctx) }, text);
 	}
 	if (name === "cargo" && args[0] === "publish") return actionResult("release.publish", { kind: "Target", targetKind: "crate", label: "cargo publish" }, text);
 	if ((name === "twine" && args[0] === "upload") || (name === "gem" && args[0] === "push")) return actionResult("release.publish", { kind: "Target", targetKind: "package", label: text }, text);

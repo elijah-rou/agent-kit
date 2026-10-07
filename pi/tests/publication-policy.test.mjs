@@ -30,6 +30,24 @@ test("marked children cannot publish or integrate with Git", () => {
   }
 });
 
+test("an autopilot-full owner child may publish its own pull request; other roles may not", () => {
+  const saved = { child: process.env.PI_SUBAGENT_CHILD, agent: process.env.PI_SUBAGENT_CHILD_AGENT };
+  process.env.PI_SUBAGENT_CHILD = "1";
+  try {
+    process.env.PI_SUBAGENT_CHILD_AGENT = "autopilot-owner";
+    const owner = interceptor();
+    for (const command of ["git push --force-with-lease origin agent/x", "git rebase origin/main", "git pull --ff-only"]) assert.equal(owner(command), undefined, command);
+    assert.equal(owner("git commit --no-verify -m x")?.block, true);
+    process.env.PI_SUBAGENT_CHILD_AGENT = "deep";
+    assert.equal(interceptor()("git push origin agent/x")?.block, true);
+  } finally {
+    for (const [key, value] of [["PI_SUBAGENT_CHILD", saved.child], ["PI_SUBAGENT_CHILD_AGENT", saved.agent]]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("root execution is not blocked when child marker is absent", () => {
   const original = process.env.PI_SUBAGENT_CHILD;
   delete process.env.PI_SUBAGENT_CHILD;

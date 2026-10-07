@@ -12,8 +12,14 @@ function isNativeChild(): boolean {
 	return process.env.PI_SUBAGENT_CHILD === "1" || process.env.PI_SUBAGENT_CHILD === "true";
 }
 
+// An autopilot-full owner carries its own pull request through the merge (babysit-and-ship), so
+// that one role may publish; every other child may not.
+function isAutopilotOwner(): boolean {
+	return process.env.PI_SUBAGENT_CHILD_AGENT === "autopilot-owner";
+}
+
 function childPublicationCommand(cmd: string): string | null {
-	if (!isNativeChild()) return null;
+	if (!isNativeChild() || isAutopilotOwner()) return null;
 	const match = cmd.match(/(?:^|[;&|\n]\s*)git(?:\s+-C\s+(?:'[^']*'|"[^"]*"|\S+))*\s+(push|pull|merge|rebase|cherry-pick|revert|am|apply|tag)\b/);
 	return match?.[1] ?? null;
 }

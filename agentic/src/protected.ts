@@ -12,7 +12,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { configPath } from "./config.ts";
+import { agenticHome, configPath } from "./config.ts";
 import { grantsPath, orchStore } from "./facts.ts";
 
 export type ProtectedKind = "grants" | "user-config" | "global-policy" | "ledger" | "decision-log" | "forge" | "enforcement" | "repo-policy" | "learned";
@@ -69,6 +69,8 @@ export function protectedPaths(env: NodeJS.ProcessEnv, repoRoot: string | undefi
 	const paths: ProtectedPath[] = [
 		{ kind: "grants", path: grantsPath(env) },
 		{ kind: "user-config", path: configPath(env) },
+		// The gate's own state, such as which session pushed which branch.
+		{ kind: "ledger", path: join(agenticHome(env), "state") },
 	];
 	if (globalPolicyDir) paths.push({ kind: "global-policy", path: globalPolicyDir });
 	const store = orchStore(repoRoot, env);

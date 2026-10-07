@@ -541,6 +541,9 @@ function classifyOther(name: string, args: string[], ctx: ClassifyContext, text:
 		if (sub === "run" && args[1]) return classifyPackageScript(args[1], ctx, depth, text);
 		return result();
 	}
+	if (name === "agentic" && args[0] === "verify" && args[1] === "record") {
+		return actionResult("verdict.record", { kind: "PullRequest", number: prNumber(firstPositional(args.slice(2))), headSha: "", repo: ghRepo(args, ctx) }, text);
+	}
 	if (name === "cargo" && args[0] === "publish") return actionResult("release.publish", { kind: "Target", targetKind: "crate", label: "cargo publish" }, text);
 	if ((name === "twine" && args[0] === "upload") || (name === "gem" && args[0] === "push")) return actionResult("release.publish", { kind: "Target", targetKind: "package", label: text }, text);
 	if ((name === "docker" || name === "podman") && args[0] === "push") return actionResult("release.publish", { kind: "Target", targetKind: "image", label: args[1] ?? "image" }, text);
@@ -778,6 +781,8 @@ function classifyGitHubApi(request: ApiRequest, fallbackRepo: string, text: stri
 		return actionResult("comment.post", { kind: "Recipient", recipientKind: "unknown", label: `${repo}:comment#${m[1]}` }, text);
 	if ((m = /^\/pulls\/(\d+)\/merge$/.exec(tail)) && method === "PUT")
 		return actionResult("pr.merge", { kind: "PullRequest", number: Number(m[1]), headSha: "", repo }, text);
+	if ((m = /^\/statuses\/([^/]+)$|^\/check-runs$/.exec(tail)) && method === "POST" && /agentic\/verdict/.test(request.body))
+		return actionResult("verdict.forge", { kind: "PullRequest", number: 0, headSha: m[1] ?? "", repo }, text);
 	if (/^\/releases(\/|$)/.test(tail)) return actionResult("release.publish", { kind: "Target", targetKind: "release", label: repo }, text);
 	if (/^\/actions\/secrets\//.test(tail)) return actionResult("credential.change", { kind: "Target", targetKind: "secret", label: repo }, text);
 	if (tail === "" && method === "DELETE" && repoMatch) return actionResult("data.delete", { kind: "Target", targetKind: "repository", label: repo }, text);

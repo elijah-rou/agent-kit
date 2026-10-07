@@ -9,7 +9,9 @@ export type ActionId =
 	| "deploy"
 	| "credential.change"
 	| "data.delete"
-	| "file.write";
+	| "file.write"
+	| "verdict.record"
+	| "verdict.forge";
 
 export const ACTION_IDS: readonly ActionId[] = [
 	"git.push",
@@ -22,6 +24,8 @@ export const ACTION_IDS: readonly ActionId[] = [
 	"credential.change",
 	"data.delete",
 	"file.write",
+	"verdict.record",
+	"verdict.forge",
 ];
 
 export type Resource =
@@ -55,6 +59,8 @@ export interface Facts {
 	verdict: string;
 	verdictSha: string;
 	isFrontier: boolean;
+	/** The principal pushed the pull request's branch, so it cannot verify it. */
+	isAuthor: boolean;
 }
 
 export type Decision = "allow" | "ask" | "deny";

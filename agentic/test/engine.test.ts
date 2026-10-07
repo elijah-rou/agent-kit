@@ -22,6 +22,7 @@ function facts(level: number, overrides: Partial<Facts> = {}): Facts {
 		verdict: "none",
 		verdictSha: "",
 		isFrontier: false,
+		isAuthor: false,
 		...overrides,
 	};
 }

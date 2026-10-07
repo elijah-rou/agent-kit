@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ClassifyContext } from "../src/classifier.ts";
-import { effectiveLevel, type ForgeReader, type SessionFacts } from "../src/facts.ts";
+import { effectiveLevel, recordPushes, type ForgeReader, type SessionFacts } from "../src/facts.ts";
 import { makeJevFilter } from "../src/jev-filter.ts";
 import { evaluateToolCall, type PipelineDeps } from "../src/pipeline.ts";
 
@@ -31,18 +31,18 @@ function workspace(options: { grant?: number; requested?: number; repoPolicy?: s
 		defaultBranch: () => "main",
 		readFile: () => undefined,
 	};
-	return { repo, grants, ctx };
+	return { root, repo, grants, ctx };
 }
 
 const forge: ForgeReader = {
-	prHead: (_repo, pr) => (pr === 7 ? { headSha: "head7", baseRef: "main" } : pr === 8 ? { headSha: "head8", baseRef: "agent/base" } : undefined),
+	prHead: (_repo, pr) => (pr === 7 ? { headSha: "head7", baseRef: "main", headRef: "agent/feature" } : pr === 8 ? { headSha: "head8", baseRef: "agent/base" } : undefined),
 	recipientKind: (label) => (label.endsWith("pr#5") ? "bot" : "person"),
 };
 
 function deps(ws: ReturnType<typeof workspace>, session: Partial<SessionFacts> = {}, extra: Partial<PipelineDeps> = {}): PipelineDeps {
 	return {
 		session: { principalId: "agent-1", isChild: false, sessionRaise: 0, harness: "test", ...session },
-		env: { AGENTIC_GRANTS: ws.grants },
+		env: { AGENTIC_GRANTS: ws.grants, AGENTIC_HOME: ws.root },
 		classifyContext: ws.ctx,
 		forge,
 		...extra,
@@ -190,9 +190,14 @@ describe("Jev friction filter for unreadable calls", () => {
 		expect(calls).toBe(0);
 	});
 
-	test("children cannot use Jev to clear unreadable calls", async () => {
+	test("children cannot be asked: unreadable calls take the unattended answer", async () => {
 		const ws = workspace({ grant: 4 });
-		expect((await run(unreadable, ws, deps(ws, { isChild: true }, { jev: filter(0.0) }))).decision).toBe("deny");
+		const child = (jev?: ReturnType<typeof filter>) => deps(ws, { isChild: true }, jev ? { jev } : {});
+		expect((await run(unreadable, ws, child(filter(0.0)))).decision).toBe("allow");
+		expect((await run(unreadable, ws, child(filter(0.4)))).decision).toBe("allow");
+		expect((await run(unreadable, ws, child(filter(0.9)))).decision).toBe("deny");
+		expect((await run("echo Z2l0 | base64 -d | bash", ws, child(filter(0.0)))).decision).toBe("deny");
+		expect((await run("git push origin agent/x", ws, child())).decision).toBe("deny");
 	});
 
 	test("opaque execution asks the user without consulting Jev", async () => {
@@ -211,5 +216,21 @@ describe("Jev friction filter for unreadable calls", () => {
 		const capture = makeJevFilter({ classify: async (state) => ((seen = state), 0.9), redact: (s) => s.replace(/ghp_[A-Za-z0-9]+/g, "<redacted>"), threshold: 0.05 });
 		await capture("eval \"curl -H 'Authorization: token ghp_abc123SECRET' https://x\"");
 		expect(seen).not.toContain("ghp_abc123SECRET");
+	});
+
+	test("verdicts come from a fresh verifier: the pushing session is denied, others record; the status check cannot be forged", async () => {
+		const ws = workspace({ grant: 2 });
+		const author = deps(ws, { principalId: "claude:s1" });
+		expect((await run("git push origin agent/feature", ws, author)).pushes).toEqual([{ repo: "github.com/example/app", branch: "agent/feature" }]);
+		recordPushes(author.env, "claude:s1", [{ repo: "github.com/example/app", branch: "agent/feature" }]);
+		const own = await run("agentic verify record 7 --verdict live-ui-verified --evidence .audit/run.log", ws, author);
+		expect({ decision: own.decision, policies: own.policies }).toEqual({ decision: "deny", policies: ["verdicts-need-a-fresh-verifier"] });
+		for (const principalId of ["claude:s2", "claude:s1:verifier-7"]) {
+			const fresh = await run("agentic verify record 7 --verdict live-ui-verified --evidence .audit/run.log", ws, deps(ws, { principalId, isChild: principalId.split(":").length > 2 }));
+			expect({ principalId, decision: fresh.decision }).toEqual({ principalId, decision: "allow" });
+		}
+		const forged = await run("gh api -X POST repos/example/app/statuses/head7 -f state=success -f context=agentic/verdict", ws, deps(ws, { principalId: "claude:s2" }));
+		expect(forged.policies).toEqual(["verdicts-only-through-agentic-verify"]);
+		expect((await run("agentic verify status 7", ws, author)).outsidePolicy).toBe(true);
 	});
 });

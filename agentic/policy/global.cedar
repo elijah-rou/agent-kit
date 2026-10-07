@@ -111,3 +111,19 @@ when { ["repo-policy", "learned"].contains(resource.kind) };
 @effect("ask")
 forbid (principal, action == Action::"file.write", resource is ProtectedPath)
 when { resource.kind == "enforcement" };
+
+// Verdicts come from a fresh verifier: a session that pushed the pull request's branch cannot
+// record one (pstack: no owner merges on its own verdict).
+@id("verdicts-need-a-fresh-verifier")
+@effect("deny")
+forbid (principal, action == Action::"verdict.record", resource is PullRequest)
+when { context.isAuthor };
+
+@id("fresh-verifiers-record-verdicts")
+permit (principal, action == Action::"verdict.record", resource is PullRequest)
+when { context.effectiveLevel >= 2 };
+
+// The agentic/verdict status check is posted only by `agentic verify record`.
+@id("verdicts-only-through-agentic-verify")
+@effect("deny")
+forbid (principal, action == Action::"verdict.forge", resource is PullRequest);

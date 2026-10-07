@@ -42,6 +42,7 @@ type Facts = {
   verdict: String,
   verdictSha: String,
   isFrontier: Bool,
+  isAuthor: Bool,
 };
 
 action "git.push" appliesTo {
@@ -77,6 +78,14 @@ action "comment.post" appliesTo {
 action "release.publish", "deploy", "credential.change", "data.delete" appliesTo {
   principal: [Agent],
   resource: [Target],
+  context: Facts,
+};
+
+// verdict.record: `agentic verify record`, which writes the ledger and posts the agentic/verdict
+// status check. verdict.forge: posting that status check any other way.
+action "verdict.record", "verdict.forge" appliesTo {
+  principal: [Agent],
+  resource: [PullRequest],
   context: Facts,
 };
 

@@ -7,7 +7,7 @@
  * this worker synchronously for that long before evaluating.
  */
 import { recordDecision, evaluateToolCall } from "./pipeline.ts";
-import { sessionFromEnv } from "./facts.ts";
+import { recordPushes, sessionFromEnv } from "./facts.ts";
 import { jevFilterFromConfig } from "./jev-filter.ts";
 
 declare const self: { onmessage: ((event: { data: string }) => void) | null; postMessage(message: unknown): void };
@@ -23,6 +23,8 @@ self.onmessage = async (event) => {
 		const result = await evaluateToolCall({ toolName: hookEvent.tool_name ?? "", input: hookEvent.tool_input, cwd: hookEvent.cwd ?? process.cwd() }, { session, env, jev: jevFilterFromConfig(env) });
 		const input = hookEvent.tool_input as { command?: unknown; file_path?: unknown };
 		recordDecision(env, String(input?.command ?? (input?.file_path !== undefined ? `${hookEvent.tool_name} ${input.file_path}` : hookEvent.tool_name ?? "")), result);
+		// An ask may still be approved, so anything not denied counts as pushed by this session.
+		if (result.decision !== "deny") recordPushes(env, session.principalId, result.pushes ?? []);
 		self.postMessage({ ok: true, result });
 	} catch (error) {
 		self.postMessage({ ok: false, error: (error as Error).message });

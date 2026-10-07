@@ -19,7 +19,7 @@ Read before spawning workers for an unattended program. If one agent can finish 
 ## Shared state
 
 - Per-run and per-agent files have a single writer. Readers combine them at read time.
-- Program state lives in the vendored `orch` store, which locks itself and writes atomically: `agentic orch --store <dir> <command>` (see its `--help`). Verdicts go in its ledger, keyed by PR and head SHA; a new head SHA voids the verdict.
+- Program state lives in the vendored `orch` store, which locks itself and writes atomically: `agentic orch --store <dir> <command>` (see its `--help`). Verdicts go in its ledger, keyed by PR and head SHA, written only by a fresh verifier through `agentic verify record`; a new head SHA voids the verdict.
 
 ## Audit tick
 

@@ -4,7 +4,7 @@ import { append as appendDecisionRow } from "../tools/decision-log/decision-log.
 import { classifyCommand, repoIdentity, type ClassifyContext, type UnclassifiedPart } from "./classifier.ts";
 import { authorize, loadPolicySet, validatePolicySet } from "./engine.ts";
 import { protectedKindOf, protectedPaths } from "./protected.ts";
-import { factsFor, ghForgeReader, gitContext, grantsPath, orchStore, readGrants, readLedger, readRepoConfig, type ForgeReader, type SessionFacts } from "./facts.ts";
+import { factsFor, ghForgeReader, gitContext, grantsPath, orchStore, readGrants, readLedger, readPushes, readRepoConfig, type ForgeReader, type SessionFacts } from "./facts.ts";
 import type { ClassifiedAction, Decision, PolicyDecision } from "./types.ts";
 
 declare const __dirname: string | undefined;
@@ -93,6 +93,8 @@ export interface PipelineResult {
 	 * point; allow for other unreadable commands. Only meaningful when decision is "ask".
 	 */
 	unattended?: "allow" | "deny";
+	/** Branches this call pushes; adapters record them when the call proceeds (see recordPushes). */
+	pushes?: { repo: string; branch: string }[];
 	steps: StepResult[];
 	reason: string;
 	policies: string[];
@@ -190,8 +192,10 @@ export async function evaluateToolCall(call: ToolCall, deps: PipelineDeps): Prom
 	if (validation.length > 0) return deny(`policy validation error: ${validation.join("; ")}`);
 
 	let ledger;
+	let pushes;
 	try {
 		ledger = readLedger(orchStore(ctx.repoRoot, deps.env));
+		pushes = readPushes(deps.env);
 	} catch (error) {
 		return deny(`verdict ledger error: ${(error as Error).message}`);
 	}
@@ -201,7 +205,7 @@ export async function evaluateToolCall(call: ToolCall, deps: PipelineDeps): Prom
 	const steps: StepResult[] = [];
 
 	for (const action of classification.actions) {
-		const { facts, action: filled } = factsFor(action, { grants, repoConfig, session: deps.session, ledger, forge }, workspaceRepo);
+		const { facts, action: filled } = factsFor(action, { grants, repoConfig, session: deps.session, ledger, forge, pushes }, workspaceRepo);
 		const result: PolicyDecision = authorize(schema, loaded.policies, { id: deps.session.principalId, isChild: deps.session.isChild, harness: deps.session.harness }, filled, facts);
 		steps.push({ kind: "action", summary: `${describe(filled)} at A${facts.effectiveLevel}`, decision: result.decision, policies: result.policies, reason: result.reason });
 	}
@@ -219,6 +223,7 @@ export async function evaluateToolCall(call: ToolCall, deps: PipelineDeps): Prom
 		reason: decisive.map((step) => `${step.summary}: ${step.reason}`).join(" | "),
 		policies: [...new Set(decisive.flatMap((step) => step.policies))],
 		outsidePolicy: false,
+		pushes: classification.actions.flatMap((action) => (action.action === "git.push" && action.resource.kind === "Branch" ? [{ repo: action.resource.repo, branch: action.resource.name }] : [])),
 	};
 }
 
@@ -229,9 +234,19 @@ export async function evaluateToolCall(call: ToolCall, deps: PipelineDeps): Prom
  */
 export const LIKELY_HARD_POINT = 0.8;
 
+/**
+ * Children cannot be asked, so an ask about an unreadable command takes the unattended answer:
+ * opaque execution and likely hard points are denied, the rest runs. Classified publication
+ * stays denied to children by the children-never-publish policy.
+ */
 async function filterUnclassified(part: UnclassifiedPart, jev: JevFilter | undefined, isChild: boolean): Promise<StepResult> {
+	const step = await judgeUnclassified(part, jev);
+	if (!isChild || step.decision !== "ask") return step;
+	return { ...step, decision: step.unattended === "allow" ? "allow" : "deny", reason: `child agent, cannot ask: ${step.reason}`, unattended: undefined };
+}
+
+async function judgeUnclassified(part: UnclassifiedPart, jev: JevFilter | undefined): Promise<StepResult> {
 	const base = { kind: "unclassified" as const, summary: `unreadable command (${part.reason})`, policies: [] };
-	if (isChild) return { ...base, decision: "deny", reason: "child agents may not run unreadable commands that could publish" };
 	if (part.opaqueExecution) return { ...base, decision: "ask", unattended: "deny", reason: "executes computed or piped-in text; asked directly without Jev" };
 	if (!jev) return { ...base, decision: "ask", unattended: "allow", reason: "could reach a hard point; Jev filter not configured" };
 	const verdict = await jev(part.text);

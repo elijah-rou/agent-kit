@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { repoIdentity, type ClassifyContext } from "./classifier.ts";
@@ -64,7 +64,7 @@ export function effectiveLevel(grant: number, requested: number | undefined, ses
 }
 
 export type VerdictValue = "live-ui-verified" | "unit-test-verified" | "type-check-only" | "verifier-blocked" | "verifier-failed";
-const PASSING: ReadonlySet<string> = new Set(["live-ui-verified", "unit-test-verified"]);
+export const PASSING: ReadonlySet<string> = new Set(["live-ui-verified", "unit-test-verified"]);
 
 export interface LedgerRow {
 	pr: number;
@@ -87,8 +87,42 @@ export function readLedger(store: string | undefined): LedgerRow[] {
 }
 
 /** Read-only forge queries. The default implementation uses `gh`; scenarios substitute a shim. */
+/** Which session pushed which branch: the authors a verdict must not come from. */
+export interface PushRow {
+	repo: string;
+	branch: string;
+	principal: string;
+}
+
+const PUSHES_HEADER = "repo\tbranch\tprincipal\tts";
+
+/** The gate's own record of pushes, under the protected user state directory. */
+export function pushesPath(env: NodeJS.ProcessEnv = process.env): string {
+	return join(agenticHome(env), "state", "pushes.tsv");
+}
+
+export function readPushes(env: NodeJS.ProcessEnv = process.env): PushRow[] {
+	const file = pushesPath(env);
+	if (!existsSync(file)) return [];
+	const [header, ...rows] = readFileSync(file, "utf8").split("\n").filter((line) => line.length > 0);
+	if (header !== PUSHES_HEADER) throw new Error(`${file}: unexpected header`);
+	return rows.map((line) => {
+		const [repo, branch, principal] = line.split("\t");
+		return { repo, branch, principal };
+	});
+}
+
+/** Appends the pushes a proceeding tool call makes, so later verdicts can exclude their author. */
+export function recordPushes(env: NodeJS.ProcessEnv, principal: string, pushes: readonly { repo: string; branch: string }[]): void {
+	if (pushes.length === 0) return;
+	const file = pushesPath(env);
+	mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+	const header = existsSync(file) ? "" : `${PUSHES_HEADER}\n`;
+	appendFileSync(file, header + pushes.map((push) => `${push.repo}\t${push.branch}\t${principal}\t${new Date().toISOString()}\n`).join(""), { mode: 0o600 });
+}
+
 export interface ForgeReader {
-	prHead(repo: string, pr: number): { headSha: string; baseRef: string } | undefined;
+	prHead(repo: string, pr: number): { headSha: string; baseRef: string; headRef?: string } | undefined;
 	recipientKind(label: string): "person" | "bot" | "unknown";
 }
 
@@ -107,11 +141,11 @@ function ghRepoArg(repo: string): string {
 export function ghForgeReader(cwd: string): ForgeReader {
 	return {
 		prHead(repo, pr) {
-			const out = gh(["pr", "view", String(pr), "-R", ghRepoArg(repo), "--json", "headRefOid,baseRefName"], cwd);
+			const out = gh(["pr", "view", String(pr), "-R", ghRepoArg(repo), "--json", "headRefOid,baseRefName,headRefName"], cwd);
 			if (!out) return undefined;
 			try {
-				const parsed = JSON.parse(out) as { headRefOid?: string; baseRefName?: string };
-				return parsed.headRefOid ? { headSha: parsed.headRefOid, baseRef: parsed.baseRefName ?? "" } : undefined;
+				const parsed = JSON.parse(out) as { headRefOid?: string; baseRefName?: string; headRefName?: string };
+				return parsed.headRefOid ? { headSha: parsed.headRefOid, baseRef: parsed.baseRefName ?? "", headRef: parsed.headRefName } : undefined;
 			} catch {
 				return undefined;
 			}
@@ -184,6 +218,7 @@ export interface FactInputs {
 	session: SessionFacts;
 	ledger: LedgerRow[];
 	forge: ForgeReader;
+	pushes?: PushRow[];
 }
 
 function repoOfAction(action: ClassifiedAction): string | undefined {
@@ -211,6 +246,7 @@ export function factsFor(action: ClassifiedAction, inputs: FactInputs, workspace
 		verdict: "none",
 		verdictSha: "",
 		isFrontier: false,
+		isAuthor: false,
 	};
 	let filled = action;
 	if (action.resource.kind === "PullRequest") {
@@ -226,6 +262,8 @@ export function factsFor(action: ClassifiedAction, inputs: FactInputs, workspace
 			facts.verdictSha = row.sha;
 		}
 		facts.isFrontier = head !== undefined && (head.baseRef === "main" || head.baseRef === "master");
+		const pr = action.resource;
+		facts.isAuthor = head?.headRef !== undefined && (inputs.pushes ?? []).some((push) => push.repo === pr.repo && push.branch === head.headRef && push.principal === inputs.session.principalId);
 	}
 	if (action.resource.kind === "Recipient" && action.resource.recipientKind === "unknown") {
 		filled = { ...action, resource: { ...action.resource, recipientKind: inputs.forge.recipientKind(action.resource.label) } };

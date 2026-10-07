@@ -18,7 +18,7 @@ function repo(grantLevel: number) {
 }
 
 function hook(event: Record<string, unknown>, env: Record<string, string>) {
-	const result = spawnSync("bun", [BIN, "claude-hook"], { input: JSON.stringify(event), env: { ...process.env, ...env, AGENTIC_JEV_THRESHOLD: "" }, encoding: "utf8" });
+	const result = spawnSync("bun", [BIN, "claude-hook"], { input: JSON.stringify(event), env: { ...process.env, AGENTIC_HOME: mkdtempSync(join(tmpdir(), "claude-hook-home-")), ...env, AGENTIC_JEV_THRESHOLD: "" }, encoding: "utf8" });
 	return { status: result.status, stdout: result.stdout.trim(), stderr: result.stderr };
 }
 

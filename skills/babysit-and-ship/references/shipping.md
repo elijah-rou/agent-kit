@@ -2,30 +2,26 @@
 
 Land only what was verified, one PR at a time from the bottom, and keep hands off the rest of the queue. Every precondition below is required; when one fails, stop and report the ceiling instead of improvising.
 
-Ledger commands (see `agentic orch --help`):
+Verdict commands (see `agentic verify --help`):
 
 ```sh
-agentic orch --store <dir> ledger record <pr> <head-sha> <verdict> --evidence <path> --verifier <name>
-agentic orch --store <dir> ledger check <pr> <head-sha>
+agentic verify record <pr> --verdict <verdict> --evidence <path or https URL>
+agentic verify status <pr>
 ```
 
 Ledger verdicts are `live-ui-verified`, `unit-test-verified`, `type-check-only`, `verifier-blocked`, and `verifier-failed`. A missing row checks as `NOT-VERIFIED`. Only `live-ui-verified` and `unit-test-verified` pass; behavioral changes need better than `type-check-only`. CI green and approving bot reviews are inputs to a verdict, never a verdict.
 
 ## 1. Verify every PR independently
 
-For each PR, spawn one verifier that did not write the code, preferably on a different model family. It drives the real surface through the repository's verification skill (`.agents/skills/verify-<app>/`), comparing parent and head, and returns a verdict with evidence. Verifiers are children: they never push, merge, or post. You, the coordinator, record each verdict in the ledger with the head SHA it covered, and post it as a forge status check on that SHA when the repository's ruleset requires one. The evidence file records the base SHA and the stable patch ID of the base-to-head diff:
-
-```sh
-git diff <base-sha> <head-sha> | git patch-id --stable
-```
+For each PR, spawn one verifier that did not write the code, preferably on a different model family. It drives the real surface through the repository's verification skill (`.agents/skills/verify-<app>/`), comparing parent and head, writes its evidence, and records the verdict itself with `agentic verify record`. That command binds the verdict to the head SHA and the stable patch ID and posts the `agentic/verdict` status check. The policy gate refuses it to any session that pushed the branch, so the coordinator cannot record its own work. Verifiers never push, merge, or comment.
 
 ## 2. Find the verified run
 
-Walk up from the lowest unmerged PR. For each, run `ledger check` with its current head SHA. Stop at the first PR that does not pass. A verified PR above an unverified one is not landable. Report the ceiling as a PR number and what breaks the chain.
+Walk up from the lowest unmerged PR. For each, run `agentic verify status <pr>`; it passes only when the latest verdict covers the current head SHA. Stop at the first PR that does not pass. A verified PR above an unverified one is not landable. Report the ceiling as a PR number and what breaks the chain.
 
 ## 3. Recheck that each verdict still describes the patch
 
-Before landing a PR, recompute its patch ID at the current base and head, and compare it with the one in the verdict's evidence.
+Before landing a PR, recompute its patch ID (`gh pr diff <pr> | git patch-id --stable`) and compare it with the one `agentic verify status` and the status description report.
 
 - **Patch changed:** the verdict is void. Re-verify (step 1).
 - **Patch unchanged but head SHA changed** (for example after a rebase): the ledger has no row for the new SHA, so the policy layer denies the merge. Send it back to an independent verifier. The verifier may carry its verdict to the new SHA only after recomputing the patch ID itself, with evidence naming both SHAs and both patch IDs.

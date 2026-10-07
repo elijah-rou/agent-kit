@@ -67,24 +67,29 @@ export default function agenticPolicyGate(pi: ExtensionAPI): void {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
-		const { evaluateToolCall, recordDecision, sessionFromEnv, jevFilterFromConfig } = await loadPolicyLayer();
+		const { evaluateToolCall, recordDecision, recordPushes, sessionFromEnv, jevFilterFromConfig } = await loadPolicyLayer();
 		const env = { ...process.env, AGENTIC_SESSION_RAISE: String(sessionRaise) };
 		const session = sessionFromEnv(env, "pi");
 		session.principalId = env.AGENTIC_AGENT_ID ?? `pi:${ctx.sessionManager.getSessionId?.() ?? process.pid}`;
 		const result = await evaluateToolCall({ toolName: event.toolName, input: event.input, cwd: ctx.cwd }, { session, env, jev: jevFilterFromConfig(env) });
 		const command = describeCall(event.toolName, event.input);
 		recordDecision(env, command, result);
-		if (result.decision === "allow") return undefined;
+		// Pushes are recorded when the call proceeds, so this session cannot verify what it pushed.
+		const proceed = () => {
+			recordPushes(env, session.principalId, result.pushes ?? []);
+			return undefined;
+		};
+		if (result.decision === "allow") return proceed();
 		const label = `[agentic] ${result.reason}${result.policies.length ? ` (policies: ${result.policies.join(", ")})` : ""}`;
 		if (result.decision === "deny") return { block: true, reason: label };
 		if (ctx.hasUI) {
 			const approved = await ctx.ui.confirm("Agentic policy: approval needed", `${command}\n\n${result.reason}`);
 			recordDecision(env, command, { ...result, decision: approved ? "allow" : "deny", reason: `user ${approved ? "approved" : "declined"}: ${result.reason}` });
-			return approved ? undefined : { block: true, reason: `${label} (declined by the user)` };
+			return approved ? proceed() : { block: true, reason: `${label} (declined by the user)` };
 		}
 		// Without a UI (print, JSON, background runs) nobody can answer: unreadable commands Jev
 		// does not rate likely to reach a hard point run; policy asks and likely ones are blocked.
-		if (result.unattended === "allow") return undefined;
+		if (result.unattended === "allow") return proceed();
 		return { block: true, reason: `${label}. This needs the user's approval; draft the command for them instead of retrying.` };
 	});
 }

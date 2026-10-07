@@ -10,6 +10,7 @@
  *   feature-map-lint  validate a verification skill's feature map (tools/feature-map-lint)
  *   report-lint       check a final report against the interaction contract (tools/report-lint)
  *   rule-table        check rules.toml and find instructions that restate enforced rules (tools/rule-table)
+ *   rulesets          plan or apply the GitHub ruleset that backstops the gate (tools/rulesets)
  *   upstream-drift    report upstream changes since each adapted skill's or vendored tool's commit (tools/upstream-drift)
  *   orch              program store and verdict ledger, vendored from pstack (vendor/orch)
  *   watch-pr          pull request and stack watcher, vendored from pstack (vendor/watch-pr)
@@ -27,6 +28,7 @@ const TOOLS: Record<string, string> = {
 	"feature-map-lint": "tools/feature-map-lint/cli.ts",
 	"report-lint": "tools/report-lint/cli.ts",
 	"rule-table": "tools/rule-table/cli.ts",
+	rulesets: "tools/rulesets/cli.ts",
 	"upstream-drift": "tools/upstream-drift/cli.ts",
 	orch: "vendor/orch/orch.ts",
 	"watch-pr": "vendor/watch-pr/watch-pr",

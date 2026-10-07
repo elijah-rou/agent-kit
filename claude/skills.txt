@@ -25,3 +25,4 @@ skills/prototype-to-decide
 skills/reflect
 skills/show-me-your-work
 skills/teach
+skills/github-rulesets

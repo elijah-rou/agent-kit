@@ -26,6 +26,7 @@ Repository conventions take precedence where they differ.
 - Name every branch you intend to push `agent/<topic>`.
 - Before an authorized push or merge, recheck the exact revision and the full workspace against the final verification.
 - Below the level that permits it, do not proactively offer to merge, publish, or open a pull request.
+- Repositories the user owns on GitHub carry the `agentic-backstop` ruleset on the default branch. When creating or adopting one, apply it with `github-rulesets`.
 
 ## Pull requests and reviews
 

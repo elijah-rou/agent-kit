@@ -17,7 +17,7 @@ extensions, skills, prompt, and theme from it in place. Codex and Claude read li
 
 ## Agentic stack
 
-The instructions carry an autonomy ladder that you grant per repository, planning only at one-way doors, and a contract for questions and reports. GitHub rulesets are the hard backstop (`agentic rulesets`), and verification skills live in the product repositories. [ADR 0001](docs/adr/0001-agentic-stack.md) records the decision. That includes why the larger local policy gate is parked on the `agent/reference-full-stack` branch.
+The instructions carry a standing default for what agents may do on their own (local work, and `agent/*` branches and pull requests in repositories you own), planning only at one-way doors, and a contract for questions and reports. GitHub rulesets are the hard backstop (`agentic rulesets`), and verification skills live in the product repositories. [ADR 0001](docs/adr/0001-agentic-stack.md) records the decision. That includes why the larger local policy gate is parked on the `agent/reference-full-stack` branch.
 
 ## Develop
 

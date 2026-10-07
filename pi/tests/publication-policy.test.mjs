@@ -43,11 +43,11 @@ test("root execution is not blocked when child marker is absent", () => {
 });
 
 test("outward-facing actions follow the autonomy level and publication stays with the coordinating agent", () => {
-  assert.match(agents, /A0, no grant: anything outward-facing \(pushing, publishing, posting, changing shared or remote systems\) needs explicit authorization/);
-  assert.match(agents, /A2: also push `agent\/\*` branches, open pull requests ready for review/);
-  assert.match(agents, /At every level, explicit authorization is still required for destructive actions[^\n]*deploys and releases, messages to people/);
+  assert.match(agents, /In a repository the user owns[^\n]*push `agent\/\*` branches, open pull requests ready for review/);
+  assert.match(agents, /In any other repository, anything outward-facing \(pushing, publishing, posting, changing shared or remote systems\) needs explicit authorization/);
+  assert.match(agents, /explicit authorization is still required for destructive actions[^\n]*deploys and releases, messages to people/);
   assert.match(agents, /never treat a defaulted answer as approval/);
-  assert.match(gitWorkflow, /Pushing and merging follow the repository's autonomy level/);
+  assert.match(gitWorkflow, /Merging, pushing to the default branch, force-pushing or deleting shared branches, and any push to a repository the user does not own require explicit authorization/);
   assert.match(gitWorkflow, /Name every branch you intend to push `agent\/<topic>`/);
   assert.match(agents, /The parent owns planning, decisions, acceptance, and outward-facing actions/);
   assert.match(agents, /`git-workflow` for worktrees, history, pushing, merging, and pull requests/);

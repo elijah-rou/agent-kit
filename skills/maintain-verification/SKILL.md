@@ -42,7 +42,7 @@ Edit only the verification skill's own directory: its `SKILL.md`, `features/`, a
    - **Harness gap:** working behavior the harness cannot drive. Fix the harness; shipped scripts are executable and their invocation is in the skill body.
    - **Product gap:** the app is actually broken. Record it for the user with its evidence; keep it out of the corrections.
 
-6. **Land or stop.** For `changed`, re-read every changed file, recheck the index and sections, and commit on one branch. Publish only within the repository's autonomy level: at A2 or above, push an `agent/*` branch and open one pull request; below A2, or when the level is unknown, leave the branch for the user. For `clean` or `blocked`, change nothing and report.
+6. **Land or stop.** For `changed`, re-read every changed file, recheck the index and sections, and commit on one branch. In a repository the user owns, push an `agent/*` branch and open one pull request; otherwise leave the branch for the user. For `clean` or `blocked`, change nothing and report.
 
 Keep run notes (features covered, unreachable prerequisites, confirmed drift) in a scratch location outside the repository; do not commit them.
 

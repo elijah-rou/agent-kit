@@ -354,17 +354,19 @@ function protectedWrites(simple: SimpleCommand, words: string[], name: string, c
 		out.actions.push({ action: "file.write", resource: { kind: "ProtectedPath", protectedKind: kind, path }, force: false, evidence: text });
 	};
 	const cwds = ctx.pathCwds ?? [ctx.cwd];
-	const check = (candidate: string, reach: "path" | "parent" | "ancestor" | "checkout" = "path") => {
+	const check = (candidate: string, reach: "path" | "parent" | "ancestor" | "checkout" = "path", only?: (kind: string) => boolean) => {
 		const here = candidate.replace(/^(?:\$PWD|\$\{PWD\}|\$\(pwd\)|`pwd`)(?=\/|$)/, "");
 		for (const cwd of cwds) {
 			const path = here === candidate ? candidate : `${cwd}${here}`;
 			const kind = ctx.protectedKind?.(path, { cwd, reach });
-			if (kind) return add(candidate, kind);
+			if (kind && (only === undefined || only(kind))) return add(candidate, kind);
 		}
 	};
 	for (const target of simple.writes) check(target);
-	// A bare assignment (X=dir; export X) sets where a later command writes.
-	if (words.length === 0) for (const assignment of simple.assignments) check(expandVariables(assignment.slice(assignment.indexOf("=") + 1), ctx, text));
+	// A bare assignment (X=dir; export X) can set where a later command writes, such as an orch
+	// store. Naming the gate's own files in a variable is not a write, so enforcement paths are
+	// skipped here (observed: A=<path to the agentic CLI>; $A ... was stopped).
+	if (words.length === 0) for (const assignment of simple.assignments) check(expandVariables(assignment.slice(assignment.indexOf("=") + 1), ctx, text), "path", (kind) => kind !== "enforcement");
 	if (words.length > 0 && !isReadOnly(name, words.slice(1))) {
 		const operands = words.slice(1).filter((word) => !word.startsWith("-"));
 		const destination = operands.at(-1);

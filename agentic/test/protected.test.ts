@@ -222,4 +222,11 @@ describe("protected configuration paths", () => {
 			expect({ command, policies: result.policies }).toEqual({ command, policies: ["gate-wiring-needs-user"] });
 		}
 	});
+
+	test("naming the gate's own files in a variable is not a write", async () => {
+		const ws = setup();
+		const cli = join(import.meta.dir, "..", "bin", "agentic");
+		const result = await evaluateToolCall({ toolName: "bash", input: { command: `A=${cli}; echo "$A"` }, cwd: ws.repo }, ws.deps);
+		expect(result.decision).toBe("allow");
+	});
 });

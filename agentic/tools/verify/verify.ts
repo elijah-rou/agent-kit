@@ -48,9 +48,12 @@ export function currentVerdict(ledger: readonly LedgerEntry[], pr: number, headS
 	return { state: passes(forHead.verdict) ? "pass" : "fail", verdict: forHead.verdict, sha: forHead.sha };
 }
 
-/** The repository's orch store; AGENTIC_ORCH_STORE overrides it. */
-export function orchStore(repoRoot: string, env: NodeJS.ProcessEnv = process.env): string {
-	return env.AGENTIC_ORCH_STORE || join(repoRoot, ".agents", "orch");
+/**
+ * The repository's orch store, inside git's common directory (`git rev-parse --git-common-dir`):
+ * every worktree shares it, and git never tracks it. AGENTIC_ORCH_STORE overrides it.
+ */
+export function orchStore(gitCommonDir: string, env: NodeJS.ProcessEnv = process.env): string {
+	return env.AGENTIC_ORCH_STORE || join(gitCommonDir, "agentic", "orch");
 }
 
 const LEDGER_HEADER = "pr\tsha\tverdict\tevidence\tverifier\tts";

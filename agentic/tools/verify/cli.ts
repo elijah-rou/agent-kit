@@ -42,12 +42,12 @@ async function main(args: string[]): Promise<number> {
 	const pr = Number(prArg);
 	if (!["record", "status"].includes(command) || !Number.isInteger(pr) || pr <= 0) return console.error(USAGE), 2;
 
-	const repoRoot = git(["rev-parse", "--show-toplevel"]);
-	if (!repoRoot) throw new Error("run inside the repository's checkout; the ledger lives in its .agents directory");
+	const commonDir = git(["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+	if (!commonDir) throw new Error("run inside the repository's checkout; the ledger lives in its git directory");
 	const origin = git(["remote", "get-url", "origin"]);
 	const slug = option(args, "--repo") ?? (origin ? githubSlug(origin) : undefined);
 	if (!slug || !/^[\w.-]+\/[\w.-]+$/.test(slug)) throw new Error("cannot tell the GitHub repository; pass --repo owner/repo");
-	const store = orchStore(repoRoot);
+	const store = orchStore(commonDir);
 
 	const head = JSON.parse(run("gh", ["pr", "view", String(pr), "-R", slug, "--json", "headRefOid,headRefName,state"])) as { headRefOid: string; headRefName: string; state: string };
 

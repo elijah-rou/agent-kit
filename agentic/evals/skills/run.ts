@@ -428,6 +428,7 @@ async function judgeScenario(s: Scenario): Promise<void> {
   const dir = join(RUNS, "judge", s.id);
   if (existsSync(join(dir, "verdicts.json"))) return console.log(`judge ${s.id}: kept`);
   const keys = plan(s.id).filter(gradable);
+  if (keys.length === 0) return console.log(`judge ${s.id}: no gradable runs; nothing judged`);
   const criterion = s.rubric.find((c) => c.kind === "judged");
   if (!criterion) throw new Error(`${s.id} has no judged criterion`);
   const labels = ["A", "B", "C", "D", "E", "F"].slice(0, keys.length);

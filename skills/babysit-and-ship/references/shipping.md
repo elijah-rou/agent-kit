@@ -36,7 +36,9 @@ Fetch trunk. If the bottom PR needs a rebase, rebase it onto the exact trunk tip
 
 ## 5. Land one PR
 
-When the bottom PR is mergeable and its verdict is current, merge it with the repository's merge method (for example `gh pr merge <pr> --squash`). Arm auto-merge only if the user asked for merge-when-ready. The forge's required verdict check is the final gate; never bypass it.
+First screen it: `agentic jev pr-risk <pr>`. Exit 0 clears it. Exit 1 (Jev rates it a likely one-way door, Jev is unavailable, or the repository is not public) holds it: stop the run there, report the PR and the score under "Needs you", and land it only after the user says so. The screen only adds caution; a clear never replaces the verdict.
+
+When the bottom PR is mergeable, its verdict is current, and the screen cleared it or the user released it, merge it with the repository's merge method (for example `gh pr merge <pr> --squash`). Arm auto-merge only if the user asked for merge-when-ready. The forge's required verdict check is the final gate; never bypass it.
 
 ## 6. Recompute after every merge
 

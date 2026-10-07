@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openStore } from "../../vendor/orch/store.ts";
-import { currentVerdict, evidenceCell, githubSlug, orchStore, readLedger, statusFor } from "./verify.ts";
+import { currentVerdict, evidenceCell, githubSlug, orchStore, parseEvidenceCell, readLedger, rowForHead, statusFor } from "./verify.ts";
 
 describe("verdicts", () => {
 	test("a verdict covers only the head it was recorded on, so a rebase voids it", () => {
@@ -21,6 +21,18 @@ describe("verdicts", () => {
 		expect(statusFor("unit-test-verified", "0123456789abcdef", "https://example.com/run/1")).toEqual({ state: "success", description: "unit-test-verified, patch 0123456789ab", targetUrl: "https://example.com/run/1" });
 		expect(statusFor("verifier-blocked", "0123456789abcdef", ".audit/run.log")).toEqual({ state: "failure", description: "verifier-blocked, patch 0123456789ab" });
 		expect(evidenceCell(".audit/run.log", "abc")).toBe(".audit/run.log patch:abc");
+		expect(parseEvidenceCell(evidenceCell("https://x/run 1", "0f3a"))).toEqual({ evidence: "https://x/run 1", patchId: "0f3a" });
+		expect(() => parseEvidenceCell("run.log")).toThrow("no patch ID");
+	});
+
+	test("publish uses the latest row for the current head only", () => {
+		const ledger = [
+			{ pr: 7, sha: "aaa", verdict: "unit-test-verified" },
+			{ pr: 7, sha: "bbb", verdict: "verifier-failed" },
+			{ pr: 7, sha: "aaa", verdict: "verifier-blocked" },
+		];
+		expect(rowForHead(ledger, 7, "aaa")?.verdict).toBe("verifier-blocked");
+		expect(rowForHead(ledger, 7, "ccc")).toBeUndefined();
 	});
 
 	test("reads the ledger orch writes, and treats a missing ledger as no verdicts", async () => {
@@ -33,7 +45,7 @@ describe("verdicts", () => {
 		} finally {
 			await store.close();
 		}
-		expect(readLedger(dir)).toEqual([{ pr: 7, sha: "aaa", verdict: "unit-test-verified" }]);
+		expect(readLedger(dir)).toEqual([{ pr: 7, sha: "aaa", verdict: "unit-test-verified", evidence: "run.log patch:p" }]);
 	});
 
 	test("every worktree of a repository shares one untracked store in git's common directory", () => {

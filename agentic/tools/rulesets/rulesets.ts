@@ -13,7 +13,7 @@
 
 export const RULESET_NAME = "agentic-backstop";
 
-/** The status `agentic verify record` posts; merge-gate requires it. */
+/** The status `agentic verify publish` posts; merge-gate requires it. */
 export const VERDICT_CONTEXT = "agentic/verdict";
 
 export type Tier = "baseline" | "merge-gate";

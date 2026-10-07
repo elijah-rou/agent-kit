@@ -28,3 +28,14 @@ Upstream: `pstack/skills/unslop`, `68836dd..9f451cf` (commits 73f8be4, e8d856f, 
 | Remove puffery, name-dropping, promotional, formulaic-challenge, and cutoff-disclaimer rules | Rejected | The local list folds these into two context-judged bullets that still catch real tells in public prose. |
 | Stable rule numbers that other skills cite | Rejected | Local patterns are unnumbered; skills do not cite another skill's rules. |
 | Drop the em-dash rationale sentence | No local change | The local skill has no such sentence. |
+
+### technical-writing
+
+Upstream: `pstack/skills/technical-writing`, `68836dd..9f451cf` (commits e8d856f, d7cde2b, 70b2dc8, 23e4138). No change taken.
+
+| Upstream change | Decision | Reason |
+| --- | --- | --- |
+| Propose new jargon offenders in the reply instead of editing `unslop` | No local change | The local skill does not reference `unslop`; each skill is self-contained. |
+| A PR body is a briefing read in under a minute; link logs, SHA lists, and metric tables | Rejected | `babysit-and-ship/references/pr-body.md` owns PR bodies and already says this. This skill covers durable documents. |
+| Remove the review checklist, the worked-example commentary, the "read it aloud" and "gut feel" lines, and the source citations | No local change | The local rewrite never adopted them. |
+| Replace semicolons with periods | No local change | The local rewrite does not contain the edited sentences. |

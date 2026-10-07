@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { HOLD_ABOVE, isTask, prDecision, prRisk, prState, taskClass, taskHint, type FetchLike } from "./jev.ts";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { HINT_DEADLINE_MS, HOLD_ABOVE, isPublic, isTask, prDecision, prRisk, prState, sendable, taskClass, taskHint, taskHintFor, type FetchLike } from "./jev.ts";
 
 const answering = (q: unknown, status = 200): FetchLike => async () => new Response(JSON.stringify({ answers: { q } }), { status });
 const options = (fetch: FetchLike) => ({ apiKey: "test-key", timeoutMs: 1000, fetch });
@@ -19,6 +22,7 @@ describe("PR risk", () => {
 	});
 
 	test("the state uses the calibrated layout", () => {
+		expect(prState({ repo: "o/r", title: "T", body: "  line one\r\nline two\r\n", stat: "", diff: "" })).toContain("Body: line one\nline two\nFiles changed (0):");
 		const state = prState({ repo: "o/r", title: "T", body: "b".repeat(700), stat: " a | 1 +\n b | 2 +-\n 2 files changed\n", diff: "d".repeat(6001) });
 		expect(state).toMatch(/^Repository: o\/r\nSubject: T\nBody: b{600}\nFiles changed \(2\):\n a \| 1 \+\n b \| 2 \+-\n 2 files changed\nDiff \(truncated to 6000 characters\):\nd{6000}\n\[truncated\]$/);
 	});
@@ -42,5 +46,46 @@ describe("task class", () => {
 	test("short follow-ups are not tasks", () => {
 		expect(isTask("yes, continue")).toBe(false);
 		expect(isTask("Change the launcher's languages subcommand to a flag")).toBe(true);
+	});
+});
+
+function seededCache(slug: string, entry: { visibility: string; at: number }): NodeJS.ProcessEnv {
+	const home = mkdtempSync(join(tmpdir(), "jev-cache-"));
+	mkdirSync(join(home, "agentic"), { recursive: true });
+	writeFileSync(join(home, "agentic", "repo-visibility.json"), JSON.stringify({ [slug]: entry }));
+	return { XDG_CACHE_HOME: home, TYPESAFE_API_KEY: "test-key" };
+}
+
+describe("what leaves the machine", () => {
+	test("credential-shaped text is never sent, and home directories are redacted", () => {
+		expect(sendable(`rotate the key ${"sk-" + "a".repeat(24)} in config`)).toBeUndefined();
+		expect(sendable(`use ${"ghp_" + "b".repeat(30)}`)).toBeUndefined();
+		const [mac, linux] = ["/" + "Users/someone", "/" + "home/dev"];
+		expect(sendable(`fix the build script in ${mac}/src/app and ${linux}/x`)).toBe("fix the build script in ~/src/app and ~/x");
+	});
+
+	test("a prompt with a credential gives no hint and makes no call", async () => {
+		let calls = 0;
+		const fetch: FetchLike = async () => (calls++, new Response("{}"));
+		expect(await taskHintFor(`please rotate the deploy token ${"ghp_" + "c".repeat(30)} today`, import.meta.dir, seededCache("elijah-rou/agent-kit", { visibility: "PUBLIC", at: Date.now() }), fetch)).toBeUndefined();
+		expect(calls).toBe(0);
+	});
+
+	test("a hanging Jev never holds a prompt past the deadline", async () => {
+		const hanging: FetchLike = (_input, init) => new Promise((_, reject) => init.signal?.addEventListener("abort", () => reject(new DOMException("timed out", "TimeoutError"))));
+		const started = Date.now();
+		const hint = await taskHintFor("Store verdicts in a new SQLite database and migrate rows", import.meta.dir, seededCache("elijah-rou/agent-kit", { visibility: "PUBLIC", at: Date.now() }), hanging);
+		expect(hint).toBeUndefined();
+		expect(Date.now() - started).toBeLessThan(HINT_DEADLINE_MS + 500);
+	});
+
+	test("a future-dated or failed cache entry is not trusted as public", async () => {
+		const future = seededCache("o/r", { visibility: "PUBLIC", at: Date.now() + 10 * 86_400_000 });
+		expect(await isPublic("o/r", { env: future, timeoutMs: 0 })).toBe(false);
+		const failed = seededCache("o/r", { visibility: "UNKNOWN", at: Date.now() });
+		expect(await isPublic("o/r", { env: failed, timeoutMs: 0 })).toBe(false);
+		const fresh = seededCache("o/r", { visibility: "PUBLIC", at: Date.now() });
+		expect(await isPublic("o/r", { env: fresh, timeoutMs: 0 })).toBe(true);
+		expect(await isPublic("o/r", { env: fresh, fresh: true, timeoutMs: 0 })).toBe(false);
 	});
 });

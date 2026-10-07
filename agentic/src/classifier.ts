@@ -318,7 +318,7 @@ function classifySimple(simple: SimpleCommand, line: string, ctx: ClassifyContex
 	return out;
 }
 
-const READ_ONLY = new Set(["cat", "head", "tail", "less", "more", "grep", "egrep", "rg", "ls", "wc", "diff", "jq", "bat", "stat", "file", "test", "[", "realpath", "readlink", "du", "sha256sum", "shasum", "md5", "md5sum", "column", "sort", "uniq", "cut", "echo", "printf", "basename", "dirname", "tree", "eza"]);
+const READ_ONLY = new Set(["cat", "head", "tail", "less", "more", "grep", "egrep", "rg", "ls", "wc", "diff", "jq", "bat", "stat", "file", "test", "[", "realpath", "readlink", "du", "sha256sum", "shasum", "md5", "md5sum", "column", "sort", "uniq", "cut", "echo", "printf", "basename", "dirname", "tree", "eza", "cd", "pushd", "popd"]);
 /** Git subcommands that rewrite the working tree or move HEAD under it. */
 const GIT_REWRITES_TREE = new Set(["checkout", "switch", "reset", "restore", "stash", "clean", "rebase", "merge", "pull", "am", "apply", "cherry-pick", "revert", "rm", "mv", "worktree", "bisect", "sparse-checkout", "read-tree", "checkout-index", "update-index", "filter-branch", "filter-repo"]);
 

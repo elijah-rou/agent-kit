@@ -206,7 +206,7 @@ describe("protected configuration paths", () => {
 	test("cd semantics: certain after &&, uncertain after ; or a subshell; ordinary cd work stays allowed", async () => {
 		const ws = setup();
 		const run = async (command: string) => ({ command, decision: (await evaluateToolCall({ toolName: "bash", input: { command }, cwd: ws.repo }, ws.deps)).decision });
-		for (const command of ["cd src && mv ../a.ts .", "cd src && rsync -a ../build/ .", "cd /tmp/scratch && cp -R ../tmpl/ .", "cd a && cd b && rm -rf build", "(cd src && make); ls"]) {
+		for (const command of ["cd src && mv ../a.ts .", "cd src && rsync -a ../build/ .", "cd /tmp/scratch && cp -R ../tmpl/ .", "cd a && cd b && rm -rf build", "(cd src && make); ls", "cd .agents/policy && ls", "pushd .agents && popd"]) {
 			expect(await run(command)).toEqual({ command, decision: "allow" });
 		}
 		for (const command of ["cd /nonexistent && true; rm -rf .agents/orch", "cd src || rm -rf .agents/orch", "ORCH_STORE=.agents/orch; export ORCH_STORE; agentic orch status", "ditto fake ."]) {

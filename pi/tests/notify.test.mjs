@@ -4,16 +4,25 @@ const stripTypeScriptTypes = (source) => new Bun.Transpiler({ loader: "ts" }).tr
 import vm from "node:vm";
 import test from "node:test";
 import { execFile as execFileReal } from "node:child_process";
+import * as fsReal from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { endsOnBlocker } from "../../agentic/src/interaction.ts";
 
 const source = stripTypeScriptTypes(readFileSync(new URL("../extensions/notify.ts", import.meta.url), "utf8")
-  .replace("export default function", "function register"));
+  .replace("export default function", "function register")
+  .replace('import { endsOnBlocker } from "../../agentic/src/interaction.ts";', ""));
 const context = { mode: "tui", hasUI: true, cwd: "/repo/project", sessionManager: { getSessionFile: () => undefined }, ui: { notify() {} } };
 
 function fixture(env = {}, platform = "linux") {
   const handlers = new Map();
   const calls = [];
   const register = vm.runInNewContext(`${source}\nregister;`, {
-    require: () => ({ execFile: (file, args, options, callback) => {
+    endsOnBlocker,
+    JSON,
+    Date,
+    require: (name) => name === "fs" ? fsReal : ({ execFile: (file, args, options, callback) => {
       const call = { file, args, options, callback, killed: [] };
       calls.push(call);
       return { stdin: { end() { call.stdinClosed = true; } }, kill: signal => { call.killed.push(signal); return true; } };
@@ -21,9 +30,10 @@ function fixture(env = {}, platform = "linux") {
     Buffer,
     process: { platform, env, stdout: { write: text => calls.push({ file: "stdout", args: [text] }) } },
   });
-  register({ on: (name, handler) => handlers.set(name, handler) });
+  const commands = new Map();
+  register({ on: (name, handler) => handlers.set(name, handler), registerCommand: (name, command) => commands.set(name, command) });
   const emit = (name, event = {}, ctx = context) => handlers.get(name)?.(event, ctx);
-  return { calls, emit, complete(text, ctx = context) {
+  return { calls, emit, commands, complete(text, ctx = context) {
     emit("agent_end", { messages: [{ role: "assistant", content: text }] }, ctx);
     return emit("agent_settled", {}, ctx);
   } };
@@ -122,14 +132,15 @@ test("summary subprocess receives EOF and completes instead of waiting for timeo
   const delivered = new Promise(resolve => {
     const register = vm.runInNewContext(`${source}\nregister;`, {
       Buffer,
-      require: () => ({ execFile(file, args, options, callback) {
+      endsOnBlocker,
+      require: (name) => name === "fs" ? fsReal : ({ execFile(file, args, options, callback) {
         if (file === "pi") return execFileReal(process.execPath, ["-e", 'process.stdin.resume(); process.stdin.on("end", () => process.stdout.write("Summary after EOF"));'], { ...options, timeout: 1000 }, callback);
         resolve(args[1]);
         return { kill() { return true; } };
       } }),
       process: { platform: "linux", env: {}, stdout: { write() {} } },
     });
-    register({ on(name, handler) { handlers.set(name, handler); } });
+    register({ on(name, handler) { handlers.set(name, handler); }, registerCommand() {} });
     handlers.get("agent_end")({ messages: [{ role: "assistant", content: "fallback" }] }, context);
     handlers.get("agent_settled")({}, context);
   });
@@ -146,4 +157,28 @@ test("summary input is bounded and only recent conversation is included", () => 
   assert.equal(f.calls[0].file, "pi");
   assert.ok(f.calls[0].args.at(-1).length < 17000);
   assert.doesNotMatch(f.calls[0].args.at(-1), /old excluded context/);
+});
+
+test("focus mode holds back non-blocking turns in the digest and still notifies blockers", async () => {
+  const home = mkdtempSync(join(tmpdir(), "pi-focus-"));
+  try {
+    const f = fixture({ AGENTIC_HOME: home });
+    const shown = [];
+    const ui = { ui: { notify: (message) => shown.push(message) } };
+    await f.commands.get("focus").handler("on", ui);
+    f.complete("Needs you: nothing\n\n## Done\nRefactored the parser.");
+    assert.equal(f.calls.length, 0);
+    f.complete("Needs you: choose the merge style for PR 12.");
+    assert.equal(f.calls[0].file, "pi");
+    await f.commands.get("digest").handler("", ui);
+    assert.match(shown.at(-1), /Refactored the parser/);
+    await f.commands.get("digest").handler("", ui);
+    assert.equal(shown.at(-1), "Digest is empty");
+    await f.commands.get("focus").handler("off", ui);
+    const g = fixture({ AGENTIC_HOME: home });
+    g.complete("Refactored the parser.");
+    assert.equal(g.calls[0].file, "pi");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });

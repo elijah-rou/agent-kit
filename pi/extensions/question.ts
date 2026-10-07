@@ -1,7 +1,11 @@
 /**
  * Question Tool - Single question with options
  * Full custom UI: options list + inline editor for "Type something..."
- * Escape in editor returns to options, Escape in options cancels
+ * Escape in editor returns to options, Escape in options dismisses the question.
+ *
+ * Every question carries a recommendation with its reason and the default the agent takes if the
+ * user does not answer. Without a UI, or when the user dismisses it, the default applies and the
+ * result says so; a defaulted answer is never approval for anything the policy gate blocked.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -20,6 +24,8 @@ interface QuestionDetails {
 	options: string[];
 	answer: string | null;
 	wasCustom?: boolean;
+	defaulted?: boolean;
+	rejected?: string[];
 }
 
 // Options with labels and optional descriptions
@@ -31,35 +37,59 @@ const OptionSchema = Type.Object({
 const QuestionParams = Type.Object({
 	question: Type.String({ description: "The question to ask the user" }),
 	options: Type.Array(OptionSchema, { description: "Options for the user to choose from" }),
+	recommendation: Type.String({ description: "Label of the option you recommend" }),
+	recommendationReason: Type.String({ description: "Why you recommend it, in one sentence" }),
+	default: Type.String({ description: "Label of the option you will take if the user does not answer" }),
+	defaultAfter: Type.String({ description: "When the default applies, for example 'if no answer this session'" }),
 });
+
+function contractProblems(params: { options: OptionWithDesc[]; recommendation: string; recommendationReason: string; default: string; defaultAfter: string }): string[] {
+	const labels = params.options.map((o) => o.label);
+	const problems: string[] = [];
+	if (labels.length < 2) problems.push("give at least two options");
+	if (!labels.includes(params.recommendation)) problems.push("recommendation must be one of the option labels");
+	if (!labels.includes(params.default)) problems.push("default must be one of the option labels");
+	if (!params.recommendationReason?.trim()) problems.push("give the reason for the recommendation");
+	if (!params.defaultAfter?.trim()) problems.push("say when the default applies");
+	return problems;
+}
+
+function defaultedText(params: { default: string; defaultAfter: string }, why: string): string {
+	return `${why} Taking the default: ${params.default} (${params.defaultAfter}). This is not user approval: anything the policy gate blocked stays blocked, so draft it for the user instead, and list this decision under "Needs you" in the report.`;
+}
 
 export default function question(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "question",
 		label: "Question",
-		description: "Ask the user a question and let them pick from options. Use when you need user input to proceed.",
+		description:
+			"Ask the user a decision only they can make: give concrete options, your recommendation with its reason, and the default you will take and when. Do not ask about reversible choices you can make and report. Never use it to get approval for a command the policy gate blocked.",
+		promptSnippet: "question: ask the user a real decision, with options, a recommendation, and a default",
 		parameters: QuestionParams,
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const simpleOptions = params.options.map((o) => o.label);
+			const problems = contractProblems(params);
+			if (problems.length > 0) {
+				return {
+					content: [{ type: "text", text: `Question rejected: ${problems.join("; ")}. Fix it and ask again.` }],
+					details: { question: params.question, options: simpleOptions, answer: null, rejected: problems } as QuestionDetails,
+				};
+			}
+
 			if (!ctx.hasUI) {
 				return {
-					content: [{ type: "text", text: "Error: UI not available (running in non-interactive mode)" }],
-					details: {
-						question: params.question,
-						options: params.options.map((o) => o.label),
-						answer: null,
-					} as QuestionDetails,
+					content: [{ type: "text", text: defaultedText(params, "No user is attached.") }],
+					details: { question: params.question, options: simpleOptions, answer: params.default, defaulted: true } as QuestionDetails,
 				};
 			}
 
-			if (params.options.length === 0) {
-				return {
-					content: [{ type: "text", text: "Error: No options provided" }],
-					details: { question: params.question, options: [], answer: null } as QuestionDetails,
-				};
-			}
-
-			const allOptions: DisplayOption[] = [...params.options, { label: "Type something.", isOther: true }];
+			const marked = params.options.map((o) => {
+				const tags = [o.label === params.recommendation ? "recommended" : "", o.label === params.default ? "default" : ""].filter(Boolean);
+				const why = o.label === params.recommendation ? params.recommendationReason : "";
+				return { ...o, tag: tags.length ? ` (${tags.join(", ")})` : "", description: [o.description, why].filter(Boolean).join(" ") || undefined };
+			});
+			const allOptions: (DisplayOption & { tag?: string })[] = [...marked, { label: "Type something.", isOther: true }];
 
 			const result = await ctx.ui.custom<{ answer: string; wasCustom: boolean; index?: number } | null>(
 				(tui, theme, _kb, done) => {
@@ -151,12 +181,13 @@ export default function question(pi: ExtensionAPI) {
 							const isOther = opt.isOther === true;
 							const prefix = selected ? theme.fg("accent", "> ") : "  ";
 
+							const tag = opt.tag ? theme.fg("muted", opt.tag) : "";
 							if (isOther && editMode) {
 								add(prefix + theme.fg("accent", `${i + 1}. ${opt.label} ✎`));
 							} else if (selected) {
-								add(prefix + theme.fg("accent", `${i + 1}. ${opt.label}`));
+								add(prefix + theme.fg("accent", `${i + 1}. ${opt.label}`) + tag);
 							} else {
-								add(`  ${theme.fg("text", `${i + 1}. ${opt.label}`)}`);
+								add(`  ${theme.fg("text", `${i + 1}. ${opt.label}`)}${tag}`);
 							}
 
 							// Show description if present
@@ -177,7 +208,7 @@ export default function question(pi: ExtensionAPI) {
 						if (editMode) {
 							add(theme.fg("dim", " Enter to submit • Esc to go back"));
 						} else {
-							add(theme.fg("dim", " ↑↓ navigate • Enter to select • Esc to cancel"));
+							add(theme.fg("dim", ` ↑↓ navigate • Enter to select • Esc takes the default (${params.default})`));
 						}
 						add(theme.fg("accent", "─".repeat(width)));
 
@@ -195,13 +226,10 @@ export default function question(pi: ExtensionAPI) {
 				},
 			);
 
-			// Build simple options list for details
-			const simpleOptions = params.options.map((o) => o.label);
-
 			if (!result) {
 				return {
-					content: [{ type: "text", text: "User cancelled the selection" }],
-					details: { question: params.question, options: simpleOptions, answer: null } as QuestionDetails,
+					content: [{ type: "text", text: defaultedText(params, "The user dismissed the question without choosing.") }],
+					details: { question: params.question, options: simpleOptions, answer: params.default, defaulted: true } as QuestionDetails,
 				};
 			}
 
@@ -245,8 +273,14 @@ export default function question(pi: ExtensionAPI) {
 				return new Text(text?.type === "text" ? text.text : "", 0, 0);
 			}
 
+			if (details.rejected) {
+				return new Text(theme.fg("error", `Rejected: ${details.rejected.join("; ")}`), 0, 0);
+			}
 			if (details.answer === null) {
 				return new Text(theme.fg("warning", "Cancelled"), 0, 0);
+			}
+			if (details.defaulted) {
+				return new Text(theme.fg("warning", "Default taken: ") + theme.fg("accent", details.answer), 0, 0);
 			}
 
 			if (details.wasCustom) {

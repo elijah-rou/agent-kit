@@ -3,6 +3,10 @@
  *
  * Single question: simple options list
  * Multiple questions: tab bar navigation between questions
+ *
+ * Every question carries a recommendation with its reason and a default. Without a UI, or for
+ * questions left unanswered when the user dismisses the questionnaire, the defaults apply and the
+ * result says so; a defaulted answer is never approval for anything the policy gate blocked.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -33,6 +37,10 @@ interface Question {
 	prompt: string;
 	options: QuestionOption[];
 	allowOther: boolean;
+	recommendation: string;
+	recommendationReason: string;
+	default: string;
+	defaultAfter: string;
 }
 
 interface Answer {
@@ -41,6 +49,7 @@ interface Answer {
 	label: string;
 	wasCustom: boolean;
 	index?: number;
+	defaulted?: boolean;
 }
 
 interface QuestionnaireResult {
@@ -66,6 +75,10 @@ const QuestionSchema = Type.Object({
 	prompt: Type.String({ description: "The full question text to display" }),
 	options: Type.Array(QuestionOptionSchema, { description: "Available options to choose from" }),
 	allowOther: Type.Optional(Type.Boolean({ description: "Allow 'Type something' option (default: true)" })),
+	recommendation: Type.String({ description: "Value of the option you recommend" }),
+	recommendationReason: Type.String({ description: "Why you recommend it, in one sentence" }),
+	default: Type.String({ description: "Value of the option you will take if the user does not answer" }),
+	defaultAfter: Type.String({ description: "When the default applies, for example 'if no answer this session'" }),
 });
 
 const QuestionnaireParams = Type.Object({
@@ -82,18 +95,36 @@ function errorResult(
 	};
 }
 
+function contractProblems(questions: Question[]): string[] {
+	return questions.flatMap((q) => {
+		const values = q.options.map((o) => o.value);
+		const problems: string[] = [];
+		if (values.length < 2) problems.push("give at least two options");
+		if (!values.includes(q.recommendation)) problems.push("recommendation must be one of the option values");
+		if (!values.includes(q.default)) problems.push("default must be one of the option values");
+		if (!q.recommendationReason?.trim()) problems.push("give the reason for the recommendation");
+		if (!q.defaultAfter?.trim()) problems.push("say when the default applies");
+		return problems.map((problem) => `${q.label}: ${problem}`);
+	});
+}
+
+function defaultAnswer(q: Question): Answer {
+	const index = q.options.findIndex((o) => o.value === q.default);
+	return { id: q.id, value: q.default, label: q.options[index].label, wasCustom: false, index: index + 1, defaulted: true };
+}
+
+const NOT_APPROVAL =
+	'Defaulted answers are not user approval: anything the policy gate blocked stays blocked, so draft it for the user instead, and list these decisions under "Needs you" in the report.';
+
 export default function questionnaire(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "questionnaire",
 		label: "Questionnaire",
 		description:
-			"Ask the user one or more questions. Use for clarifying requirements, getting preferences, or confirming decisions. For single questions, shows a simple option list. For multiple questions, shows a tab-based interface.",
+			"Ask the user one or more decisions only they can make. Each question needs concrete options, your recommendation with its reason, and the default you will take and when. Do not ask about reversible choices you can make and report. Never use it to get approval for a command the policy gate blocked.",
 		parameters: QuestionnaireParams,
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			if (!ctx.hasUI) {
-				return errorResult("Error: UI not available (running in non-interactive mode)");
-			}
 			if (params.questions.length === 0) {
 				return errorResult("Error: No questions provided");
 			}
@@ -104,6 +135,24 @@ export default function questionnaire(pi: ExtensionAPI) {
 				label: q.label || `Q${i + 1}`,
 				allowOther: q.allowOther !== false,
 			}));
+			const problems = contractProblems(questions);
+			if (problems.length > 0) {
+				return errorResult(`Questionnaire rejected: ${problems.join("; ")}. Fix it and ask again.`, questions);
+			}
+			if (!ctx.hasUI) {
+				const answers = questions.map(defaultAnswer);
+				return {
+					content: [{ type: "text", text: `No user is attached; taking the defaults:\n${answers.map((a) => `${questions.find((q) => q.id === a.id)?.label}: ${a.label} (${questions.find((q) => q.id === a.id)?.defaultAfter})`).join("\n")}\n${NOT_APPROVAL}` }],
+					details: { questions, answers, cancelled: false },
+				};
+			}
+			// Show the recommendation and the default under their options; returned labels stay unchanged.
+			for (const q of questions) {
+				q.options = q.options.map((o) => {
+					const notes = [o.description, o.value === q.recommendation ? `Recommended: ${q.recommendationReason}` : "", o.value === q.default ? `Default ${q.defaultAfter}.` : ""].filter(Boolean);
+					return { ...o, description: notes.join(" ") || undefined };
+				});
+			}
 
 			const isMulti = questions.length > 1;
 			const totalTabs = questions.length + 1; // questions + Submit
@@ -346,7 +395,7 @@ export default function questionnaire(pi: ExtensionAPI) {
 							lines.push(` ${line}`);
 						}
 						lines.push("");
-						addWrappedWithPrefix(" ", theme.fg("dim", "Enter to submit • Esc to cancel"));
+						addWrappedWithPrefix(" ", theme.fg("dim", "Enter to submit • Esc takes the defaults"));
 					} else if (currentTab === questions.length) {
 						addWrappedWithPrefix(" ", theme.fg("accent", theme.bold("Ready to submit")));
 						lines.push("");
@@ -377,8 +426,8 @@ export default function questionnaire(pi: ExtensionAPI) {
 					lines.push("");
 					if (!inputMode) {
 						const help = isMulti
-							? "Tab/←→ navigate • ↑↓ select • Enter confirm • Esc cancel"
-							: "↑↓ navigate • Enter select • Esc cancel";
+							? "Tab/←→ navigate • ↑↓ select • Enter confirm • Esc takes the defaults"
+							: "↑↓ navigate • Enter select • Esc takes the default";
 						addWrappedWithPrefix(" ", theme.fg("dim", help));
 					}
 					lines.push(theme.fg("accent", "─".repeat(renderWidth)));
@@ -398,24 +447,22 @@ export default function questionnaire(pi: ExtensionAPI) {
 				};
 			});
 
-			if (result.cancelled) {
-				return {
-					content: [{ type: "text", text: "User cancelled the questionnaire" }],
-					details: result,
-				};
-			}
-
-			const answerLines = result.answers.map((a) => {
-				const qLabel = questions.find((q) => q.id === a.id)?.label || a.id;
+			const answers = questions.map((q) => result.answers.find((a) => a.id === q.id) ?? defaultAnswer(q));
+			const answerLines = answers.map((a) => {
+				const q = questions.find((candidate) => candidate.id === a.id);
+				const qLabel = q?.label || a.id;
+				if (a.defaulted) return `${qLabel}: not answered; default taken: ${a.label} (${q?.defaultAfter})`;
 				if (a.wasCustom) {
 					return `${qLabel}: user wrote: ${a.label}`;
 				}
 				return `${qLabel}: user selected: ${a.index}. ${a.label}`;
 			});
+			const defaulted = answers.some((a) => a.defaulted);
+			const intro = result.cancelled ? "The user dismissed the questionnaire.\n" : "";
 
 			return {
-				content: [{ type: "text", text: answerLines.join("\n") }],
-				details: result,
+				content: [{ type: "text", text: `${intro}${answerLines.join("\n")}${defaulted ? `\n${NOT_APPROVAL}` : ""}` }],
+				details: { ...result, answers, cancelled: false },
 			};
 		},
 
@@ -441,6 +488,9 @@ export default function questionnaire(pi: ExtensionAPI) {
 				return new Text(theme.fg("warning", "Cancelled"), 0, 0);
 			}
 			const lines = details.answers.map((a) => {
+				if (a.defaulted) {
+					return `${theme.fg("warning", "• ")}${theme.fg("accent", a.id)}: ${theme.fg("muted", "(default) ")}${a.label}`;
+				}
 				if (a.wasCustom) {
 					return `${theme.fg("success", "✓ ")}${theme.fg("accent", a.id)}: ${theme.fg("muted", "(wrote) ")}${a.label}`;
 				}

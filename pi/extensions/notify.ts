@@ -6,9 +6,14 @@
  * - OSC 777: Ghostty, iTerm2, WezTerm, rxvt-unicode
  * - OSC 99: Kitty
  * - Windows toast: Windows Terminal (WSL)
+ *
+ * Focus mode (/focus on|off) is per machine: while it is on, only turns that end on a blocker (a
+ * non-empty "Needs you" section) notify; every other turn is appended to the digest, which
+ * /digest shows and clears. Both files live in $AGENTIC_HOME (default ~/.config/agentic).
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { endsOnBlocker } from "../../agentic/src/interaction.ts";
 
 type ProcessHandle = { stdin?: { end(): void } | null; kill(signal: string): boolean };
 type ExecFile = (
@@ -36,7 +41,18 @@ type SessionShutdownContext = {
 	ui: { notify(message: string, level: "info"): void };
 };
 
-declare const require: (module: "child_process") => { execFile: ExecFile };
+type FileSystem = {
+	existsSync(path: string): boolean;
+	readFileSync(path: string, encoding: "utf8"): string;
+	writeFileSync(path: string, text: string): void;
+	appendFileSync(path: string, text: string): void;
+	mkdirSync(path: string, options: { recursive: true }): void;
+};
+
+declare const require: {
+	(module: "child_process"): { execFile: ExecFile };
+	(module: "fs"): FileSystem;
+};
 declare const process: {
 	platform: string;
 	env: Record<string, string | undefined>;
@@ -44,6 +60,7 @@ declare const process: {
 };
 
 const { execFile } = require("child_process");
+const fs = require("fs");
 
 const NOTIFY_SUMMARY_MAX_CHARS = 220;
 // The deadline includes CLI startup and shutdown, not only model generation.
@@ -170,6 +187,30 @@ function fallbackSummary(event: AgentEndEvent): string {
 	return "Ready for input";
 }
 
+function agenticHome(): string {
+	return process.env.AGENTIC_HOME ?? `${process.env.HOME}/.config/agentic`;
+}
+
+function focusOn(): boolean {
+	const file = `${agenticHome()}/focus`;
+	return fs.existsSync(file) && fs.readFileSync(file, "utf8").trim() === "on";
+}
+
+function lastAssistantText(event: AgentEndEvent): string {
+	const messages = event.messages ?? [];
+	for (let i = messages.length - 1; i >= 0; i -= 1) {
+		if (messages[i]?.role === "assistant") return textFromContent(messages[i].content);
+	}
+	return "";
+}
+
+type DigestItem = { at: string; title: string; summary: string };
+
+function appendDigest(item: DigestItem): void {
+	fs.mkdirSync(agenticHome(), { recursive: true });
+	fs.appendFileSync(`${agenticHome()}/digest.jsonl`, `${JSON.stringify(item)}\n`);
+}
+
 function notificationTitle(pi: ExtensionAPI, ctx: AgentEndContext): string {
 	const getSessionName = (pi as { getSessionName?: () => string | undefined }).getSessionName;
 	const name = getSessionName?.();
@@ -222,10 +263,42 @@ export default function (pi: ExtensionAPI) {
 		pending = undefined;
 		queued = undefined;
 	});
+	pi.registerCommand("focus", {
+		description: "Focus mode on every Pi session on this machine: only blockers notify; the rest goes to /digest (on|off)",
+		handler: async (args: string, ctx: { ui: { notify(message: string, level: "info" | "error"): void } }) => {
+			const value = args.trim();
+			if (value !== "on" && value !== "off") {
+				ctx.ui.notify(`usage: /focus on|off (now ${focusOn() ? "on" : "off"})`, "error");
+				return;
+			}
+			fs.mkdirSync(agenticHome(), { recursive: true });
+			fs.writeFileSync(`${agenticHome()}/focus`, `${value}\n`);
+			ctx.ui.notify(`Focus mode ${value}`, "info");
+		},
+	});
+	pi.registerCommand("digest", {
+		description: "Show and clear the turns held back while focus mode was on",
+		handler: async (_args: string, ctx: { ui: { notify(message: string, level: "info"): void } }) => {
+			const file = `${agenticHome()}/digest.jsonl`;
+			const items = fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line) as DigestItem) : [];
+			if (items.length === 0) {
+				ctx.ui.notify("Digest is empty", "info");
+				return;
+			}
+			ctx.ui.notify(items.map(item => `${item.at} ${item.title}: ${item.summary}`).join("\n"), "info");
+			fs.writeFileSync(file, "");
+		},
+	});
+
 	pi.on("agent_end", (event: AgentEndEvent, ctx: AgentEndContext) => {
 		if (closed || ctx.mode !== "tui" || process.env.PI_SUBAGENT_CHILD === "1") return;
 		sequence++;
 		queued = undefined;
+		if (focusOn() && !endsOnBlocker(lastAssistantText(event))) {
+			pending = undefined;
+			appendDigest({ at: new Date().toISOString(), title: plainNotificationText(notificationTitle(pi, ctx)), summary: fallbackSummary(event) });
+			return;
+		}
 		const transcript = (event.messages ?? []).slice(-8)
 			.map(message => {
 				const text = textFromContent(message.content).slice(-2048).trim();

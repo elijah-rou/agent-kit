@@ -66,6 +66,8 @@ async function main(args: string[]): Promise<number> {
 
 	const ledger = openStore(store);
 	try {
+		// Idempotent: a repository's first verdict creates its store.
+		await ledger.init();
 		await ledger.ledger.record({ pr, sha: head.headRefOid, verdict, evidence: evidenceCell(evidence, patchId), verifier: process.env.AGENTIC_AGENT_ID ?? "agentic-verify" });
 	} finally {
 		await ledger.close();

@@ -5,11 +5,12 @@ import { desiredRuleset, ruleDiff, RULESET_NAME, splitChecks, verified, type Rul
 const USAGE = `Usage: rulesets <plan | apply> <owner/repo> [--tier baseline|merge-gate]
 
 Keep the "${RULESET_NAME}" GitHub ruleset on a repository's default branch: the server-side
-backstop for the local policy gate. It has no bypass actors, because agents use your token.
+backstop for agents. It has no bypass actors, because agents use your token.
 
   baseline    (default) no deletion, no force-push, linear history. No friction for direct pushes.
   merge-gate  baseline plus a pull request and the CI checks that passed on the default branch
-              head. Everyone then lands through pull requests; use it from autonomy A3.
+              head. Everyone then lands through pull requests; use it where a
+              repository lands verified stacks.
 
 plan   Read-only. Prints the repository, the desired ruleset, and what apply would change.
 apply  Creates or updates the ruleset (it changes remote settings, so it needs the user's

@@ -6,8 +6,15 @@
  *   explain <cmd>   classify and evaluate a shell command in the current directory
  *   validate        validate global and repo policies against the schema
  *   status [--json] the effective autonomy level for the current repository and its inputs
- * Tool subcommands pass their arguments through to the tool's own CLI:
- *   decision-log    append-only decision trail (tools/decision-log)
+ * Tool subcommands pass their arguments through to the tool's own CLI (each has --help):
+ *   decision-log      append-only decision trail (tools/decision-log)
+ *   feature-map-lint  validate a verification skill's feature map (tools/feature-map-lint)
+ *   report-lint       check a final report against the interaction contract (tools/report-lint)
+ *   rule-table        check rules.toml and find instructions that restate enforced rules (tools/rule-table)
+ *   upstream-drift    report upstream changes since each adapted skill's or vendored tool's commit (tools/upstream-drift)
+ *   orch              program store and verdict ledger, vendored from pstack (vendor/orch)
+ *   watch-pr          pull request and stack watcher, vendored from pstack (vendor/watch-pr)
+ *   learning          learning loop: consolidate, approve, status (src/learning)
  */
 import { evaluateToolCall, recordDecision, validateAll, type JevFilter } from "../src/pipeline.ts";
 import { effectiveLevel, gitContext, grantsPath, readGrants, readRepoConfig, sessionFromEnv } from "../src/facts.ts";
@@ -18,6 +25,13 @@ import { join } from "node:path";
 
 const TOOLS: Record<string, string> = {
 	"decision-log": "tools/decision-log/cli.ts",
+	"feature-map-lint": "tools/feature-map-lint/cli.ts",
+	"report-lint": "tools/report-lint/cli.ts",
+	"rule-table": "tools/rule-table/cli.ts",
+	"upstream-drift": "tools/upstream-drift/cli.ts",
+	orch: "vendor/orch/orch.ts",
+	"watch-pr": "vendor/watch-pr/watch-pr",
+	learning: "src/learning/cli.ts",
 };
 
 const HOOK_DEADLINE_MS = Number(process.env.AGENTIC_HOOK_DEADLINE_MS ?? 8000);

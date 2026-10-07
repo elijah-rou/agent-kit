@@ -1,0 +1,29 @@
+[[rule]]
+id = "no-push-to-main"
+statement = "Never push directly to the default branch."
+level = "cedar"
+enforcer = { kind = "cedar", ref = "pause-default-branch" }
+proof = { test = "tests/policy-proof.ts", past_mistake = "2026-09-30: an agent pushed a fix straight to main" }
+
+[[rule]]
+id = "no-force-push"
+statement = "Do not force-push shared branches."
+level = "cedar"
+enforcer = { kind = "cedar", ref = "no-force-push" }
+proof = { test = "tests/policy-proof.ts", past_mistake = "2026-08-12: a rebase force-pushed over a teammate's commits" }
+
+[[rule]]
+id = "named-exports"
+statement = "Use named exports only."
+level = "lint"
+enforcer = { kind = "lint", ref = "lint/config.json" }
+proof = { test = "tests/policy-proof.ts", past_mistake = "2026-07-01: a default export broke a re-export" }
+
+[[rule]]
+id = "lead-with-answer"
+statement = "Lead every reply with the answer."
+level = "instruction"
+enforcer = { kind = "instruction", ref = "AGENTS.md" }
+proof = { test = "tests/eval-proof.ts", past_mistake = "" }
+judgment = true
+judgment_reason = "Whether a reply leads with the answer needs reading comprehension, not a pattern."

@@ -14,6 +14,7 @@
     "agentic": "./agentic/bin/agentic"
   },
   "dependencies": {
-    "@cedar-policy/cedar-wasm": "4.13.0"
+    "@cedar-policy/cedar-wasm": "4.13.0",
+    "commander": "14.0.0"
   }
 }

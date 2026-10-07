@@ -1,0 +1,51 @@
+[[rule]]
+id = "dup"
+statement = "First."
+level = "cedar"
+enforcer = { kind = "cedar", ref = "present" }
+proof = { test = "tests/real-proof.ts", past_mistake = "real" }
+
+[[rule]]
+id = "dup"
+statement = "Second with the same id."
+level = "cedar"
+enforcer = { kind = "cedar", ref = "commented-out" }
+proof = { test = "tests/real-proof.ts", past_mistake = "real" }
+
+[[rule]]
+id = "missing-files"
+statement = "References that do not resolve."
+level = "hook"
+enforcer = { kind = "hook", ref = "hooks/nope.ts" }
+proof = { test = "tests/nope-proof.ts", past_mistake = "real" }
+
+[[rule]]
+id = "no-past-mistake"
+statement = "A check with no recorded mistake."
+level = "test"
+enforcer = { kind = "test", ref = "tests/real-proof.ts" }
+proof = { test = "tests/real-proof.ts", past_mistake = "  " }
+
+[[rule]]
+id = "judgment-missing"
+statement = "An instruction without a judgment flag."
+level = "instruction"
+enforcer = { kind = "instruction", ref = "tests/real-proof.ts" }
+proof = { test = "tests/real-proof.ts", past_mistake = "" }
+
+[[rule]]
+id = "judgment-misplaced"
+statement = "Judgment on an enforced level."
+level = "types"
+enforcer = { kind = "types", ref = "tests/real-proof.ts" }
+proof = { test = "tests/real-proof.ts", past_mistake = "real" }
+judgment = true
+judgment_reason = "should not be here"
+
+[[rule]]
+id = "schema-errors"
+statement = ""
+level = "vibes"
+enforcer = { kind = "lint" }
+proof = { test = "tests/real-proof.ts", past_mistake = "real", pastmistake = "typo" }
+severity = "high"

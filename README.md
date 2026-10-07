@@ -10,7 +10,7 @@ for whichever agents a machine selects; agent configuration (models, providers, 
 | `pi/` | Pi | `AGENTS.md`, worktree guidance, extensions and their tests, prompt, theme |
 | `codex/` | Codex | `AGENTS.md`, native tool notes, and the skills Codex exports |
 | `claude/` | Claude Code | `CLAUDE.md`, exported skills and adaptations, the trial-tools Mod, status line |
-| `agentic/` | Pi, Claude | The policy layer: shell classifier, Cedar policies, Jev filter, the `agentic` CLI and its Claude hook |
+| `agentic/` | Pi, Claude | The policy layer (shell classifier, Cedar policies, Jev filter), the `agentic` CLI and its Claude hook, the tools skills call through it, and `orch` and `watch-pr` vendored from pstack |
 
 The repository root is a [Pi package](https://www.npmjs.com/package/@earendil-works/pi-coding-agent): Pi loads the
 extensions, skills, prompt, and theme from it in place. Codex and Claude read linked files.
@@ -35,6 +35,9 @@ threshold = 0.05   # unreadable commands proceed only when Jev's P(yes) is at or
 
 The Jev key is read from `TYPESAFE_API_KEY` or the macOS keychain item `typesafe-jev`. Run
 `bun install` once for the Cedar dependency; `agentic status` shows the effective level in a repository.
+
+Skills reach the tools through the same CLI, as `agentic <tool>` (`decision-log`, `rule-table`, `feature-map-lint`,
+`report-lint`, `upstream-drift`, `orch`, `watch-pr`, `learning`); each tool prints its usage with `--help`.
 
 ## Develop
 

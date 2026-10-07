@@ -6,10 +6,13 @@
       "name": "agent-kit",
       "dependencies": {
         "@cedar-policy/cedar-wasm": "4.13.0",
+        "commander": "14.0.0",
       },
     },
   },
   "packages": {
     "@cedar-policy/cedar-wasm": ["@cedar-policy/cedar-wasm@4.13.0", "", {}, "sha512-1omEd/J0c7RjcfSUWiXZc6zk6XUs1IuY7Yk9TVysoKV/LpFWIk45RpjvRFVioPUR3RQmgA/DaqKhK3pucbBx1A=="],
+
+    "commander": ["commander@14.0.0", "", {}, "sha512-2uM9rYjPvyq39NwLRqaiLtWHyDC1FvryJDa2ATTVims5YAS4PupsEQsDvP14FqhFr0P49CYDugi59xaxJlTXRA=="],
   }
 }

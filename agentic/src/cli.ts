@@ -75,8 +75,9 @@ function jev(): JevFilter | undefined {
 async function claudeStop(): Promise<void> {
 	try {
 		const event = JSON.parse(await readStdin()) as { session_id?: string; stop_hook_active?: boolean };
-		// Only the stop that can still be blocked counts, so an observation-only repeat is not a turn.
-		if (event.stop_hook_active === false) process.exit(0);
+		// Every ordinary stop arrives with stop_hook_active false (observed on Claude Code 2.1.291). True
+		// means Claude is continuing because a Stop hook blocked, which is not a new turn.
+		if (event.stop_hook_active === true) process.exit(0);
 		const file = join(agenticHome(process.env), "state", "cadence", `${(event.session_id ?? "unknown").replace(/[^\w.-]/g, "_")}.json`);
 		const saved = existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as CadenceState) : { turnsSinceLast: 0, lastRunAt: null };
 		let state: CadenceState = { ...saved, turnsSinceLast: saved.turnsSinceLast + 1 };

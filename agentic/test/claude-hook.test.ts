@@ -100,11 +100,12 @@ describe("Claude Stop hook (learning cadence)", () => {
 	test("the tenth turn of a session says a reflection is due, then the count restarts", () => {
 		const home = mkdtempSync(join(tmpdir(), "claude-stop-"));
 		const stop = (event: Record<string, unknown>) => spawnSync("bun", [BIN, "claude-stop"], { input: JSON.stringify({ hook_event_name: "Stop", session_id: "s1", ...event }), env: { ...process.env, AGENTIC_HOME: home }, encoding: "utf8" });
-		const outputs = Array.from({ length: 10 }, () => stop({ stop_hook_active: true }).stdout.trim());
+		// Real stops carry stop_hook_active: false; true is a continuation forced by a Stop hook.
+		const outputs = Array.from({ length: 10 }, () => stop({ stop_hook_active: false }).stdout.trim());
 		expect(outputs.slice(0, 9).every((out) => out === "")).toBe(true);
 		expect(JSON.parse(outputs[9]).systemMessage).toContain("reflection is due");
+		for (let i = 0; i < 12; i++) expect(stop({ stop_hook_active: true }).stdout).toBe("");
 		expect(stop({ stop_hook_active: false }).stdout).toBe("");
-		expect(stop({ stop_hook_active: true }).stdout).toBe("");
 		expect(spawnSync("bun", [BIN, "claude-stop"], { input: "{not json", env: { ...process.env, AGENTIC_HOME: home }, encoding: "utf8" }).status).toBe(0);
 	});
 });

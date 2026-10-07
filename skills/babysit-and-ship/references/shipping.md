@@ -9,7 +9,7 @@ agentic verify record <pr> --verdict <verdict> --evidence <path or https URL>
 agentic verify status <pr>
 ```
 
-Ledger verdicts are `live-ui-verified`, `unit-test-verified`, `type-check-only`, `verifier-blocked`, and `verifier-failed`. A missing row checks as `NOT-VERIFIED`. Only `live-ui-verified` and `unit-test-verified` pass; behavioral changes need better than `type-check-only`. CI green and approving bot reviews are inputs to a verdict, never a verdict.
+Ledger verdicts are `live-ui-verified`, `unit-test-verified`, `type-check-only`, `verifier-blocked`, and `verifier-failed`. `agentic verify status` reports `none` with no verdict, `void` when the head moved after the verdict, and `pass` or `fail` for the current head. Only `live-ui-verified` and `unit-test-verified` pass; behavioral changes need better than `type-check-only`. CI green and approving bot reviews are inputs to a verdict, never a verdict.
 
 ## 1. Verify every PR independently
 

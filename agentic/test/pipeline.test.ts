@@ -239,6 +239,11 @@ describe("Jev friction filter for unreadable calls", () => {
 			const fresh = await run("agentic verify record 7 --verdict live-ui-verified --evidence .audit/run.log", ws, deps(ws, { principalId, isChild: principalId.split(":").length > 2 }));
 			expect({ principalId, decision: fresh.decision }).toEqual({ principalId, decision: "allow" });
 		}
+		// Observed risk from the final review: a blocked author retries through the CLI's path.
+		for (const command of ["/opt/tools/bin/agentic verify record 7 --verdict live-ui-verified --evidence x", "bun /opt/kit/agentic/bin/agentic verify record 7 --verdict live-ui-verified --evidence x", "agentic verify record --verdict live-ui-verified --evidence x 7"]) {
+			const again = await run(command, ws, author);
+			expect({ command, policies: again.policies }).toEqual({ command, policies: ["verdicts-need-a-fresh-verifier"] });
+		}
 		const forged = await run("gh api -X POST repos/example/app/statuses/head7 -f state=success -f context=agentic/verdict", ws, deps(ws, { principalId: "claude:s2" }));
 		expect(forged.policies).toEqual(["verdicts-only-through-agentic-verify"]);
 		expect((await run("agentic verify status 7", ws, author)).outsidePolicy).toBe(true);

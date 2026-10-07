@@ -451,7 +451,7 @@ export function classifyScriptText(content: string, scriptArgs: string[], ctx: C
 	return classifyCommand(kept.join("\n"), { ...ctx, forwarders }, depth + 1);
 }
 
-const KNOWN_BY_NAME = new Set(["git", "gh", "curl", "wget", "http", "https", "npm", "pnpm", "yarn", "cargo", "docker", "podman", "kubectl", "terraform", "helm", "pulumi", "fly", "flyctl", "vercel", "serverless", "security", "aws", "rm", "ssh", "eval", ...SHELLS, ...INTERPRETERS]);
+const KNOWN_BY_NAME = new Set(["agentic", "git", "gh", "curl", "wget", "http", "https", "npm", "pnpm", "yarn", "cargo", "docker", "podman", "kubectl", "terraform", "helm", "pulumi", "fly", "flyctl", "vercel", "serverless", "security", "aws", "rm", "ssh", "eval", ...SHELLS, ...INTERPRETERS]);
 const SHELL_SHEBANG = /^#!\S*(?:\/|\s|env\s+)(?:ba|z|da|k)?sh\b/;
 
 /**
@@ -488,6 +488,8 @@ function classifyInterpreter(name: string, args: string[], simple: SimpleCommand
 	const text = simple.words.join(" ");
 	if (name === "bun") {
 		const sub = args[0];
+		// bun <path>/agentic ... is the agentic CLI, whose verify record is a policy action.
+		if (sub !== undefined && basename(sub) === "agentic") return classifyOther("agentic", args.slice(1), ctx, text, depth);
 		const low = LOW_RISK_RUNNERS.find(([runner]) => runner === "bun")?.[1] ?? [];
 		if (sub && low.includes(sub)) return result();
 		if (sub === "run" && args[1] && !args[1].includes(".")) return classifyPackageScript(args[1], ctx, depth, text);
@@ -550,7 +552,8 @@ function classifyOther(name: string, args: string[], ctx: ClassifyContext, text:
 		return result();
 	}
 	if (name === "agentic" && args[0] === "verify" && args[1] === "record") {
-		return actionResult("verdict.record", { kind: "PullRequest", number: prNumber(firstPositional(args.slice(2))), headSha: "", repo: ghRepo(args, ctx) }, text);
+		// The PR is the first bare number, wherever the options sit.
+		return actionResult("verdict.record", { kind: "PullRequest", number: Number(args.slice(2).find((arg) => /^\d+$/.test(arg)) ?? 0), headSha: "", repo: ghRepo(args, ctx) }, text);
 	}
 	if (name === "cargo" && args[0] === "publish") return actionResult("release.publish", { kind: "Target", targetKind: "crate", label: "cargo publish" }, text);
 	if ((name === "twine" && args[0] === "upload") || (name === "gem" && args[0] === "push")) return actionResult("release.publish", { kind: "Target", targetKind: "package", label: text }, text);

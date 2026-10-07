@@ -57,10 +57,10 @@ Targeted criteria, met over runs:
 
 ## Findings
 
-1. **The verification skill has an effect on a cheaper model, but it is weak.**
-   - Only the current copy ever reproduced the bug before fixing it: 3 of 8 runs against 0.
-   - Even with the skill read, `gpt-5.6-luna` mostly fixed first. On `invoice-discount`, with no existing suite, three of four runs never wrote a durable regression case.
-   - The rule is right but not reliably followed. Per the correction ladder, it is a candidate for a check (for example, a hook that flags a production edit with no failing run first) rather than stronger wording.
+1. **A possible effect for the verification skill on a cheaper model; not established.**
+   - Reproduce-before-fix was met only by the current copy, 3 of 8 runs against 0 of 8, roughly p = 0.2. The pre-registered rule rejects the subject (margin 0.125).
+   - On `invoice-discount`, which has no existing suite, a durable regression case was missing in 1 of 2 current runs and 2 of 2 weakened runs.
+   - `gpt-5.6-luna` mostly fixed first even after reading the skill. If the rule matters, the correction ladder points to a check (for example, flagging a production edit with no failing run first) rather than stronger wording, but this data alone does not show the rule matters.
 2. **`design-checkpoint` over-triggers on CLI changes.** In `trail-flag-rename.current.2`, the agent read the skill, classified renaming `--km` (with the old flag kept as an alias) as a public contract, and stopped. The skill lists "CLI flags others consume" as a one-way door without saying that an additive or aliased change stays reversible. Proposed edit, pending review: "an additive change, or a rename that keeps the old name working, is reversible".
 3. **Stopping at a persisted-format change is already base-model behavior here.** Both copies stopped before production code on `trail-save-format`. Only the current copy presented concrete alternatives with a recommendation, and only in 1 of 2 runs. The design-shape review step adds little measurable over the old guidance on this model.
 4. **git-workflow:** as in the prototype, the weakened copy made single mixed commits with empty bodies.

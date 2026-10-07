@@ -17,7 +17,7 @@ Landing happens only in a mode the user invoked for this run:
 | Mode | The user says, for example | You deliver |
 |---|---|---|
 | `autopilot-stack` | "autopilot this", "build it as a verified stack" | one linear stack, every PR verified as `references/shipping.md` steps 1 and 2 describe; the user lands |
-| `ship` | "ship it", "land the stack", "going to bed, land it" | `autopilot-stack`, then land the contiguous verified run (Ship below) |
+| `ship` | "ship it", "land the stack", "going to bed, land it" | `autopilot-stack`, then land the contiguous verified run that Jev's risk screen clears (Ship below) |
 
 Check a mode's preconditions when it is invoked, and again before relying on it:
 

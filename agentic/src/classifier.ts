@@ -460,8 +460,13 @@ const SHELL_SHEBANG = /^#!\S*(?:\/|\s|env\s+)(?:ba|z|da|k)?sh\b/;
  * interpreters are checked for network or git use; compiled binaries are outside policy unless
  * their name is a recognized tool (handled before this point).
  */
+/** Reads a script the shell would run, from any directory a cd in the same command may have moved to. */
+function readScript(ctx: ClassifyContext, path: string): string | undefined {
+	return (ctx.pathCwds ?? [ctx.cwd]).map((cwd) => ctx.readFile(resolvePath({ ...ctx, cwd }, path))).find((text) => text !== undefined);
+}
+
 function classifyExecutablePath(path: string, args: string[], ctx: ClassifyContext, depth: number, text: string): CommandClassification {
-	const content = ctx.readFile(resolvePath(ctx, path));
+	const content = readScript(ctx, path);
 	if (content === undefined) return opaque(text, `cannot read ${path}`);
 	if (content.includes("\u0000")) return result();
 	const firstLine = content.split("\n", 1)[0];
@@ -473,7 +478,8 @@ function classifyExecutablePath(path: string, args: string[], ctx: ClassifyConte
 
 function classifyScriptFile(path: string | undefined, ctx: ClassifyContext, depth: number, text: string, scriptArgs: string[] = []): CommandClassification {
 	if (!path) return opaque(text, "script path missing");
-	const content = ctx.readFile(resolvePath(ctx, path));
+	// Observed: cd <repo> && <script> could not be read when resolved from the call's directory.
+	const content = readScript(ctx, path);
 	if (content === undefined) return opaque(text, `cannot read script ${path}`);
 	return classifyScriptText(content, scriptArgs, ctx, depth);
 }
@@ -563,9 +569,12 @@ function classifyOther(name: string, args: string[], ctx: ClassifyContext, text:
 	if (name === "aws" && args[0] === "iam") return actionResult("credential.change", { kind: "Target", targetKind: "aws-iam", label: text }, text);
 	if (name === "dropdb" || (name === "redis-cli" && args.some((arg) => /^flush(all|db)$/i.test(arg)))) return actionResult("data.delete", { kind: "Target", targetKind: "database", label: text }, text);
 	if (name === "rm" && args.some((arg) => /^-[a-zA-Z]*[rRf]/.test(arg))) {
-		const targets = args.filter((arg) => !arg.startsWith("-")).map((arg) => resolvePath(ctx, arg));
+		const dirs = ctx.pathCwds ?? [ctx.cwd];
+		const targets = args.filter((arg) => !arg.startsWith("-")).flatMap((arg) => dirs.map((cwd) => resolvePath({ ...ctx, cwd }, arg)));
 		const root = ctx.repoRoot ?? ctx.cwd;
-		const outside = targets.filter((target) => !(target === root || target.startsWith(`${root}/`)) && !target.startsWith("/tmp/") && !target.startsWith("/private/tmp/"));
+		// Temporary directories are scratch, not data (observed: a child agent's own $TMPDIR build context was stopped as data deletion).
+		const scratch = ["/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/", ...(ctx.env?.TMPDIR ? [`${ctx.env.TMPDIR.replace(/\/+$/, "")}/`] : [])];
+		const outside = targets.filter((target) => !(target === root || target.startsWith(`${root}/`)) && !scratch.some((prefix) => target.startsWith(prefix)));
 		if (outside.length > 0) return actionResult("data.delete", { kind: "Target", targetKind: "path", label: outside.join(" ") }, text);
 	}
 	return result();

@@ -89,6 +89,11 @@ const cases: [string, Expect][] = [
 	["terraform destroy -auto-approve", { actions: [["deploy"]] }],
 	["security add-generic-password -s x -w y", { actions: [["credential.change"]] }],
 	["rm -rf ~/Documents/old", { actions: [["data.delete"]] }],
+	["rm -rf /var/folders/5r/abc123/T/tmp.ir6kV6C7vW", { none: true }],
+	["rm -rf /tmp/build-context", { none: true }],
+	// A script reached through cd is read from the directory the shell moved to
+	["cd /work/app/tests && ./container.sh", { none: true }],
+	["cd /work && app/bin/push", { actions: [["git.push", "main"]] }],
 	// Forwarding functions and parse-only shells
 	["./verify.sh launch", { none: true }],
 	["bash verify.sh cleanup", { none: true }],

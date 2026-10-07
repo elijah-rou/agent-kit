@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
-import { desiredRuleset, ruleDiff, RULESET_NAME, splitChecks, verified, type Rule, type Tier } from "./rulesets.ts";
+import { desiredRuleset, ruleDiff, RULESET_NAME, settingsDiff, splitChecks, verified, type Rule, type Tier } from "./rulesets.ts";
 
 const USAGE = `Usage: rulesets <plan | apply> <owner/repo> [--tier baseline|merge-gate]
 
@@ -64,7 +64,11 @@ if (!listed.ok && listed.status === 403) {
 }
 if (!listed.ok) fail(`cannot list rulesets: ${listed.text}`);
 const existing = (listed.json as { id: number; name: string }[]).find((ruleset) => ruleset.name === RULESET_NAME);
-const current: Rule[] = existing ? ((gh([`repos/${repo}/rulesets/${existing.id}`]).json as { rules?: Rule[] })?.rules ?? []) : [];
+type Existing = Parameters<typeof settingsDiff>[0] & { rules?: Rule[] };
+const detail = existing ? gh([`repos/${repo}/rulesets/${existing.id}`]) : undefined;
+if (detail && !detail.ok) fail(`cannot read ruleset ${existing!.id}: ${detail.text}`);
+const existingRuleset = detail?.json as Existing | undefined;
+const current: Rule[] = existingRuleset?.rules ?? [];
 
 let checks: string[] = [];
 if (tier === "merge-gate") {
@@ -76,7 +80,8 @@ if (tier === "merge-gate") {
 
 const desired = desiredRuleset(tier, checks);
 const diff = ruleDiff(current, desired.rules);
-const changes = [...diff.add.map((type) => `+${type}`), ...diff.change.map((type) => `~${type}`), ...diff.remove.map((type) => `-${type}`)];
+const settings = existingRuleset ? settingsDiff(existingRuleset, desired) : [];
+const changes = [...settings.map((setting) => `~${setting}`), ...diff.add.map((type) => `+${type}`), ...diff.change.map((type) => `~${type}`), ...diff.remove.map((type) => `-${type}`)];
 console.log(`${repo} (${visibility}, default branch ${branch}), tier ${tier}: ${existing ? `ruleset ${existing.id}` : "no ruleset"}; ${changes.length ? `changes ${changes.join(" ")}` : "up to date"}`);
 if (tier === "merge-gate") console.log(`required checks: ${checks.join(", ")}`);
 

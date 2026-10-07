@@ -79,6 +79,21 @@ export function ruleDiff(current: readonly Rule[], desired: readonly Rule[]): { 
 	};
 }
 
+/**
+ * Ruleset-level settings that differ from the desired ruleset. Matching rules guarantee nothing if
+ * the ruleset is disabled or in evaluate mode, has a bypass actor, or targets another branch.
+ */
+export function settingsDiff(current: { enforcement?: string; bypass_actors?: unknown[]; conditions?: { ref_name?: { include?: string[]; exclude?: string[] } } }, desired: Ruleset): string[] {
+	const refs = (list: readonly string[] | undefined) => JSON.stringify([...(list ?? [])].sort());
+	const ref = current.conditions?.ref_name;
+	const differs = {
+		enforcement: current.enforcement !== desired.enforcement,
+		bypass_actors: JSON.stringify(current.bypass_actors ?? null) !== JSON.stringify(desired.bypass_actors),
+		conditions: !ref || refs(ref.include) !== refs(desired.conditions.ref_name.include) || refs(ref.exclude) !== refs(desired.conditions.ref_name.exclude),
+	};
+	return Object.entries(differs).filter(([, changed]) => changed).map(([setting]) => setting);
+}
+
 /** True when the active rules on the default branch include every desired rule type. */
 export function verified(active: readonly { type: string }[], desired: readonly Rule[]): boolean {
 	const types = new Set(active.map((rule) => rule.type));

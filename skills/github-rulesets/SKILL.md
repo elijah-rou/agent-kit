@@ -1,6 +1,6 @@
 ---
 name: github-rulesets
-description: Put the server-side backstop on a GitHub repository, a ruleset on the default branch that blocks deletion and force-pushes and keeps history linear, plus required pull requests and CI checks once the repository lands through verified stacks. Use when creating or adopting a repository, when `agentic rulesets plan` reports changes, or when a repository moves to autonomy A3 or above. Not for repositories hosted elsewhere.
+description: Put the server-side backstop on a GitHub repository, a ruleset on the default branch that blocks deletion and force-pushes and keeps history linear, plus required pull requests and CI checks once the repository lands through verified stacks. Use when creating or adopting a repository, when `agentic rulesets plan` reports changes, or when a repository starts landing verified stacks. Not for repositories hosted elsewhere.
 ---
 
 # GitHub rulesets
@@ -13,7 +13,7 @@ Agents push with the user's token, so GitHub cannot tell the user from an agent.
 
 Run `agentic rulesets plan <owner/repo>`. It is read-only and reports the default branch, visibility, the existing ruleset, and what an apply would change.
 
-- Exit status 3 means rulesets are unavailable: a private repository on a plan without them. Report it with the two ways out (a paid plan, or making the repository public) and leave the repository to the local gate. Do not change visibility or billing.
+- Exit status 3 means rulesets are unavailable: a private repository on a plan without them. Report it with the two ways out (a paid plan, or making the repository public) and leave the repository to the instructions and the harness's permission prompts. Do not change visibility or billing.
 - A repository with no CI has nothing for the merge gate to require; say so instead of picking a weaker tier silently.
 
 ## 2. Choose the tier

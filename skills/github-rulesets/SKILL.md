@@ -14,14 +14,14 @@ Agents push with the user's token, so GitHub cannot tell the user from an agent.
 Run `agentic rulesets plan <owner/repo>`. It is read-only and reports the default branch, visibility, the existing ruleset, and what an apply would change.
 
 - Exit status 3 means rulesets are unavailable: a private repository on a plan without them. Report it with the two ways out (a paid plan, or making the repository public) and leave the repository to the instructions and the harness's permission prompts. Do not change visibility or billing.
-- A repository with no CI has nothing for the merge gate to require; say so instead of picking a weaker tier silently.
+- In a repository with no CI, the merge gate requires only the verdict; say so.
 
 ## 2. Choose the tier
 
 | Tier | Rules | Use when |
 |---|---|---|
 | `baseline` | No deletion, no force-push, linear history on the default branch | Always. It adds no friction for direct pushes. |
-| `merge-gate` | Baseline, plus a pull request, the `agentic/verdict` check that `agentic verify record` posts for a fresh verifier's verdict, and the CI checks that passed on the default branch head | The repository lands verified stacks through the `ship` mode. Every pull request then needs a verdict, the user's included. |
+| `merge-gate` | Baseline, plus a pull request, the `agentic/verdict` check that `agentic verify publish` posts from a fresh verifier's recorded verdict, and the CI checks that passed on the default branch head | The repository lands verified stacks through the `ship` mode. Every pull request then needs a verdict, the user's included. |
 
 Checks that did not pass on the head are listed and left out; a failing check would block every merge. Fix CI first if the user wants it required.
 

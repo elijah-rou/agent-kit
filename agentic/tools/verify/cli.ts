@@ -1,23 +1,27 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
 import { openStore } from "../../vendor/orch/store.ts";
-import { currentVerdict, evidenceCell, githubSlug, isVerdict, orchStore, readLedger, STATUS_CONTEXT, statusFor, VERDICTS } from "./verify.ts";
+import { currentVerdict, evidenceCell, githubSlug, isVerdict, orchStore, parseEvidenceCell, readLedger, rowForHead, STATUS_CONTEXT, statusFor, VERDICTS } from "./verify.ts";
 
-const USAGE = `Usage: verify <record | status> <pr> [options]
+const USAGE = `Usage: verify <record | publish | status> <pr> [options]
 
-Record and check verdicts for the merge ledger. Run "record" only as a fresh verifier that did
-not write the change, after running the repository's verification skill against the pull
-request's head.
+Record, publish, and check verdicts for the merge ledger, kept in git's common directory.
 
   record <pr> --verdict <verdict> --evidence <path or https URL> [--repo owner/repo]
-      Writes the ledger row bound to the head SHA and patch ID, and posts the ${STATUS_CONTEXT}
-      status on the head commit (success for a passing verdict, failure otherwise).
+      Run only as a fresh verifier that did not write the change, after running the repository's
+      verification skill against the pull request's head. Writes the ledger row bound to the
+      head SHA and patch ID. Local only: it publishes nothing.
       Verdicts: ${VERDICTS.join(", ")}.
+  publish <pr> [--repo owner/repo]
+      Run as the coordinator. Posts the ${STATUS_CONTEXT} status on the head commit from the
+      ledger row for that head (success for a passing verdict, failure otherwise). Refuses when
+      no row covers the head or the patch changed since the verdict.
   status <pr> [--repo owner/repo]
-      Shows whether the latest verdict covers the current head. A new push or rebase voids it.
+      Shows whether the latest verdict covers the current head and patch. A new push, rebase, or
+      changed patch voids it.
 
-Exit status: 0 done (status: verdict passes for the head), 1 failure or no passing verdict,
-2 usage error.
+Exit status: 0 done (status: verdict passes for the head and patch), 1 failure or no passing
+verdict, 2 usage error.
 `;
 
 function run(command: string, args: string[], input?: string): string {
@@ -40,7 +44,7 @@ async function main(args: string[]): Promise<number> {
 	const [command, prArg] = args;
 	if (args.includes("--help")) return console.log(USAGE), 0;
 	const pr = Number(prArg);
-	if (!["record", "status"].includes(command) || !Number.isInteger(pr) || pr <= 0) return console.error(USAGE), 2;
+	if (!["record", "publish", "status"].includes(command) || !Number.isInteger(pr) || pr <= 0) return console.error(USAGE), 2;
 
 	const commonDir = git(["rev-parse", "--path-format=absolute", "--git-common-dir"]);
 	if (!commonDir) throw new Error("run inside the repository's checkout; the ledger lives in its git directory");
@@ -51,32 +55,50 @@ async function main(args: string[]): Promise<number> {
 
 	const head = JSON.parse(run("gh", ["pr", "view", String(pr), "-R", slug, "--json", "headRefOid,headRefName,state"])) as { headRefOid: string; headRefName: string; state: string };
 
+	const patchId = (): string => {
+		const id = run("git", ["patch-id", "--stable"], run("gh", ["pr", "diff", String(pr), "-R", slug])).split(" ")[0]?.trim();
+		if (!id) throw new Error("the pull request has no diff to bind a verdict to");
+		return id;
+	};
+
 	if (command === "status") {
-		const verdict = currentVerdict(readLedger(store), pr, head.headRefOid);
+		const ledger = readLedger(store);
+		const verdict = currentVerdict(ledger, pr, head.headRefOid);
+		const row = rowForHead(ledger, pr, head.headRefOid);
+		const patchMoved = row !== undefined && parseEvidenceCell(row.evidence).patchId !== patchId();
 		const statuses = JSON.parse(run("gh", ["api", `repos/${slug}/commits/${head.headRefOid}/statuses`])) as { context: string; state: string; description: string }[];
 		const forge = statuses.find((status) => status.context === STATUS_CONTEXT);
-		console.log(`${slug}#${pr} (${head.state}, ${head.headRefName} at ${head.headRefOid.slice(0, 12)}): ledger ${verdict.state}${verdict.verdict ? ` (${verdict.verdict} on ${verdict.sha?.slice(0, 12)})` : ""}; forge ${forge ? `${forge.state}: ${forge.description}` : "no verdict status"}`);
-		return verdict.state === "pass" ? 0 : 1;
+		console.log(`${slug}#${pr} (${head.state}, ${head.headRefName} at ${head.headRefOid.slice(0, 12)}): ledger ${patchMoved ? "void, patch changed" : verdict.state}${verdict.verdict ? ` (${verdict.verdict} on ${verdict.sha?.slice(0, 12)})` : ""}; forge ${forge ? `${forge.state}: ${forge.description}` : "no verdict status"}`);
+		return verdict.state === "pass" && !patchMoved ? 0 : 1;
+	}
+
+	if (head.state !== "OPEN") throw new Error(`${slug}#${pr} is ${head.state}; verdicts are for open pull requests`);
+
+	if (command === "publish") {
+		const row = rowForHead(readLedger(store), pr, head.headRefOid);
+		if (!row || !isVerdict(row.verdict)) throw new Error(`${slug}#${pr}: no verdict covers head ${head.headRefOid.slice(0, 12)}; a fresh verifier must record one`);
+		const recorded = parseEvidenceCell(row.evidence);
+		if (recorded.patchId !== patchId()) throw new Error(`${slug}#${pr}: the patch changed since the verdict; re-verify`);
+		const status = statusFor(row.verdict, recorded.patchId, recorded.evidence);
+		run("gh", ["api", "-X", "POST", `repos/${slug}/statuses/${head.headRefOid}`, "-f", `state=${status.state}`, "-f", `context=${STATUS_CONTEXT}`, "-f", `description=${status.description}`, ...(status.targetUrl ? ["-f", `target_url=${status.targetUrl}`] : [])]);
+		console.log(`${slug}#${pr}: posted ${STATUS_CONTEXT}=${status.state} (${row.verdict}) on ${head.headRefOid.slice(0, 12)}`);
+		return 0;
 	}
 
 	const verdict = option(args, "--verdict");
 	const evidence = option(args, "--evidence");
 	if (!verdict || !isVerdict(verdict) || !evidence) return console.error(USAGE), 2;
-	if (head.state !== "OPEN") throw new Error(`${slug}#${pr} is ${head.state}; verdicts are for open pull requests`);
-	const patchId = run("git", ["patch-id", "--stable"], run("gh", ["pr", "diff", String(pr), "-R", slug])).split(" ")[0]?.trim();
-	if (!patchId) throw new Error("the pull request has no diff to bind a verdict to");
+	const patch = patchId();
 
 	const ledger = openStore(store);
 	try {
 		// Idempotent: a repository's first verdict creates its store.
 		await ledger.init();
-		await ledger.ledger.record({ pr, sha: head.headRefOid, verdict, evidence: evidenceCell(evidence, patchId), verifier: process.env.AGENTIC_AGENT_ID ?? "agentic-verify" });
+		await ledger.ledger.record({ pr, sha: head.headRefOid, verdict, evidence: evidenceCell(evidence, patch), verifier: process.env.AGENTIC_AGENT_ID ?? "agentic-verify" });
 	} finally {
 		await ledger.close();
 	}
-	const status = statusFor(verdict, patchId, evidence);
-	run("gh", ["api", "-X", "POST", `repos/${slug}/statuses/${head.headRefOid}`, "-f", `state=${status.state}`, "-f", `context=${STATUS_CONTEXT}`, "-f", `description=${status.description}`, ...(status.targetUrl ? ["-f", `target_url=${status.targetUrl}`] : [])]);
-	console.log(`${slug}#${pr}: recorded ${verdict} on ${head.headRefOid.slice(0, 12)} (patch ${patchId.slice(0, 12)}) and posted ${STATUS_CONTEXT}=${status.state}`);
+	console.log(`${slug}#${pr}: recorded ${verdict} on ${head.headRefOid.slice(0, 12)} (patch ${patch.slice(0, 12)}); the coordinator publishes it with "agentic verify publish ${pr}"`);
 	return 0;
 }
 

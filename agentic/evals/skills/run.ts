@@ -15,7 +15,7 @@
 // survive. The judge is a different model family from the candidates (Claude via its CLI).
 
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { auditSystemSections, auditView, type CandidateView, type Finding, subjectExemptions } from "./blinding.ts";
@@ -129,6 +129,16 @@ function candidateEnv(root: string): Record<string, string> {
     if (v) env[k] = v;
   }
   if (!env.PI_CODING_AGENT_DIR) throw new Error("PI_CODING_AGENT_DIR is not set; Pi would not find its credentials");
+  // An agent directory holding only credentials and the model registry: the user's own
+  // AGENTS.md there would reach planning candidates, which load context files (found by the
+  // post-run audit in the first planning runs).
+  const agentDir = join(root, ".pi", "agent");
+  mkdirSync(agentDir, { recursive: true });
+  for (const file of ["auth.json", "models.json", "models-store.json"]) {
+    const source = join(env.PI_CODING_AGENT_DIR, file);
+    if (existsSync(source)) symlinkSync(source, join(agentDir, file));
+  }
+  env.PI_CODING_AGENT_DIR = agentDir;
   return {
     ...env,
     HOME: root,

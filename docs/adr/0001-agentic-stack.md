@@ -15,11 +15,11 @@ The design (Lauren Tan's trust and correction-ladder approach, pstack's practice
 
 ## Decision
 
-1. **Instructions carry the method.** A standing default replaces stored autonomy levels: reversible local work everywhere, and `agent/*` branches and pull requests in repositories the user owns. Merging and landing are modes the user invokes per run, as in pstack, with their criteria checked when they run. Planning happens only at one-way doors, the interaction contract, the correction ladder, and the reviewed learning path. They live in `claude/CLAUDE.md`, `pi/AGENTS.md`, and `skills/git-workflow`.
+1. **Instructions carry the method.** A standing default replaces stored autonomy levels: reversible local work everywhere, and `agent/*` branches and pull requests in repositories the user owns. Merging and landing happen only in the `autopilot-stack` and `ship` modes the user invokes per run, as in pstack; `babysit-and-ship` checks their preconditions (owned repository, a verification skill, and for `ship` the `merge-gate` ruleset) when they are invoked. Planning happens only at one-way doors, the interaction contract, the correction ladder, and the reviewed learning path. They live in `claude/CLAUDE.md`, `pi/AGENTS.md`, and `skills/git-workflow`.
 2. **The forge is the hard guarantee.** Every owned public repository carries the `agentic-backstop` ruleset, with no bypass actors (`agentic rulesets`, skill `github-rulesets`):
    - `baseline` everywhere: no deletion, no force-push, linear history;
-   - `merge-gate` where a repository lands through pull requests: pull requests plus passing CI.
-3. **Verification lives in the product repositories,** as skills built with `create-verification` and kept honest with `maintain-verification`.
+   - `merge-gate` where a repository ships verified stacks: pull requests, passing CI, and the `agentic/verdict` status.
+3. **Verification lives in the product repositories,** as skills built with `create-verification` and kept honest with `maintain-verification`. A fresh verifier records each pull request's verdict with `agentic verify`, bound to its head SHA and patch ID, in pstack's vendored `orch` ledger; `agentic watch-pr` (also vendored) follows pull requests and stacks.
 4. **pstack is adapted, not forked.** Every adapted skill records its upstream commit, `agentic upstream-drift` reports drift, and `skills/RESYNC.md` records each review.
 5. **Local enforcement stays small.** The existing `git-interceptor.ts` keeps guarding child publication and integration, `--no-verify`, and editor hangs in Pi. A larger gate returns only through the evidence rule: a mistake an agent actually made, routed through `correct`, enforced at the smallest effective scale first.
 
@@ -33,10 +33,12 @@ The design (Lauren Tan's trust and correction-ladder approach, pstack's practice
 
 - **Some actions rest on instructions and the harness's own permission prompts,** not a local gate: messages to people, deploys, releases, credential changes, merges before `merge-gate`, and anything in private repositories.
 - **Unattended sessions** (Claude in bypass-permission mode, Pi without a UI) have only rulesets and `git-interceptor` as hard stops.
-- **Parked pieces stay on the reference branch:** the gate, `verify` and the verdict ledger, `orch`, `watch-pr`, `decision-log`, the lint tools, the Pi enforcement of the interaction contract, the learning code, and the evals harness.
+- **Verifier independence is a convention.** Nothing local stops an author from recording a verdict on its own work, and the forge cannot tell who posted the status, because everyone uses the user's token. The ledger records the verifier's ID, so a self-recorded verdict is visible after the fact.
+- **Every pull request in a `merge-gate` repository needs a verdict,** the user's own included.
+- **Parked pieces stay on the reference branch:** the gate, `decision-log` (the decision log is a plain TSV appended with pstack's `log.sh`), the lint tools, the Pi enforcement of the interaction contract, the learning code, and the evals harness.
 
 ## Reversal conditions
 
 - **Reintroduce a gate** when a real session shows an agent reaching a hard point the instructions, prompts, and rulesets did not stop. Start at interceptor scale, with logging.
-- **Bring back the verdict path** (`verify`, `orch`, `watch-pr`) with the `autopilot-stack` and `ship` modes; this is planned as the next change.
+- **Enforce verifier independence** if a session shows an author recording its own verdict.
 - **Revisit an agent identity** if agents run unattended on repositories others depend on.

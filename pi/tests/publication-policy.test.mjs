@@ -44,6 +44,7 @@ test("root execution is not blocked when child marker is absent", () => {
 
 test("outward-facing actions follow the standing default and publication stays with the coordinating agent", () => {
   assert.match(agents, /In a repository the user owns[^\n]*push `agent\/\*` branches, open pull requests ready for review/);
+  assert.match(agents, /Merging and landing happen only in a mode the user invokes for a run: the autopilot-stack mode[^\n]*the ship mode also lands the contiguous verified run/);
   assert.match(agents, /In any other repository, anything outward-facing \(pushing, publishing, posting, changing shared or remote systems\) needs explicit authorization/);
   assert.match(agents, /explicit authorization is still required for destructive actions[^\n]*deploys and releases, messages to people/);
   assert.match(agents, /never treat a defaulted answer as approval/);

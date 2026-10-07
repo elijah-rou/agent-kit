@@ -17,11 +17,11 @@ Record, publish, and check verdicts for the merge ledger, kept in git's common d
       ledger row for that head (success for a passing verdict, failure otherwise). Refuses when
       no row covers the head or the patch changed since the verdict.
   status <pr> [--repo owner/repo]
-      Shows whether the latest verdict covers the current head and patch. A new push, rebase, or
-      changed patch voids it.
+      Shows whether the latest verdict covers the current head and patch, and whether the forge
+      status agrees. A new push, rebase, or changed patch voids it.
 
-Exit status: 0 done (status: verdict passes for the head and patch), 1 failure or no passing
-verdict, 2 usage error.
+Exit status: 0 done (status: verdict passes for the head and patch, and the forge agrees),
+1 failure or no passing verdict, 2 usage error.
 `;
 
 function run(command: string, args: string[], input?: string): string {
@@ -68,8 +68,11 @@ async function main(args: string[]): Promise<number> {
 		const patchMoved = row !== undefined && parseEvidenceCell(row.evidence).patchId !== patchId();
 		const statuses = JSON.parse(run("gh", ["api", `repos/${slug}/commits/${head.headRefOid}/statuses`])) as { context: string; state: string; description: string }[];
 		const forge = statuses.find((status) => status.context === STATUS_CONTEXT);
-		console.log(`${slug}#${pr} (${head.state}, ${head.headRefName} at ${head.headRefOid.slice(0, 12)}): ledger ${patchMoved ? "void, patch changed" : verdict.state}${verdict.verdict ? ` (${verdict.verdict} on ${verdict.sha?.slice(0, 12)})` : ""}; forge ${forge ? `${forge.state}: ${forge.description}` : "no verdict status"}`);
-		return verdict.state === "pass" && !patchMoved ? 0 : 1;
+		const passes = verdict.state === "pass" && !patchMoved;
+		// After a re-record the forge can still show the old verdict; only publish updates it.
+		const forgeStale = row !== undefined && !patchMoved && forge?.state !== (passes ? "success" : "failure");
+		console.log(`${slug}#${pr} (${head.state}, ${head.headRefName} at ${head.headRefOid.slice(0, 12)}): ledger ${patchMoved ? "void, patch changed" : verdict.state}${verdict.verdict ? ` (${verdict.verdict} on ${verdict.sha?.slice(0, 12)})` : ""}; forge ${forge ? `${forge.state}: ${forge.description}` : "no verdict status"}${forgeStale ? `; forge disagrees with the ledger, run "agentic verify publish ${pr}"` : ""}`);
+		return passes && !forgeStale ? 0 : 1;
 	}
 
 	if (head.state !== "OPEN") throw new Error(`${slug}#${pr} is ${head.state}; verdicts are for open pull requests`);

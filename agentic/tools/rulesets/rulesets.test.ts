@@ -9,11 +9,11 @@ describe("agentic-backstop ruleset", () => {
 		expect(ruleset.rules.map((rule) => rule.type)).toEqual(["deletion", "non_fast_forward", "required_linear_history"]);
 	});
 
-	test("merge-gate adds a pull request and the passing checks, and refuses with no checks", () => {
+	test("merge-gate adds a pull request, the verdict check, and the passing CI checks", () => {
 		const types = desiredRuleset("merge-gate", ["validate (macos-latest)", "validate (ubuntu-latest)", "validate (macos-latest)"]).rules;
 		expect(types.map((rule) => rule.type)).toEqual(["deletion", "non_fast_forward", "required_linear_history", "pull_request", "required_status_checks"]);
-		expect(types[4].parameters?.required_status_checks).toEqual([{ context: "validate (macos-latest)" }, { context: "validate (ubuntu-latest)" }]);
-		expect(() => desiredRuleset("merge-gate", [])).toThrow("at least one passing CI check");
+		expect(types[4].parameters?.required_status_checks).toEqual([{ context: "agentic/verdict" }, { context: "validate (macos-latest)" }, { context: "validate (ubuntu-latest)" }]);
+		expect(desiredRuleset("merge-gate", []).rules[4].parameters?.required_status_checks).toEqual([{ context: "agentic/verdict" }]);
 	});
 
 	test("only checks that passed on the head are required", () => {

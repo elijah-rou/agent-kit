@@ -12,5 +12,8 @@
   },
   "bin": {
     "agentic": "./agentic/bin/agentic"
+  },
+  "dependencies": {
+    "commander": "14.0.0"
   }
 }

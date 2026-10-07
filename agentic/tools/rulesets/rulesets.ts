@@ -6,11 +6,15 @@
 // Tiers:
 // - baseline: the default branch cannot be deleted or force-pushed, and its history stays linear.
 //   No friction for direct pushes; apply it to every repository.
-// - merge-gate: baseline plus a pull request and the repository's passing CI checks before the
-//   default branch moves. Everyone, the user included, then lands through pull requests; apply it
-//   when a repository moves to verified stacks.
+// - merge-gate: baseline plus a pull request, the agentic/verdict check from a fresh verifier, and
+//   the repository's passing CI checks before the default branch moves. Everyone, the user
+//   included, then lands through pull requests; apply it when a repository moves to verified
+//   stacks (the ship mode).
 
 export const RULESET_NAME = "agentic-backstop";
+
+/** The status `agentic verify record` posts; merge-gate requires it. */
+export const VERDICT_CONTEXT = "agentic/verdict";
 
 export type Tier = "baseline" | "merge-gate";
 
@@ -28,11 +32,10 @@ export interface Ruleset {
 	rules: Rule[];
 }
 
-/** The desired ruleset. Checks are CI status contexts that must pass (merge-gate only). */
+/** The desired ruleset. Checks are CI status contexts that must pass besides the verdict (merge-gate only). */
 export function desiredRuleset(tier: Tier, checks: readonly string[]): Ruleset {
 	const rules: Rule[] = [{ type: "deletion" }, { type: "non_fast_forward" }, { type: "required_linear_history" }];
 	if (tier === "merge-gate") {
-		if (checks.length === 0) throw new Error("merge-gate needs at least one passing CI check to require");
 		rules.push({
 			type: "pull_request",
 			parameters: {
@@ -45,7 +48,7 @@ export function desiredRuleset(tier: Tier, checks: readonly string[]): Ruleset {
 		});
 		rules.push({
 			type: "required_status_checks",
-			parameters: { strict_required_status_checks_policy: false, required_status_checks: [...new Set(checks)].sort().map((context) => ({ context })) },
+			parameters: { strict_required_status_checks_policy: false, required_status_checks: [...new Set([VERDICT_CONTEXT, ...checks])].sort().map((context) => ({ context })) },
 		});
 	}
 	return {

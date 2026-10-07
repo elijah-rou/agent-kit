@@ -24,6 +24,10 @@ export interface SimpleCommand {
 	writes: string[];
 	/** Leading NAME=value assignments and case subjects; their substitutions still run. */
 	assignments: string[];
+	/** Subshell nesting: ( ) depth at which this command runs. */
+	depth: number;
+	/** Operators between the previous command and this one, such as ["&&"] or [")", ";"]. */
+	before: string[];
 }
 
 export interface ParsedLine {
@@ -289,11 +293,17 @@ const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 export function parseShell(input: string): ParsedLine {
 	const { tokens, opaque, heredocBodies } = tokenize(input);
 	const commands: SimpleCommand[] = [];
-	let current: SimpleCommand = { words: [], opaque: [], fromPipe: false, writes: [], assignments: [] };
+	let depth = 0;
+	let ops: string[] = [];
+	const fresh = (fromPipe: boolean): SimpleCommand => ({ words: [], opaque: [], fromPipe, writes: [], assignments: [], depth, before: [] });
+	let current = fresh(false);
 	let heredocIndex = 0;
 	const push = (nextFromPipe: boolean) => {
-		if (current.words.length > 0 || current.heredoc !== undefined || current.writes.length > 0 || current.assignments.length > 0) commands.push(current);
-		current = { words: [], opaque: [], fromPipe: nextFromPipe, writes: [], assignments: [] };
+		if (current.words.length > 0 || current.heredoc !== undefined || current.writes.length > 0 || current.assignments.length > 0) {
+			commands.push({ ...current, depth: current.depth, before: current.before });
+			ops = [];
+		}
+		current = { ...fresh(nextFromPipe || current.fromPipe && current.words.length === 0), before: ops };
 	};
 	// case statements: the subject's substitutions run; patterns are not commands; bodies are.
 	const caseStack: ("subject" | "pattern" | "body")[] = [];
@@ -329,6 +339,11 @@ export function parseShell(input: string): ParsedLine {
 		}
 		if (token.kind === "op") {
 			push(token.value === "|" || token.value === "|&");
+			ops.push(token.value);
+			if (token.value === "(") depth++;
+			if (token.value === ")") depth = Math.max(0, depth - 1);
+			current.depth = depth;
+			current.before = ops;
 			continue;
 		}
 		if (token.kind === "write-target") {

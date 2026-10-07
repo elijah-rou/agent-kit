@@ -60,6 +60,9 @@ function jev(): JevFilter | undefined {
 	return jevFilterFromConfig(process.env);
 }
 
+/** Claude Code permission modes in which an "ask" decision shows the user a prompt. */
+const PROMPTING_MODES = new Set(["default", "acceptEdits", "plan"]);
+
 async function claudeHook(): Promise<void> {
 	// Claude Code lets the tool proceed when a hook errors (non-2 exit) or times out, so every
 	// failure path here emits an explicit deny. Evaluation runs in a worker: a synchronous block
@@ -69,9 +72,10 @@ async function claudeHook(): Promise<void> {
 		process.exit(0);
 	};
 	let input: string;
+	let mode: unknown;
 	try {
 		input = await readStdin();
-		JSON.parse(input);
+		mode = (JSON.parse(input) as { permission_mode?: unknown }).permission_mode;
 	} catch (error) {
 		emit("deny", `[agentic] unreadable hook input, failing closed: ${(error as Error).message}`);
 		return;
@@ -86,7 +90,14 @@ async function claudeHook(): Promise<void> {
 		// Allow emits nothing so Claude's normal permission flow still applies; an explicit
 		// "allow" would bypass the user's permission prompts.
 		if (result.decision === "allow") process.exit(0);
-		emit(result.decision, `[agentic] ${result.reason}${result.policies.length ? ` (policies: ${result.policies.join(", ")})` : ""}`);
+		const label = `[agentic] ${result.reason}${result.policies.length ? ` (policies: ${result.policies.join(", ")})` : ""}`;
+		// Claude approves "ask" silently in modes that never prompt (bypassPermissions and any
+		// mode not known to prompt), which would let always-pause actions through, so those
+		// sessions get a deny the user can act on themselves.
+		if (result.decision === "ask" && mode !== undefined && !PROMPTING_MODES.has(String(mode))) {
+			emit("deny", `${label}. This needs the user, and this session cannot ask (permission mode ${String(mode)}): draft the command for the user to run themselves.`);
+		}
+		emit(result.decision, label);
 	};
 	worker.onerror = (event: ErrorEvent) => {
 		clearTimeout(timer);

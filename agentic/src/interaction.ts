@@ -5,7 +5,8 @@ const NOTHING = /^(nothing|none|no(thing)? needed)\.?$/;
 /**
  * A run ends on a blocker when its "Needs you" part asks for something. An inline lead
  * ("Needs you: ...", "**Needs you:** ...") is judged by the rest of its line; a "Needs you"
- * heading, or a lead with nothing after it, by the body up to the next heading or bold lead.
+ * heading, or a lead with nothing after it, by the body up to the next heading or bold lead
+ * ("**Outcome:**").
  */
 export function endsOnBlocker(report: string): boolean {
 	const lines = report.split("\n");
@@ -18,7 +19,7 @@ export function endsOnBlocker(report: string): boolean {
 	if (inline.length > 0) return !NOTHING.test(inline);
 	const body: string[] = [];
 	for (const line of lines.slice(start + 1)) {
-		if (/^\s*#+\s/.test(line) || /^\s*(?:\*\*|__)[A-Z]/.test(line)) break;
+		if (/^\s*#+\s/.test(line) || /^\s*(?:\*\*|__)[A-Z][^*_\n]*(?::(?:\*\*|__)|(?:\*\*|__):)/.test(line)) break;
 		body.push(line);
 	}
 	const text = body.join("\n").trim().toLowerCase();

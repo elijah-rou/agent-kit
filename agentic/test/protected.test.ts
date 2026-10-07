@@ -202,4 +202,24 @@ describe("protected configuration paths", () => {
 		const commit = await evaluateToolCall({ toolName: "bash", input: { command: `git -C ${kit} status` }, cwd: ws.repo }, deps);
 		expect(commit.decision).toBe("allow");
 	});
+
+	test("cd semantics: certain after &&, uncertain after ; or a subshell; ordinary cd work stays allowed", async () => {
+		const ws = setup();
+		const run = async (command: string) => ({ command, decision: (await evaluateToolCall({ toolName: "bash", input: { command }, cwd: ws.repo }, ws.deps)).decision });
+		for (const command of ["cd src && mv ../a.ts .", "cd src && rsync -a ../build/ .", "cd /tmp/scratch && cp -R ../tmpl/ .", "cd a && cd b && rm -rf build", "(cd src && make); ls"]) {
+			expect(await run(command)).toEqual({ command, decision: "allow" });
+		}
+		for (const command of ["cd /nonexistent && true; rm -rf .agents/orch", "cd src || rm -rf .agents/orch", "ORCH_STORE=.agents/orch; export ORCH_STORE; agentic orch status", "ditto fake ."]) {
+			expect(await run(command)).toEqual({ command, decision: "deny" });
+		}
+	});
+
+	test("git rewrites of the gate's checkout through any work-tree form ask", async () => {
+		const ws = setup();
+		const kit = join(import.meta.dir, "..", "..");
+		for (const command of [`git -C ${kit} sparse-checkout set docs`, `git -C ${kit} read-tree -u --reset HEAD~3`, `git -C ${kit} checkout-index -f -a`, `git --work-tree=${kit} --git-dir=${kit}/.git checkout --detach main`, `GIT_WORK_TREE=${kit} git checkout main -- .`]) {
+			const result = await evaluateToolCall({ toolName: "bash", input: { command }, cwd: ws.repo }, ws.deps);
+			expect({ command, policies: result.policies }).toEqual({ command, policies: ["gate-wiring-needs-user"] });
+		}
+	});
 });

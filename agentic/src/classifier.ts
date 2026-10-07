@@ -15,8 +15,8 @@ export interface ClassifyContext {
 	forwarders?: ReadonlyMap<string, number>;
 	/** The agent's environment, for expanding variables the command does not assign itself. */
 	env?: Readonly<Record<string, string | undefined>>;
-	/** Directory that relative paths in later commands resolve against, after a cd in the same command. */
-	pathCwd?: string;
+	/** Directories a relative path in this command may resolve against, after cd earlier in the same command line. */
+	pathCwds?: string[];
 	/** Returns the protected kind of a path (relative to the given cwd), if writing it is a hard point. */
 	protectedKind?: (path: string, options?: { cwd?: string; reach?: "path" | "parent" | "ancestor" }) => string | undefined;
 }
@@ -171,28 +171,63 @@ export function classifyCommand(command: string, ctx: ClassifyContext, depth = 0
 	const parsed = parseShell(command);
 	const out = result();
 	if (parsed.opaque.includes("unterminated-quote")) out.unclassified.push({ text: command, reason: "unterminated quote", couldReachHardPoint: NETWORKY.test(command), opaqueExecution: false });
-	let current = ctx;
-	for (const simple of parsed.commands) {
-		merge(out, classifySimple(simple, command, current, depth));
-		current = afterDirectoryChange(simple, current);
-	}
+	const dirs = new DirectoryTracker(ctx);
+	for (const simple of parsed.commands) merge(out, classifySimple(simple, command, { ...ctx, pathCwds: dirs.before(simple) }, depth));
 	return out;
 }
 
 /**
- * Tracks cd and pushd so later relative paths in the same command may resolve where the shell
- * would write them. Only path resolution follows; git context stays at the call's directory. A cd
- * can fail or sit in a subshell, so relative paths are checked against both the call's directory
- * and the tracked one. A target that cannot be read statically ($VAR, -) is not followed.
+ * Where relative paths may resolve as the shell runs a command line: cd and pushd move the
+ * directory, so a protected path cannot hide behind a relative name. After "cd X &&" only X
+ * applies, because the rest runs only if cd succeeded; after ";", "||", "&", or a pipe, a failed
+ * cd leaves the old directory, so both apply. A subshell restores the directory when it ends.
+ * A target that cannot be read statically (cd -, popd, $VAR) keeps every directory seen so far.
+ * Only path resolution follows cd; git context stays at the call's directory.
  */
-function afterDirectoryChange(simple: SimpleCommand, ctx: ClassifyContext): ClassifyContext {
-	const [name, ...args] = simple.words;
-	if (name !== "cd" && name !== "pushd") return ctx;
-	const target = args.find((arg) => !arg.startsWith("-") || arg === "-");
-	const from = ctx.pathCwd ?? ctx.cwd;
-	if (target === undefined) return { ...ctx, pathCwd: ctx.homeDir };
-	if (target === "-" || target.includes("$")) return ctx;
-	return { ...ctx, pathCwd: resolvePath({ ...ctx, cwd: from }, target) };
+class DirectoryTracker {
+	private dirs: string[];
+	private readonly seen: Set<string>;
+	private readonly stack: string[][] = [];
+	private depth = 0;
+	private pending: { prior: string[]; target: string[] } | undefined;
+
+	constructor(private readonly ctx: ClassifyContext) {
+		this.dirs = [ctx.cwd];
+		this.seen = new Set([ctx.cwd]);
+	}
+
+	/** The directories for this command; afterwards records any cd it performs. */
+	before(simple: SimpleCommand): string[] {
+		while (this.depth < simple.depth) {
+			this.stack.push(this.dirs);
+			this.depth++;
+		}
+		while (this.depth > simple.depth) {
+			this.dirs = this.stack.pop() ?? [this.ctx.cwd];
+			this.depth--;
+			this.pending = undefined;
+		}
+		if (this.pending) {
+			const certain = simple.before.length > 0 && simple.before.every((op) => op === "&&");
+			this.dirs = certain ? this.pending.target : [...new Set([...this.pending.prior, ...this.pending.target])];
+			if (!certain) this.pending = undefined;
+		}
+		const current = this.dirs;
+		this.record(simple, current);
+		return current;
+	}
+
+	private record(simple: SimpleCommand, current: string[]): void {
+		const [name, ...args] = simple.words;
+		if (!["cd", "pushd", "popd"].includes(name ?? "")) return;
+		const target = args.find((arg) => !arg.startsWith("-") || arg === "-");
+		let next: string[];
+		if (name === "popd" || target === "-" || target?.includes("$")) next = [...this.seen];
+		else if (target === undefined) next = name === "pushd" ? [...this.seen] : [this.ctx.homeDir];
+		else next = current.map((dir) => resolvePath({ ...this.ctx, cwd: dir }, target));
+		for (const dir of next) this.seen.add(dir);
+		this.pending = { prior: this.pending ? [...new Set([...this.pending.prior, ...current])] : current, target: next };
+	}
 }
 
 /** Commands that move or delete their operands, so a directory above a protected path counts. */
@@ -285,13 +320,12 @@ function classifySimple(simple: SimpleCommand, line: string, ctx: ClassifyContex
 
 const READ_ONLY = new Set(["cat", "head", "tail", "less", "more", "grep", "egrep", "rg", "ls", "wc", "diff", "jq", "bat", "stat", "file", "test", "[", "realpath", "readlink", "du", "sha256sum", "shasum", "md5", "md5sum", "column", "sort", "uniq", "cut", "echo", "printf", "basename", "dirname", "tree", "eza"]);
 /** Git subcommands that rewrite the working tree or move HEAD under it. */
-const GIT_REWRITES_TREE = new Set(["checkout", "switch", "reset", "restore", "stash", "clean", "rebase", "merge", "pull", "am", "apply", "cherry-pick", "revert", "rm", "mv", "worktree", "bisect"]);
+const GIT_REWRITES_TREE = new Set(["checkout", "switch", "reset", "restore", "stash", "clean", "rebase", "merge", "pull", "am", "apply", "cherry-pick", "revert", "rm", "mv", "worktree", "bisect", "sparse-checkout", "read-tree", "checkout-index", "update-index", "filter-branch", "filter-repo"]);
 
 /** The subcommand of a git invocation, skipping global options and their values. */
 function gitSubcommand(args: string[]): string | undefined {
 	for (let i = 0; i < args.length; i++) {
-		if (["-C", "-c", "--git-dir", "--work-tree", "--namespace"].includes(args[i])) i++;
-		else if (!args[i].startsWith("-")) return args[i];
+		if (["-C", "-c", "--git-dir", "--work-tree", "--namespace"].includes(args[i])) i++;		else if (!args[i].startsWith("-")) return args[i];
 	}
 	return undefined;
 }
@@ -319,7 +353,7 @@ function protectedWrites(simple: SimpleCommand, words: string[], name: string, c
 		seen.add(path);
 		out.actions.push({ action: "file.write", resource: { kind: "ProtectedPath", protectedKind: kind, path }, force: false, evidence: text });
 	};
-	const cwds = [...new Set([ctx.cwd, ctx.pathCwd ?? ctx.cwd])];
+	const cwds = ctx.pathCwds ?? [ctx.cwd];
 	const check = (candidate: string, reach: "path" | "parent" | "ancestor" | "checkout" = "path") => {
 		const here = candidate.replace(/^(?:\$PWD|\$\{PWD\}|\$\(pwd\)|`pwd`)(?=\/|$)/, "");
 		for (const cwd of cwds) {
@@ -329,6 +363,8 @@ function protectedWrites(simple: SimpleCommand, words: string[], name: string, c
 		}
 	};
 	for (const target of simple.writes) check(target);
+	// A bare assignment (X=dir; export X) sets where a later command writes.
+	if (words.length === 0) for (const assignment of simple.assignments) check(expandVariables(assignment.slice(assignment.indexOf("=") + 1), ctx, text));
 	if (words.length > 0 && !isReadOnly(name, words.slice(1))) {
 		const operands = words.slice(1).filter((word) => !word.startsWith("-"));
 		const destination = operands.at(-1);
@@ -343,13 +379,20 @@ function protectedWrites(simple: SimpleCommand, words: string[], name: string, c
 		}
 		// A copy lands at destination/basename(source), or in the destination itself for a source
 		// ending in "/"; landing on a directory above a protected path can replace it.
+		// ditto always merges the source's contents into the destination.
 		if (COPIES_INTO.has(name) && destination !== undefined) {
-			for (const source of operands.slice(0, -1)) check(source.endsWith("/") ? destination : `${destination.replace(/\/$/, "")}/${basename(source)}`, "ancestor");
+			for (const source of operands.slice(0, -1)) check(source.endsWith("/") || name === "ditto" ? destination : `${destination.replace(/\/$/, "")}/${basename(source)}`, "ancestor");
 		}
-		// Commands that rewrite a checkout's working tree, in the checkout the gate runs from.
+		// Commands that rewrite a checkout's working tree, in the checkout the gate runs from: the
+		// tree comes from -C, --work-tree, or GIT_WORK_TREE.
 		if (name === "git" && GIT_REWRITES_TREE.has(gitSubcommand(words.slice(1)) ?? "")) {
-			const dirs = words.flatMap((word, index) => (words[index - 1] === "-C" ? [word] : []));
-			check(dirs.length > 0 ? dirs.reduce((dir, next) => (isAbsolute(next) ? next : `${dir}/${next}`)) : ".", "checkout");
+			const chdirs = words.flatMap((word, index) => (words[index - 1] === "-C" ? [word] : []));
+			const base = chdirs.length > 0 ? chdirs.reduce((dir, next) => (isAbsolute(next) ? next : `${dir}/${next}`)) : ".";
+			const trees = [
+				...words.flatMap((word, index) => (words[index - 1] === "--work-tree" ? [word] : word.startsWith("--work-tree=") ? [word.slice("--work-tree=".length)] : [])),
+				...assigned.filter((assignment) => assignment.startsWith("GIT_WORK_TREE=")).map((assignment) => assignment.slice("GIT_WORK_TREE=".length)),
+			];
+			for (const tree of trees.length > 0 ? trees : [base]) check(isAbsolute(tree) || tree.startsWith("~") || tree === base ? tree : `${base}/${tree}`, "checkout");
 		}
 	}
 	if (words.some((word) => word.endsWith("learning/cli.ts")) && words.includes("approve")) add("learning approve", "learned");
@@ -470,7 +513,7 @@ function protectedReferences(code: string, ctx: ClassifyContext, text: string): 
 	const seen = new Set<string>();
 	const candidates = [...code.matchAll(/(["'`])((?:(?!\1)[^\n\\]|\\.)+)\1/g)].map((m) => m[2]).concat([...code.matchAll(/(?:^|[\s(=,])((?:\.{1,2}|~)?\/[^\s"'`;,)]+|[\w.-]+\/[\w./-]+)/g)].map((m) => m[1]));
 	for (const candidate of candidates) {
-		const kind = ctx.protectedKind(candidate, { cwd: ctx.pathCwd ?? ctx.cwd });
+		const kind = (ctx.pathCwds ?? [ctx.cwd]).map((cwd) => ctx.protectedKind?.(candidate, { cwd })).find(Boolean);
 		if (kind && !seen.has(candidate)) {
 			seen.add(candidate);
 			out.actions.push({ action: "file.write", resource: { kind: "ProtectedPath", protectedKind: kind, path: candidate }, force: false, evidence: text });

@@ -18,6 +18,7 @@ describe("endsOnBlocker", () => {
 		["Fixed the bug and ran the tests.", false],
 		["**Needs you:**\nnothing\n\n**Outcome:** shipped.", false],
 		["**Needs you:**\nPick the cache size.\n\n**Outcome:** shipped.", true],
+		["## Needs you\n\n**Decide** the cache size.\n\n## Done\nRest.", true],
 	])("%j -> %p", (report, blocker) => {
 		expect(endsOnBlocker(report)).toBe(blocker);
 	});

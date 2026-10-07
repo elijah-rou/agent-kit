@@ -24,6 +24,7 @@ Check a mode's preconditions when it is invoked, and again before relying on it:
 1. **Owned repository:** `gh repo view --json owner -q .owner.login` matches `gh api user -q .login`.
 2. **Verification skill:** the repository has one under `.agents/skills/verify-*/`, so verifiers can produce real verdicts. Without it, offer `create-verification` first.
 3. **For `ship` only, the forge gate:** `agentic rulesets plan <owner/repo> --tier merge-gate` reports `up to date`, so the forge itself refuses a merge without a passing `agentic/verdict`.
+4. **For `ship` only, Jev's screen can run:** the repository is public and a TypeSafe key is set (`TYPESAFE_API_KEY`, or on macOS the keychain item `typesafe-jev`). Otherwise every PR would hold, so offer `autopilot-stack` instead.
 
 When one fails, refuse the mode, name the failed precondition and what would fix it, and carry on under the standing default. A mode lasts the run it was invoked in; record the invocation with the user's words as evidence (`show-me-your-work`).
 

@@ -6,7 +6,7 @@
 // changing either wording means recalibrating. Only public repositories are classified, and any
 // failure takes the cautious path: hold the PR, or give no hint.
 
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -66,7 +66,8 @@ export async function askJev(question: Record<string, unknown>, state: string, o
 		if (!isRecord(body) || !isRecord(body.answers) || !isRecord(body.answers.q)) return { kind: "unavailable", detail: "no answer in the response" };
 		return body.answers.q;
 	} catch (error) {
-		return { kind: "unavailable", detail: (error as Error).message };
+		// Only the error's name: a message could quote the request, including its header.
+		return { kind: "unavailable", detail: error instanceof Error ? error.name : "request failed" };
 	}
 }
 
@@ -105,23 +106,50 @@ export function isTask(prompt: string): boolean {
 
 /** The classifier state for a PR, in the layout the thresholds were calibrated on. */
 export function prState(input: { repo: string; title: string; body: string; stat: string; diff: string }): string {
+	const body = input.body.replace(/\r\n/g, "\n").trim();
 	const statLines = input.stat.replace(/\n+$/, "").split("\n").filter(Boolean);
 	const files = Math.max(0, statLines.length - 1);
 	const shown = statLines.length > 40 ? [...statLines.slice(0, 39), statLines.at(-1)!] : statLines;
 	const diff = input.diff.length > 6000 ? `${input.diff.slice(0, 6000)}\n[truncated]` : input.diff.replace(/\n+$/, "");
-	return [`Repository: ${input.repo}`, `Subject: ${input.title}`, `Body: ${input.body.slice(0, 600)}`, `Files changed (${files}):`, ...shown, "Diff (truncated to 6000 characters):", diff].join("\n");
+	return [`Repository: ${input.repo}`, `Subject: ${input.title}`, `Body: ${body.slice(0, 600)}`, `Files changed (${files}):`, ...shown, "Diff (truncated to 6000 characters):", diff].join("\n");
+}
+
+const CREDENTIAL = [/gh[pousr]_[A-Za-z0-9]{20,}/, /github_pat_[A-Za-z0-9_]{20,}/, /\bsk-[A-Za-z0-9_-]{20,}/, /AKIA[0-9A-Z]{16}/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /\bxox[abpr]-[A-Za-z0-9-]{10,}/];
+
+/**
+ * The text as it may be sent to TypeSafe: home directories become "~", and anything shaped like a
+ * credential means it is not sent at all (undefined).
+ */
+export function sendable(text: string): string | undefined {
+	if (CREDENTIAL.some((pattern) => pattern.test(text))) return undefined;
+	return text.replace(/\/(?:Users|home)\/[^/\s]+/g, "~");
+}
+
+/** Runs a command with a timeout; undefined on failure, so callers take their cautious path. */
+function output(command: string, args: string[], timeoutMs: number): Promise<string | undefined> {
+	if (timeoutMs <= 0) return Promise.resolve(undefined);
+	return new Promise((resolve) => {
+		execFile(command, args, { encoding: "utf8", timeout: timeoutMs }, (error, stdout) => resolve(error ? undefined : stdout.trim() || undefined));
+	});
 }
 
 /** The key from TYPESAFE_API_KEY, or on macOS the keychain item "typesafe-jev". */
-export function apiKey(env: NodeJS.ProcessEnv = process.env): string | undefined {
-	if (env.TYPESAFE_API_KEY) return env.TYPESAFE_API_KEY;
+export async function apiKey(env: NodeJS.ProcessEnv = process.env, timeoutMs = 2000): Promise<string | undefined> {
+	if (env.TYPESAFE_API_KEY?.trim()) return env.TYPESAFE_API_KEY.trim();
 	if (process.platform !== "darwin") return undefined;
-	const found = spawnSync("security", ["find-generic-password", "-a", env.USER ?? "", "-s", "typesafe-jev", "-w"], { encoding: "utf8", timeout: 5000 });
-	return found.status === 0 ? found.stdout.trim() || undefined : undefined;
+	return output("security", ["find-generic-password", "-a", env.USER ?? "", "-s", "typesafe-jev", "-w"], timeoutMs);
 }
 
-/** Whether owner/name is public, cached for a day; unknown counts as private. */
-export function isPublic(slug: string, env: NodeJS.ProcessEnv = process.env, now = Date.now()): boolean {
+const DAY_MS = 86_400_000;
+const FAILURE_MS = 600_000;
+
+/**
+ * Whether owner/name is public; unknown counts as private. Answers are cached for a day and a
+ * failed lookup for ten minutes, unless fresh is set (pr-risk, which runs rarely and sends a diff).
+ */
+export async function isPublic(slug: string, options: { env?: NodeJS.ProcessEnv; fresh?: boolean; timeoutMs?: number; now?: number } = {}): Promise<boolean> {
+	const env = options.env ?? process.env;
+	const now = options.now ?? Date.now();
 	const file = join(env.XDG_CACHE_HOME || join(homedir(), ".cache"), "agentic", "repo-visibility.json");
 	let cache: Record<string, { visibility: string; at: number }> = {};
 	try {
@@ -130,26 +158,37 @@ export function isPublic(slug: string, env: NodeJS.ProcessEnv = process.env, now
 		cache = {};
 	}
 	const hit = cache[slug];
-	if (hit && now - hit.at < 86_400_000) return hit.visibility === "PUBLIC";
-	const viewed = spawnSync("gh", ["repo", "view", slug, "--json", "visibility", "-q", ".visibility"], { encoding: "utf8", timeout: 10_000 });
-	if (viewed.status !== 0) return false;
-	cache[slug] = { visibility: viewed.stdout.trim(), at: now };
-	mkdirSync(dirname(file), { recursive: true });
-	writeFileSync(file, JSON.stringify(cache));
-	return cache[slug].visibility === "PUBLIC";
+	const age = hit ? now - hit.at : Infinity;
+	if (!options.fresh && hit && age >= 0 && age < (hit.visibility === "UNKNOWN" ? FAILURE_MS : DAY_MS)) return hit.visibility === "PUBLIC";
+	const visibility = (await output("gh", ["repo", "view", slug, "--json", "visibility", "-q", ".visibility"], options.timeoutMs ?? 10_000)) ?? "UNKNOWN";
+	cache[slug] = { visibility, at: now };
+	try {
+		mkdirSync(dirname(file), { recursive: true });
+		writeFileSync(file, JSON.stringify(cache));
+	} catch {
+		// The cache only saves time.
+	}
+	return visibility === "PUBLIC";
 }
 
 /** owner/name of the checkout's GitHub origin, or undefined outside one. */
-export function originSlug(cwd: string): string | undefined {
-	const remote = spawnSync("git", ["-C", cwd, "remote", "get-url", "origin"], { encoding: "utf8", timeout: 5000 });
-	if (remote.status !== 0) return undefined;
-	return /^(?:https:\/\/|ssh:\/\/git@|git@)github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(remote.stdout.trim())?.[1];
+export async function originSlug(cwd: string, timeoutMs = 2000): Promise<string | undefined> {
+	const remote = await output("git", ["-C", cwd, "remote", "get-url", "origin"], timeoutMs);
+	return remote ? /^(?:https:\/\/|ssh:\/\/git@|git@)github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(remote)?.[1] : undefined;
 }
 
+/** The whole hint path stays under this, so a prompt never waits longer for a hint. */
+export const HINT_DEADLINE_MS = 3000;
+
 /** The task-class hint for a prompt typed in cwd: only for tasks in public GitHub repositories. */
-export async function taskHintFor(prompt: string, cwd: string, env: NodeJS.ProcessEnv = process.env): Promise<string | undefined> {
-	if (!isTask(prompt)) return undefined;
-	const slug = originSlug(cwd);
-	if (!slug || !isPublic(slug, env)) return undefined;
-	return taskHint(await taskClass(prompt, { apiKey: apiKey(env), timeoutMs: 3000 }));
+export async function taskHintFor(prompt: string, cwd: string, env: NodeJS.ProcessEnv = process.env, fetch?: FetchLike): Promise<string | undefined> {
+	const text = sendable(prompt);
+	if (!text || !isTask(prompt)) return undefined;
+	const deadline = Date.now() + HINT_DEADLINE_MS;
+	const left = () => deadline - Date.now();
+	const slug = await originSlug(cwd, left());
+	if (!slug || !(await isPublic(slug, { env, timeoutMs: left() }))) return undefined;
+	const key = await apiKey(env, left());
+	if (left() <= 0) return undefined;
+	return taskHint(await taskClass(text, { apiKey: key, timeoutMs: left(), fetch }));
 }

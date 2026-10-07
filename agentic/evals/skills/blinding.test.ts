@@ -72,7 +72,7 @@ describe("auditView", () => {
 
   test("flags each leak by location", () => {
     const where = (patch: Partial<CandidateView>) => auditView({ ...cleanView(), ...patch }).map((f) => f.where);
-    expect(where({ projectDir: "/Users/me/prototype-wt/evals/.sandbox/ride-journal" })).toContain("project path");
+    expect(where({ projectDir: "/var/tmp/prototype-wt/evals/.sandbox/ride-journal" })).toContain("project path");
     expect(where({ skillPath: "/x/subjects/verification/weakened/SKILL.md" })).toContain("skill path");
     expect(where({ prompt: "Write a test first, then fix it" })).toContain("prompt");
     expect(where({ projectName: "tmp-project" })).toContain("project name");

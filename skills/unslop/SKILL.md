@@ -33,6 +33,8 @@ Look for these patterns in context rather than applying mechanical word bans:
 - artificial groups of three, false ranges, synonym cycling, and repeated sentence shapes;
 - superficial participial clauses that append vague significance, such as “highlighting,” “showcasing,” or “underscoring” without evidence;
 - vague attribution such as “experts say” or “industry reports suggest” without a named source;
+- mannered prose where a literal phrase exists: aphorisms, rhetorical fragments, personified code (“the plan holds it”), and figurative verbs (“rides along,” “stands on”);
+- over-compression: dropped articles, verbless fragments, arrows, symbols, and abbreviations that make the reader decode instead of read;
 - promotional claims, generic optimism, excessive hedging, and conclusions that only restate the introduction;
 - excessive headings, bold lead-ins, decorative punctuation, or list structure that makes ordinary prose look templated;
 - chatbot framing, praise, performative agreement, and closing invitations that the recipient did not need.

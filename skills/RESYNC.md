@@ -72,3 +72,11 @@ Upstream: `pstack/skills/blast-radius`, `68836dd..9f451cf` (commits e8d856f, d7c
 | Drop "Any safety fact you can't get to step 4, say so out loud" and "If you can't prove it cheaply, mark it unproven. Don't round up." | Rejected | Marking unproven claims carries the evidence rule; local section 4 keeps it. Upstream still asks for "unproven" in its hand-back list, so the cut removed repetition rather than the rule. |
 | Drop "Only the real ones" from the risks item | No local change | The local report already separates confirmed risks from cleared paths. |
 | "scary" to "risky", "several models" to "more than one model" in the arena step, and other tightening | No local change | The local rewrite does not contain these sentences and has no multi-model arena step. |
+
+### separate-before-serializing-shared-state
+
+Upstream: `pstack/skills/principle-separate-before-serializing-shared-state`, `68836dd..9f451cf` (commits e8d856f, d7cde2b). No change taken.
+
+| Upstream change | Decision | Reason |
+| --- | --- | --- |
+| Drop "truly" and "Telling agents or goroutines to take turns does not work"; replace a semicolon with a period | No local change | The local rewrite does not contain these sentences. Local section 3 already says conventions are not concurrency control. |

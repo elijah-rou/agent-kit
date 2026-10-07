@@ -65,6 +65,21 @@ Targeted criteria, met over runs:
 3. **Stopping at a persisted-format change is already base-model behavior here.** Both copies stopped before production code on `trail-save-format`. Only the current copy presented concrete alternatives with a recommendation, and only in 1 of 2 runs. The design-shape review step adds little measurable over the old guidance on this model.
 4. **git-workflow:** as in the prototype, the weakened copy made single mixed commits with empty bodies.
 
+## Rerun after the design-checkpoint edit
+
+Commit `Keep aliased CLI renames out of the design checkpoint` narrows the public-contract clause:
+- a new optional flag, or a rename that keeps the old name as an alias, is reversible;
+- persisted data and wire formats stay doors even when the change is additive.
+
+The four current-copy planning runs and both planning judge passes were redone. The weakened copy did not change, so its runs stand. The earlier runs are archived locally under `runs-archive/`.
+
+| Subject | Current | Weakened | Margin | Accepted |
+|---|---|---|---|---|
+| planning | 1.0, 0.5, 1.0, 1.0 (mean 0.875) | 0.5, 0.5, 1.0, 1.0 (mean 0.75) | 0.125 | No (margin < 0.2) |
+
+- **trail-flag-rename:** both current runs did the rename without asking. Neither run read the skill, though, so the edit itself was not exercised there.
+- **trail-save-format:** both copies again stopped before production code. One current run presented alternatives with a recommendation; no weakened run did.
+
 ## Limits
 
 - Two runs per copy per scenario, on one candidate model per subject.

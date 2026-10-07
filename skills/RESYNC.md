@@ -62,3 +62,13 @@ Upstream: `pstack/skills/why`, `68836dd..9f451cf` (commits 73f8be4, 23a56e2, e8d
 | Read investigator and synthesizer models from `pstack-models.mdc`, with new default models | Rejected | Model routing. |
 | Density cuts to the MCP discovery, the seven investigator categories, the operating posture, the output format, and the failure modes | No local change | The local skill replaced the MCP fan-out with a read-only source order (code, git history, documents, linked issues) and its own evidence grades, so it contains none of the cut text. |
 | Punctuation edits in the reference prompts, the epistemics guide, and the MCP source playbooks | No local change | The local skill has no references; the playbooks assume MCP servers. |
+
+### blast-radius
+
+Upstream: `pstack/skills/blast-radius`, `68836dd..9f451cf` (commits e8d856f, d7cde2b, 70b2dc8, df58112). No change taken.
+
+| Upstream change | Decision | Reason |
+| --- | --- | --- |
+| Drop "Any safety fact you can't get to step 4, say so out loud" and "If you can't prove it cheaply, mark it unproven. Don't round up." | Rejected | Marking unproven claims carries the evidence rule; local section 4 keeps it. Upstream still asks for "unproven" in its hand-back list, so the cut removed repetition rather than the rule. |
+| Drop "Only the real ones" from the risks item | No local change | The local report already separates confirmed risks from cleared paths. |
+| "scary" to "risky", "several models" to "more than one model" in the arena step, and other tightening | No local change | The local rewrite does not contain these sentences and has no multi-model arena step. |

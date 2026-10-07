@@ -1,12 +1,16 @@
 #!/bin/sh
-# Claude Code PreToolUse hook. Claude lets a tool run when its hook cannot start, so a missing bun
-# or a missing CLI becomes an explicit deny here instead of a failed command.
-deny() {
+# Claude Code hooks: "claude-hook" (PreToolUse, the default) or "claude-stop" (Stop). Claude lets a
+# tool run when its PreToolUse hook cannot start, so for that hook a missing bun or a missing CLI
+# becomes an explicit deny here instead of a failed command. The Stop hook is a reminder only and
+# exits quietly instead.
+subcommand="${1:-claude-hook}"
+fail() {
+	[ "$subcommand" = claude-hook ] || exit 0
 	printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"[agentic] %s; failing closed"}}\n' "$1"
 	exit 0
 }
 entry="$(dirname "$0")/agentic"
-[ -f "$entry" ] || deny "the agentic CLI is missing"
+[ -f "$entry" ] || fail "the agentic CLI is missing"
 bun="$(command -v bun 2>/dev/null)"
 # Bootstrap links agent-kit at tools/agent-kit and bun at tools/bin/bun, for sessions started
 # without bootstrap's PATH. The tools directory is taken from $0 textually, because ".." would
@@ -16,5 +20,8 @@ for candidate in "$tools/bin/bun" "${BUN_INSTALL:+$BUN_INSTALL/bin/bun}" "$HOME/
 	[ -n "$bun" ] && break
 	if [ -n "$candidate" ] && [ -x "$candidate" ]; then bun="$candidate"; fi
 done
-[ -n "$bun" ] || deny "bun was not found"
-exec "$bun" "$entry" claude-hook
+[ -n "$bun" ] || fail "bun was not found"
+case "$subcommand" in
+	claude-hook | claude-stop) exec "$bun" "$entry" "$subcommand" ;;
+	*) fail "unknown hook $subcommand" ;;
+esac

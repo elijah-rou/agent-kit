@@ -21,7 +21,8 @@ The design (Lauren Tan's trust and correction-ladder approach, pstack's practice
    - `merge-gate` where a repository ships verified stacks: pull requests, passing CI, and the `agentic/verdict` status.
 3. **Verification lives in the product repositories,** as skills built with `create-verification` and kept honest with `maintain-verification`. A fresh verifier records each pull request's verdict with `agentic verify`, bound to its head SHA and patch ID, in pstack's vendored `orch` ledger; `agentic watch-pr` (also vendored) follows pull requests and stacks.
 4. **pstack is adapted, not forked.** Every adapted skill records its upstream commit, `agentic upstream-drift` reports drift, and `skills/RESYNC.md` records each review.
-5. **Local enforcement stays small.** The existing `git-interceptor.ts` keeps guarding child publication and integration, `--no-verify`, and editor hangs in Pi. A larger gate returns only through the evidence rule: a mistake an agent actually made, routed through `correct`, enforced at the smallest effective scale first.
+5. **Jev is advisory and only adds caution.** In public repositories, `ship` holds any PR that Jev rates above 0.3 for a one-way door, and a task Jev rates a one-way door, or classifies with confidence below 0.8, gets a hint to use `design-checkpoint`. The thresholds come from an eval on real commits and tasks from the user's public repositories. A clear score never lands a PR without its verdict, and a failed call holds the PR or gives no hint. Private repositories are never sent to Jev.
+6. **Local enforcement stays small.** The existing `git-interceptor.ts` keeps guarding child publication and integration, `--no-verify`, and editor hangs in Pi. A larger gate returns only through the evidence rule: a mistake an agent actually made, routed through `correct`, enforced at the smallest effective scale first.
 
 ## Alternatives
 
@@ -32,6 +33,8 @@ The design (Lauren Tan's trust and correction-ladder approach, pstack's practice
 ## Consequences
 
 - **Some actions rest on instructions and the harness's own permission prompts,** not a local gate: messages to people, deploys, releases, credential changes, merges before `merge-gate`, and anything in private repositories.
+- **Task prompts and PR diffs from public repositories go to TypeSafe.** The prompts include whatever the user types there.
+- **Jev's PR screen misses some one-way doors:** 9 of 82 in the eval, licenses among them. It narrows what `ship` lands unattended and is not a guarantee. The task hint misses some too (2 of 30), and appears on about 1 in 8 other tasks.
 - **Unattended sessions** (Claude in bypass-permission mode, Pi without a UI) have only rulesets and `git-interceptor` as hard stops.
 - **Verifier independence is a convention.** Nothing local stops an author from recording a verdict on its own work, and the forge cannot tell who posted the status, because everyone uses the user's token. The ledger records the verifier's ID, so a self-recorded verdict is visible after the fact.
 - **Every pull request in a `merge-gate` repository needs a verdict,** the user's own included.

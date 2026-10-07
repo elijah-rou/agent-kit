@@ -43,7 +43,8 @@ export const CANDIDATE_THINKING = "medium";
 export const JUDGE_MODEL = "sonnet";
 export const JUDGE_THINKING = "high";
 export const REPS = 2;
-const CANDIDATE_LAUNCH_BUDGET = 40;
+/** 32 planned runs plus 16 for reruns after infrastructure failures (planning context isolation, raw output reuse). */
+const CANDIDATE_LAUNCH_BUDGET = 48;
 const JUDGE_LAUNCH_BUDGET = 16;
 const CONCURRENCY = 4;
 const RUN_TIMEOUT_MS = 20 * 60_000;
@@ -339,6 +340,8 @@ async function runCandidate(key: RunKey): Promise<void> {
     const prior = JSON.parse(readFileSync(metaPath, "utf8")) as RunMeta;
     if (prior.status !== "infra-error") return console.log(`${key.id}: kept (${prior.status})`);
   }
+  // A rerun must not inherit a previous attempt's raw output: Bun.file stdout does not truncate.
+  rmSync(scratch, { recursive: true, force: true });
   mkdirSync(scratch, { recursive: true });
   mkdirSync(keep, { recursive: true });
   const p = prepare(key);

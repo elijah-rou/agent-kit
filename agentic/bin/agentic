@@ -4,12 +4,18 @@
  * tool's own CLI (each has --help):
  *   rulesets         plan or apply the GitHub ruleset that backstops agents (tools/rulesets)
  *   upstream-drift   report upstream changes since each adapted skill's recorded commit (tools/upstream-drift)
+ *   verify           record or check a fresh verifier's verdict for a pull request (tools/verify)
+ *   orch             program store and verdict ledger, vendored from pstack (vendor/orch)
+ *   watch-pr         pull request and stack watcher, vendored from pstack (vendor/watch-pr)
  */
 import { join } from "node:path";
 
 const TOOLS: Record<string, string> = {
 	rulesets: "tools/rulesets/cli.ts",
 	"upstream-drift": "tools/upstream-drift/cli.ts",
+	verify: "tools/verify/cli.ts",
+	orch: "vendor/orch/orch.ts",
+	"watch-pr": "vendor/watch-pr/watch-pr",
 };
 
 const [tool, ...rest] = process.argv.slice(2);

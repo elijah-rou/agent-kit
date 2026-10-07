@@ -80,3 +80,12 @@ Upstream: `pstack/skills/principle-separate-before-serializing-shared-state`, `6
 | Upstream change | Decision | Reason |
 | --- | --- | --- |
 | Drop "truly" and "Telling agents or goroutines to take turns does not work"; replace a semicolon with a period | No local change | The local rewrite does not contain these sentences. Local section 3 already says conventions are not concurrency control. |
+
+### type-system-discipline
+
+Upstream: `pstack/skills/principle-type-system-discipline`, `68836dd..9f451cf` (commits e8d856f, d7cde2b). No change taken.
+
+| Upstream change | Decision | Reason |
+| --- | --- | --- |
+| Drop "Manual duplication drifts" and "Extra precision costs reuse and ceremony and buys no safety" | Rejected | The local skill keeps both points (sections 5 and 6) because they justify its stopping rule. |
+| Drop "worth naming" and the "cast you bury today" aphorism; replace semicolons with periods | No local change | The local rewrite does not contain these sentences. |

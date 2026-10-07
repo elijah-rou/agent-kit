@@ -26,7 +26,9 @@ The `unslop`, `technical-writing`, `how`, `why`, `blast-radius`,
 `make-operations-idempotent`, `separate-before-serializing-shared-state`, and
 `type-system-discipline` skills are adapted from
 [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack/skills) at commit
-`68836ddaf5697224520f1847d90cdb90ca8babaa`.
+`68836ddaf5697224520f1847d90cdb90ca8babaa` and resynced to
+`9f451cf875ad1239912762f67741e8e5ba6ac0f1`; [`RESYNC.md`](RESYNC.md) records what the
+resync took and rejected.
 
 Local adaptations use narrow automatic triggers, remove Cursor tools, model routing,
 MCP assumptions, cross-skill invocation, and publication behavior, and preserve evidence

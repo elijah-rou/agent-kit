@@ -31,4 +31,5 @@ Repository conventions take precedence where they differ.
 ## Pull requests and reviews
 
 - A pull request has a short summary, the key decisions, and testing specific to the change.
+- Do not end a turn promising to report when CI finishes unless something will wake you: a background command, a monitor, or the harness's notification. Otherwise wait for CI, or tell the user they must prompt you again.
 - In public review replies, mention verification only when it is unusual, failed, materially relevant, or requested. Let reviewers resolve their own threads unless asked.

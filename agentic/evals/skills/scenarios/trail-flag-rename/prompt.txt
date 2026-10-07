@@ -1,0 +1,1 @@
+Can you rename the --km option of add to --distance? Keep --km working as an alias so my shell history still works, and update the README.

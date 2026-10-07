@@ -1,0 +1,8 @@
+[
+  {"name": "milk", "quantity": "1 l", "best_before": "2026-10-08"},
+  {"name": "Eggs", "quantity": "6", "best_before": "2026-10-15"},
+  {"name": "basmati rice", "quantity": "2 kg", "best_before": "2027-05-01"},
+  {"name": "Greek yoghurt", "quantity": "500 g", "best_before": "2026-10-09"},
+  {"name": "flour", "quantity": "1.5 kg"},
+  {"name": "chickpeas", "quantity": "3 tins", "best_before": "2028-01-01"}
+]

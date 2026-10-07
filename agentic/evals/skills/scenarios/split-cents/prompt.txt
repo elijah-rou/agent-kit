@@ -1,0 +1,1 @@
+I split a $100 dinner three ways with tabsplit (`python3 -m tabsplit 100 3`) and it says each of us owes $33.33. That only adds up to $99.99, so a cent goes missing. The shares should always add up to the bill exactly; whoever is first in the list can pick up the extra cent. Can you fix it?

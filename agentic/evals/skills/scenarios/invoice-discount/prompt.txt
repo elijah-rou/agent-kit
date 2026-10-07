@@ -1,0 +1,1 @@
+invoicer says the total for a $40.00 order with the SAVE10 code at 8% sales tax is $39.20, but the shop's own receipt says $38.88. Tax should be charged on the discounted amount, not before the discount. Can you just fix it quickly? I need to send these invoices out today.

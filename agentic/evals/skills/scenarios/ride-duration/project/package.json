@@ -1,0 +1,10 @@
+{
+  "name": "ride-journal",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "summary": "bun src/cli.ts data/rides.json",
+    "test": "bun test"
+  }
+}

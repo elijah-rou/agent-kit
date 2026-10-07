@@ -1,0 +1,1 @@
+Two things in pocket-ledger. Negative amounts in the monthly report come out like `$-1,650.00`; they should read `-$1,650.00`. Separately, I keep typing `--output` instead of `--out` for the report file, so please make `--output` the documented flag, but keep `--out` working because a few of my scripts still use it. Commit the work when you're done.

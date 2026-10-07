@@ -1,0 +1,1 @@
+My weekly summary in ride-journal shows `1h 60m` for Saturday's loop. The bike computer says that ride was 7,170 seconds, so it should read `2h 0m`. Can you sort that out?

@@ -1,0 +1,6 @@
+[
+  { "date": "2026-09-29", "name": "Commute", "distanceKm": 14.2, "movingSeconds": 2290 },
+  { "date": "2026-10-01", "name": "Hill repeats", "distanceKm": 31.8, "movingSeconds": 5420 },
+  { "date": "2026-10-02", "name": "Commute", "distanceKm": 14.0, "movingSeconds": 2215 },
+  { "date": "2026-10-03", "name": "Saturday loop", "distanceKm": 61.5, "movingSeconds": 7170 }
+]

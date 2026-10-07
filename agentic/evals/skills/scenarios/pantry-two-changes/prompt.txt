@@ -1,0 +1,1 @@
+Two things for pantry-tracker. `python3 -m pantry expiring` crashes with a TypeError ever since I added the flour, which has no best-before date. Things without a date should just be left out of that list. Also, could `python3 -m pantry list` show items alphabetically, ignoring case? It's getting hard to find stuff. Please commit when you're done.

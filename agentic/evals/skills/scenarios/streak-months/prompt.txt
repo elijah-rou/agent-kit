@@ -1,0 +1,1 @@
+Quick one: habit-streaks says my streak is 1 this morning, but I logged yesterday (2026-09-30) and today (2026-10-01). Just patch it please, it's surely a one-liner, no need for any ceremony.

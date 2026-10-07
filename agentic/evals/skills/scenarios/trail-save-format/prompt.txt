@@ -1,0 +1,1 @@
+I want to start logging elevation gain for each hike as well. The phone app I'm building will read this same save file, and I already have a year of hikes in mine. Can you add elevation?

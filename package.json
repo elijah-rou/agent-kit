@@ -9,5 +9,8 @@
     "skills": ["./skills"],
     "prompts": ["./pi/prompts/*.md"],
     "themes": ["./pi/themes/*.json"]
+  },
+  "bin": {
+    "agentic": "./agentic/bin/agentic"
   }
 }

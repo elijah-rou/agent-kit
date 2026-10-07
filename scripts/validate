@@ -11,5 +11,8 @@ bun scripts/check-skills.ts
 # Bootstrap runs Pi on Bun, so the extensions are tested there too.
 bun test pi/tests
 
+# The agentic tools (rulesets, upstream-drift).
+bun test agentic
+
 # Claude mods are Bun TypeScript; the runtime test runs only where a `claude` CLI exists.
 bun test claude/tests

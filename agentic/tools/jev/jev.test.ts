@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -60,6 +61,8 @@ describe("what leaves the machine", () => {
 	test("credential-shaped text is never sent, and home directories are redacted", () => {
 		expect(sendable(`rotate the key ${"sk-" + "a".repeat(24)} in config`)).toBeUndefined();
 		expect(sendable(`use ${"ghp_" + "b".repeat(30)}`)).toBeUndefined();
+		expect(sendable("set password=hunter2hunter2 in the env file")).toBeUndefined();
+		expect(sendable("rename the token parser module and update its callers")).toBe("rename the token parser module and update its callers");
 		const [mac, linux] = ["/" + "Users/someone", "/" + "home/dev"];
 		expect(sendable(`fix the build script in ${mac}/src/app and ${linux}/x`)).toBe("fix the build script in ~/src/app and ~/x");
 	});
@@ -74,7 +77,13 @@ describe("what leaves the machine", () => {
 	test("a hanging Jev never holds a prompt past the deadline", async () => {
 		const hanging: FetchLike = (_input, init) => new Promise((_, reject) => init.signal?.addEventListener("abort", () => reject(new DOMException("timed out", "TimeoutError"))));
 		const started = Date.now();
-		const hint = await taskHintFor("Store verdicts in a new SQLite database and migrate rows", import.meta.dir, seededCache("elijah-rou/agent-kit", { visibility: "PUBLIC", at: Date.now() }), hanging);
+		const repo = mkdtempSync(join(tmpdir(), "jev-repo-"));
+		execFileSync("git", ["init", "-q", repo]);
+		execFileSync("git", ["-C", repo, "remote", "add", "origin", "git@github.com:o/r.git"]);
+		let reached = false;
+		const watched: FetchLike = (input, init) => ((reached = true), hanging(input, init));
+		const hint = await taskHintFor("Store verdicts in a new SQLite database and migrate rows", repo, seededCache("o/r", { visibility: "PUBLIC", at: Date.now() }), watched);
+		expect(reached).toBe(true);
 		expect(hint).toBeUndefined();
 		expect(Date.now() - started).toBeLessThan(HINT_DEADLINE_MS + 500);
 	});

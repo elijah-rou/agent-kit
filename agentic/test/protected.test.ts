@@ -120,4 +120,41 @@ describe("protected configuration paths", () => {
 		expect((await bash(`echo '- rule' >> .agents/learning/LEARNED.md`, ws)).decision).toBe("ask");
 		expect((await bash(`bun ${cli} status`, ws)).decision).toBe("allow");
 	});
+
+	test("~ and @ paths, cd, parent directories, and prefix assignments still reach protected paths", async () => {
+		const ws = setup();
+		const deps = { ...ws.deps, classifyContext: { ...ws.deps.classifyContext!, homeDir: ws.home.replace(/\/home$/, "") } };
+		// homeDir is the setup root, so ~/home/grants.toml is the grants file.
+		const run = (command: string) => evaluateToolCall({ toolName: "bash", input: { command }, cwd: ws.repo }, deps);
+		for (const command of [
+			"echo x > ~/home/grants.toml",
+			"cp /tmp/x ~/home/config.toml",
+			`cd ${ws.home} && sed -i '' s/2/4/ grants.toml`,
+			`mv ${ws.home} /tmp/old-home`,
+			`cp -R /tmp/fake ${ws.home}`,
+			"ORCH_STORE=.agents/orch agentic orch ledger record --pr 5 --verdict pass",
+		]) {
+			expect({ command, decision: (await run(command)).decision }).toEqual({ command, decision: "deny" });
+		}
+		// .agents also holds the verdict ledger, so removing it is blocked; the policy folder alone asks.
+		expect((await run("rm -rf .agents")).decision).toBe("deny");
+		expect((await run("rm -rf .agents/policy")).decision).toBe("ask");
+		for (const [toolName, path] of [["edit", "~/home/grants.toml"], ["write", `@${ws.grants}`]] as const) {
+			expect((await evaluateToolCall({ toolName, input: { path, oldText: "2", newText: "4" }, cwd: ws.repo }, deps)).decision).toBe("deny");
+		}
+		expect((await run(`cp notes.txt ${ws.repo}`)).decision).toBe("allow");
+		expect((await run("cd src && echo x > notes.txt")).decision).toBe("allow");
+	});
+
+	test("files that wire the gate in ask the user: harness settings and the gate's own code", async () => {
+		const ws = setup();
+		const claudeHome = join(ws.root, "claude");
+		const deps = { ...ws.deps, env: { ...ws.deps.env, CLAUDE_CONFIG_DIR: claudeHome, PI_CODING_AGENT_DIR: join(ws.root, "pi") } };
+		for (const path of [join(claudeHome, "settings.json"), join(ws.root, "pi", "settings.json"), join(ws.repo, ".claude", "settings.local.json"), join(import.meta.dir, "..", "src", "pipeline.ts")]) {
+			const result = await evaluateToolCall({ toolName: "write", input: { path, content: "{}" }, cwd: ws.repo }, deps);
+			expect({ path, decision: result.decision, policies: result.policies }).toEqual({ path, decision: "ask", policies: ["gate-wiring-needs-user"] });
+		}
+		const policy = await evaluateToolCall({ toolName: "write", input: { path: join(import.meta.dir, "..", "policy", "global.cedar"), content: "" }, cwd: ws.repo }, deps);
+		expect(policy.decision).toBe("deny");
+	});
 });

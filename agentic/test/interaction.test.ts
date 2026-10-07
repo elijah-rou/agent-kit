@@ -1,11 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import { endsOnBlocker } from "../src/interaction.ts";
 
-describe("interaction contract", () => {
-	test("a Needs you section with content is a blocker; nothing is not", () => {
-		expect(endsOnBlocker("**Needs you:** pick the auth provider (recommend Clerk; default Clerk tomorrow).\n\nDone: login page.")).toBe(true);
-		expect(endsOnBlocker("## Needs you\nApprove the schema change.\n\n## Done\n- x")).toBe(true);
-		expect(endsOnBlocker("**Needs you:** nothing.\n\n**Done:** shipped the fix.")).toBe(false);
-		expect(endsOnBlocker("Fixed the bug and ran the tests.")).toBe(false);
+describe("endsOnBlocker", () => {
+	test.each([
+		["Needs you: nothing\n\nRefactored the parser and its tests.", false],
+		["**Needs you:** nothing\n\nRefactored the parser.", false],
+		["Needs you: none.\nMore prose.", false],
+		["## Needs you\n\nNothing.\n\n## Done\nRefactored.", false],
+		["## Done\nRefactored the parser.", false],
+		["Needs you: choose the merge style for PR 12.\n\nDetails follow.", true],
+		["**Needs you:** approve the schema change.", true],
+		["## Needs you\n\n- Pick a cache size.\n\n## Done\nRest.", true],
+		["Needs you:\n- Confirm the rollout window.", true],
+		["**Needs you:** pick the auth provider (recommend Clerk; default Clerk tomorrow).\n\nDone: login page.", true],
+		["## Needs you\nApprove the schema change.\n\n## Done\n- x", true],
+		["**Needs you:** nothing.\n\n**Done:** shipped the fix.", false],
+		["Fixed the bug and ran the tests.", false],
+	])("%j -> %p", (report, blocker) => {
+		expect(endsOnBlocker(report)).toBe(blocker);
 	});
 });

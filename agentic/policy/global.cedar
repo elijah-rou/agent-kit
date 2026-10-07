@@ -104,3 +104,10 @@ when { ["grants", "user-config", "global-policy", "ledger", "decision-log", "for
 @effect("ask")
 forbid (principal, action == Action::"file.write", resource is ProtectedPath)
 when { ["repo-policy", "learned"].contains(resource.kind) };
+
+// The files that wire the gate in (its own code and dependencies, the Pi gate extension, and
+// harness settings that could drop the hook or point it at other grants) change only with the user.
+@id("gate-wiring-needs-user")
+@effect("ask")
+forbid (principal, action == Action::"file.write", resource is ProtectedPath)
+when { resource.kind == "enforcement" };

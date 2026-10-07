@@ -69,7 +69,7 @@ test("both harnesses carry the same autonomy ladder and interaction contract, ma
   const ladder = (text) => text.match(/^- Decide routine reversible things[\s\S]*?draft the command for the user\.$/m)?.[0];
   assert.ok(ladder(agents));
   assert.equal(ladder(claude), ladder(agents));
-  for (const rule of [/Every question gives concrete options, a recommendation with its reason, and the default/, /open with a "Needs you" part/, /route it through `correct`/, /One-way doors are the only pre-build checkpoint/]) {
+  for (const rule of [/Every question gives concrete options, a recommendation with its reason, and the default/, /open with a "Needs you" part/, /offer to run `correct` on it/, /One-way doors are the only pre-build checkpoint/]) {
     assert.match(agents, rule);
     assert.match(claude, rule);
   }

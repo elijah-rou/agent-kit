@@ -29,4 +29,4 @@ From the third review pass on a PR, lean toward dismissing patterns already disp
 
 ## Recording patterns
 
-After the frontier is merge-ready, sweep the run's dismissals once. A dismissal pattern that recurred is a candidate rule for the repository: propose it to the user, or route it to `correct` if a check could enforce it. Do not keep it only in private notes.
+After the frontier is merge-ready, sweep the run's dismissals once. A dismissal pattern that recurred is a candidate rule for the repository: propose it to the user, suggesting `correct` if a check could enforce it. Do not keep it only in private notes.

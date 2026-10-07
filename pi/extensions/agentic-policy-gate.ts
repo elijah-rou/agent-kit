@@ -7,11 +7,24 @@
  * - /agentic-raise <0-4>: a user-typed, session-scoped autonomy raise, capped by the grant,
  *   persisted on the session branch, and logged.
  * - Jev is configured in ~/.config/agentic/config.toml; the key comes from the keychain.
+ * - The policy layer loads on first use, not at extension load: Pi skips an extension that fails
+ *   to load, which would drop the gate silently, but blocks a tool whose handler throws.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { sessionFromEnv } from "../../agentic/src/facts.ts";
-import { jevFilterFromConfig } from "../../agentic/src/jev-filter.ts";
-import { evaluateToolCall, recordDecision } from "../../agentic/src/pipeline.ts";
+
+type PolicyLayer = typeof import("../../agentic/src/pipeline.ts") & typeof import("../../agentic/src/facts.ts") & typeof import("../../agentic/src/jev-filter.ts");
+let policyLayer: Promise<PolicyLayer> | undefined;
+
+function loadPolicyLayer(): Promise<PolicyLayer> {
+	policyLayer ??= Promise.all([import("../../agentic/src/pipeline.ts"), import("../../agentic/src/facts.ts"), import("../../agentic/src/jev-filter.ts")]).then(
+		([pipeline, facts, jev]) => ({ ...pipeline, ...facts, ...jev }),
+		(error) => {
+			policyLayer = undefined;
+			throw error;
+		},
+	);
+	return policyLayer;
+}
 
 const RAISE_ENTRY = "agentic-raise";
 
@@ -45,6 +58,7 @@ export default function agenticPolicyGate(pi: ExtensionAPI): void {
 				ctx.ui.notify("usage: /agentic-raise <0-4>", "error");
 				return;
 			}
+			const { recordDecision } = await loadPolicyLayer();
 			sessionRaise = level;
 			pi.appendEntry<RaiseEntry>(RAISE_ENTRY, { level, at: new Date().toISOString() });
 			recordDecision(process.env, `/agentic-raise ${level}`, { decision: "allow", steps: [], reason: `user raised session autonomy to A${level} (capped by grant)`, policies: [], outsidePolicy: false });
@@ -53,6 +67,7 @@ export default function agenticPolicyGate(pi: ExtensionAPI): void {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
+		const { evaluateToolCall, recordDecision, sessionFromEnv, jevFilterFromConfig } = await loadPolicyLayer();
 		const env = { ...process.env, AGENTIC_SESSION_RAISE: String(sessionRaise) };
 		const session = sessionFromEnv(env, "pi");
 		session.principalId = env.AGENTIC_AGENT_ID ?? `pi:${ctx.sessionManager.getSessionId?.() ?? process.pid}`;

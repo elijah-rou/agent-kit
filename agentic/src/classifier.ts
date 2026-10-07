@@ -15,8 +15,10 @@ export interface ClassifyContext {
 	forwarders?: ReadonlyMap<string, number>;
 	/** The agent's environment, for expanding variables the command does not assign itself. */
 	env?: Readonly<Record<string, string | undefined>>;
-	/** Returns the protected kind of a path (relative to cwd), if writing it is a hard point. */
-	protectedKind?: (path: string) => string | undefined;
+	/** Directory that relative paths in later commands resolve against, after a cd in the same command. */
+	pathCwd?: string;
+	/** Returns the protected kind of a path (relative to the given cwd), if writing it is a hard point. */
+	protectedKind?: (path: string, options?: { cwd?: string; reach?: "path" | "parent" | "ancestor" }) => string | undefined;
 }
 
 export interface UnclassifiedPart {
@@ -168,9 +170,35 @@ export function classifyCommand(command: string, ctx: ClassifyContext, depth = 0
 	const parsed = parseShell(command);
 	const out = result();
 	if (parsed.opaque.includes("unterminated-quote")) out.unclassified.push({ text: command, reason: "unterminated quote", couldReachHardPoint: NETWORKY.test(command), opaqueExecution: false });
-	for (const simple of parsed.commands) merge(out, classifySimple(simple, command, ctx, depth));
+	let current = ctx;
+	for (const simple of parsed.commands) {
+		merge(out, classifySimple(simple, command, current, depth));
+		current = afterDirectoryChange(simple, current);
+	}
 	return out;
 }
+
+/**
+ * Tracks cd and pushd so later relative paths in the same command resolve where the shell would
+ * write them. Only path resolution follows; git context stays at the call's directory. A target
+ * that cannot be read statically ($VAR, -) leaves the directory unchanged.
+ */
+function afterDirectoryChange(simple: SimpleCommand, ctx: ClassifyContext): ClassifyContext {
+	const [name, ...args] = simple.words;
+	if (name !== "cd" && name !== "pushd") return ctx;
+	const target = args.find((arg) => !arg.startsWith("-") || arg === "-");
+	const from = ctx.pathCwd ?? ctx.cwd;
+	if (target === undefined) return { ...ctx, pathCwd: ctx.homeDir };
+	if (target === "-" || target.includes("$")) return ctx;
+	return { ...ctx, pathCwd: resolvePath({ ...ctx, cwd: from }, target) };
+}
+
+/** Commands that move or delete their operands, so a directory above a protected path counts. */
+const REMOVES = new Set(["rm", "rmdir", "unlink", "mv", "shred", "trash"]);
+/** Commands whose destination (last operand) may be a directory they copy into. */
+const COPIES_INTO = new Set(["cp", "rsync", "install", "ln", "ditto", "scp"]);
+/** Interpreters whose first operand is the script they run, which is execution, not a write. */
+const RUNS_SCRIPT = new Set(["bun", "node", "deno", "python", "python3", "sh", "bash", "zsh", "perl", "ruby"]);
 
 function classifySimple(simple: SimpleCommand, line: string, ctx: ClassifyContext, depth: number): CommandClassification {
 	const text = simple.words.join(" ");
@@ -277,15 +305,23 @@ function protectedWrites(simple: SimpleCommand, words: string[], name: string, c
 		seen.add(path);
 		out.actions.push({ action: "file.write", resource: { kind: "ProtectedPath", protectedKind: kind, path }, force: false, evidence: text });
 	};
+	const cwd = ctx.pathCwd ?? ctx.cwd;
 	for (const target of simple.writes) {
-		const kind = ctx.protectedKind(target);
+		const kind = ctx.protectedKind(target, { cwd });
 		if (kind) add(target, kind);
 	}
 	if (words.length > 0 && !isReadOnly(name, words.slice(1))) {
-		for (const word of words.slice(1)) {
+		const operands = words.slice(1).filter((word) => !word.startsWith("-"));
+		const destination = operands.at(-1);
+		const script = RUNS_SCRIPT.has(name) ? operands[0] : undefined;
+		// Prefix assignments such as ORCH_STORE=dir configure where the command writes.
+		const values = simple.assignments.map((assignment) => assignment.slice(assignment.indexOf("=") + 1));
+		for (const word of [...words.slice(1), ...values]) {
+			if (word === script) continue;
+			const reach = REMOVES.has(name) ? "ancestor" : COPIES_INTO.has(name) && word === destination ? "parent" : "path";
 			const candidates = word.includes("=") ? [word, word.slice(word.indexOf("=") + 1)] : [word];
 			for (const candidate of candidates) {
-				const kind = ctx.protectedKind(candidate);
+				const kind = ctx.protectedKind(candidate, { cwd, reach });
 				if (kind) add(candidate, kind);
 			}
 		}
@@ -408,7 +444,7 @@ function protectedReferences(code: string, ctx: ClassifyContext, text: string): 
 	const seen = new Set<string>();
 	const candidates = [...code.matchAll(/(["'`])((?:(?!\1)[^\n\\]|\\.)+)\1/g)].map((m) => m[2]).concat([...code.matchAll(/(?:^|[\s(=,])((?:\.{1,2}|~)?\/[^\s"'`;,)]+|[\w.-]+\/[\w./-]+)/g)].map((m) => m[1]));
 	for (const candidate of candidates) {
-		const kind = ctx.protectedKind(candidate);
+		const kind = ctx.protectedKind(candidate, { cwd: ctx.pathCwd ?? ctx.cwd });
 		if (kind && !seen.has(candidate)) {
 			seen.add(candidate);
 			out.actions.push({ action: "file.write", resource: { kind: "ProtectedPath", protectedKind: kind, path: candidate }, force: false, evidence: text });

@@ -79,7 +79,7 @@ proof = { test = "../pi/tests/agentic-policy-gate.test.mjs", past_mistake = "202
 id = "hook-allow-defers-to-permission-prompts"
 statement = "The Claude hook never returns allow; allowed calls defer to Claude's own permission prompts."
 level = "test"
-enforcer = { kind = "test", ref = "bin/agentic" }
+enforcer = { kind = "test", ref = "src/cli.ts" }
 proof = { test = "test/claude-hook.test.ts", past_mistake = "Claude Code hook docs (prototype docs/decisions.md, hook semantics): an explicit allow bypasses permission prompts, which would widen the user's permissions" }
 
 [[rule]]
@@ -90,3 +90,10 @@ judgment = true
 judgment_reason = "Whether a question seeks approval for a gated action is semantic; the gate stays authoritative regardless, so this rule only shapes agent behavior."
 enforcer = { kind = "instruction", ref = "../pi/extensions/question.ts" }
 proof = { test = "../pi/tests/question-contract.test.mjs", past_mistake = "2026-10-07 prototype governed run s5: after the gate asked, the agent asked itself with 'run the merge' as the default; fixed in prototype commit ec63aae" }
+
+[[rule]]
+id = "agents-cannot-unwire-the-gate"
+statement = "Agents do not edit the gate's code, its dependencies, or harness settings that load it without the user."
+level = "cedar"
+enforcer = { kind = "cedar", ref = "gate-wiring-needs-user" }
+proof = { test = "test/protected.test.ts", past_mistake = "2026-10-07 port review: an Edit to the Claude settings file or the worktree's pipeline.ts was allowed, which could drop the hook or point it at other grants" }

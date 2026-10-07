@@ -144,7 +144,7 @@ export async function evaluateToolCall(call: ToolCall, deps: PipelineDeps): Prom
 	} catch (error) {
 		return deny(`policy configuration error: ${(error as Error).message}`);
 	}
-	const ctx: ClassifyContext = { ...base, env: deps.env, protectedKind: (path) => protectedKindOf(protectedList, base.cwd, path) };
+	const ctx: ClassifyContext = { ...base, env: deps.env, protectedKind: (path, options) => protectedKindOf(protectedList, options?.cwd ?? base.cwd, path, { home: base.homeDir, reach: options?.reach }) };
 
 	let classification;
 	if (isShell) {
@@ -153,8 +153,10 @@ export async function evaluateToolCall(call: ToolCall, deps: PipelineDeps): Prom
 		classification = classifyCommand(command, ctx);
 	} else {
 		const input = call.input as Record<string, unknown>;
-		const path = fileKeys.map((key) => input?.[key]).find((value): value is string => typeof value === "string");
-		if (!path) return deny(`${call.toolName} call without a path`);
+		const raw = fileKeys.map((key) => input?.[key]).find((value): value is string => typeof value === "string");
+		if (!raw) return deny(`${call.toolName} call without a path`);
+		// Pi's file tools strip a leading @ (a file mention) before resolving the path.
+		const path = raw.startsWith("@") ? raw.slice(1) : raw;
 		const kind = ctx.protectedKind?.(path);
 		classification = kind ? { actions: [{ action: "file.write" as const, resource: { kind: "ProtectedPath" as const, protectedKind: kind, path }, force: false, evidence: `${call.toolName} ${path}` }], unclassified: [] } : { actions: [], unclassified: [] };
 	}

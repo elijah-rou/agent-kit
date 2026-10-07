@@ -51,3 +51,14 @@ Upstream: `pstack/skills/how`, `68836dd..9f451cf` (commits 73f8be4, 23a56e2, e8d
 | Read subagent models from `pstack-models.mdc`, with new default models | Rejected | Model routing. |
 | Shorter complexity assessment ("when in doubt, take the simple path") | No local change | Local section 2 already splits work into read-only lanes only when their scopes are distinct. |
 | Wording edits in `references/explainer-prompt.md` and `references/explorer-prompt.md` | No local change | The local skill has no prompt templates. |
+
+### why
+
+Upstream: `pstack/skills/why`, `68836dd..9f451cf` (commits 73f8be4, 23a56e2, e8d856f, d7cde2b, 70b2dc8, 12d587d, df58112). No change taken.
+
+| Upstream change | Decision | Reason |
+| --- | --- | --- |
+| `disable-model-invocation: true` | Rejected | The local skill is model-invoked through a narrow description. |
+| Read investigator and synthesizer models from `pstack-models.mdc`, with new default models | Rejected | Model routing. |
+| Density cuts to the MCP discovery, the seven investigator categories, the operating posture, the output format, and the failure modes | No local change | The local skill replaced the MCP fan-out with a read-only source order (code, git history, documents, linked issues) and its own evidence grades, so it contains none of the cut text. |
+| Punctuation edits in the reference prompts, the epistemics guide, and the MCP source playbooks | No local change | The local skill has no references; the playbooks assume MCP servers. |

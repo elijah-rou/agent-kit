@@ -70,6 +70,7 @@ test("outward-facing actions follow the standing default and publication stays w
   assert.match(gitWorkflow, /Name every branch you intend to push `agent\/<topic>`/);
   assert.match(agents, /The parent owns planning, decisions, acceptance, and outward-facing actions/);
   assert.match(agents, /`git-workflow` for worktrees, history, pushing, merging, and pull requests/);
+  assert.match(gitWorkflow, /except an `autopilot-full` owner for its own `agent\/\*` branch and pull request/);
   assert.match(gitWorkflow, /Only the coordinating agent may push, merge[^\n]*Subagents and external mutation-capable runners never do/);
   assert.match(gitWorkflow, /recheck the exact revision and the full workspace against the final verification/i);
   assert.match(agents, /Write a short ADR only for public contracts, persisted formats, security boundaries, major dependencies, hard-to-reverse architecture, or substantial operational commitments/i);

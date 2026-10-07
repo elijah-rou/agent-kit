@@ -97,3 +97,10 @@ statement = "Agents do not edit the gate's code, its dependencies, or harness se
 level = "cedar"
 enforcer = { kind = "cedar", ref = "gate-wiring-needs-user" }
 proof = { test = "test/protected.test.ts", past_mistake = "2026-10-07 port review: an Edit to the Claude settings file or the worktree's pipeline.ts was allowed, which could drop the hook or point it at other grants" }
+
+[[rule]]
+id = "shared-branch-deletion-pauses"
+statement = "Agents pause for the user before deleting a remote branch that is not an agent branch, including inside a loop."
+level = "cedar"
+enforcer = { kind = "cedar", ref = "always-pause-delete-shared-branch" }
+proof = { test = "test/pipeline.test.ts", past_mistake = "2026-10-03 session 47f4cddb (dotfiles): a loop deleted every non-default branch on GitHub, including three nobody had inspected and one with unmerged work" }

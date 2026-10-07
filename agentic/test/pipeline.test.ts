@@ -127,6 +127,16 @@ describe("pipeline", () => {
 		expect((await run("gh pr comment 5 --body 'fixed, thanks'", ws, deps(ws))).decision).toBe("allow");
 	});
 
+	test("deleting shared remote branches pauses, including in a loop over every branch", async () => {
+		// Past mistake (2026-10-03, session 47f4cddb): a loop deleted every non-default dotfiles branch on GitHub.
+		const ws = workspace({ grant: 4 });
+		for (const command of ["git push origin --delete feature", 'for b in $(git branch -r | grep -v main | sed "s#origin/##"); do git push origin --delete "$b"; done']) {
+			const result = await run(command, ws, deps(ws));
+			expect({ command, decision: result.decision, policies: result.policies }).toEqual({ command, decision: "ask", policies: ["always-pause-delete-shared-branch"] });
+		}
+		expect((await run("git push origin --delete agent/done", ws, deps(ws))).policies).not.toContain("always-pause-delete-shared-branch");
+	});
+
 	test("children never publish", async () => {
 		const ws = workspace({ grant: 4 });
 		const result = await run("git push origin agent/x", ws, deps(ws, { isChild: true }));

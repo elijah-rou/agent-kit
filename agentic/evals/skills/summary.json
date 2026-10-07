@@ -1,0 +1,149 @@
+{
+  "summary": [
+    {
+      "subject": "verification",
+      "current": [
+        0.8,
+        0.8,
+        1,
+        1,
+        0.6,
+        0.4,
+        1,
+        0.8
+      ],
+      "weakened": [
+        0.8,
+        0.8,
+        0.8,
+        0.6,
+        0.4,
+        0.4,
+        0.8,
+        0.8
+      ],
+      "currentMean": 0.8,
+      "weakenedMean": 0.675,
+      "margin": 0.125,
+      "passesOnCurrent": true,
+      "failsOnWeakened": true,
+      "accepted": false
+    },
+    {
+      "subject": "git-workflow",
+      "current": [
+        1,
+        1,
+        0.8,
+        0.6
+      ],
+      "weakened": [
+        0.4,
+        0.4,
+        0.4,
+        0.4
+      ],
+      "currentMean": 0.85,
+      "weakenedMean": 0.4,
+      "margin": 0.44999999999999996,
+      "passesOnCurrent": true,
+      "failsOnWeakened": true,
+      "accepted": true
+    },
+    {
+      "subject": "planning",
+      "current": [
+        0.5,
+        1,
+        1,
+        0
+      ],
+      "weakened": [
+        0.5,
+        0.5,
+        1,
+        1
+      ],
+      "currentMean": 0.625,
+      "weakenedMean": 0.75,
+      "margin": -0.125,
+      "passesOnCurrent": false,
+      "failsOnWeakened": false,
+      "accepted": false
+    }
+  ],
+  "targeted": {
+    "verification/red_before_fix/current": {
+      "met": 3,
+      "of": 8
+    },
+    "verification/durable_regression_case/current": {
+      "met": 7,
+      "of": 8
+    },
+    "verification/green_after_last_fix/current": {
+      "met": 7,
+      "of": 8
+    },
+    "verification/red_before_fix/weakened": {
+      "met": 0,
+      "of": 8
+    },
+    "verification/durable_regression_case/weakened": {
+      "met": 6,
+      "of": 8
+    },
+    "verification/green_after_last_fix/weakened": {
+      "met": 6,
+      "of": 8
+    },
+    "git-workflow/one_concern_per_commit/current": {
+      "met": 2,
+      "of": 4
+    },
+    "git-workflow/commit_bodies_present/current": {
+      "met": 4,
+      "of": 4
+    },
+    "git-workflow/bodies_explain_why/current": {
+      "met": 3,
+      "of": 4
+    },
+    "git-workflow/one_concern_per_commit/weakened": {
+      "met": 0,
+      "of": 4
+    },
+    "git-workflow/commit_bodies_present/weakened": {
+      "met": 0,
+      "of": 4
+    },
+    "git-workflow/bodies_explain_why/weakened": {
+      "met": 0,
+      "of": 4
+    },
+    "planning/stops_before_production/current": {
+      "met": 2,
+      "of": 2
+    },
+    "planning/presents_alternatives/current": {
+      "met": 1,
+      "of": 2
+    },
+    "planning/stops_before_production/weakened": {
+      "met": 2,
+      "of": 2
+    },
+    "planning/presents_alternatives/weakened": {
+      "met": 0,
+      "of": 2
+    },
+    "planning/no_plan_request/current": {
+      "met": 1,
+      "of": 2
+    },
+    "planning/no_plan_request/weakened": {
+      "met": 2,
+      "of": 2
+    }
+  }
+}

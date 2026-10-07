@@ -81,10 +81,18 @@ export interface StepResult {
 	policies: string[];
 	reason: string;
 	jev?: JevVerdict;
+	/** For an ask about an unreadable command: what a session that cannot ask the user does instead. */
+	unattended?: "allow" | "deny";
 }
 
 export interface PipelineResult {
 	decision: Decision;
+	/**
+	 * What to do with an ask when no user can be asked (Claude without prompts, Pi without a UI):
+	 * deny for policy asks, opaque execution, and commands Jev rates likely to reach a hard
+	 * point; allow for other unreadable commands. Only meaningful when decision is "ask".
+	 */
+	unattended?: "allow" | "deny";
 	steps: StepResult[];
 	reason: string;
 	policies: string[];
@@ -202,8 +210,11 @@ export async function evaluateToolCall(call: ToolCall, deps: PipelineDeps): Prom
 
 	const decision = combine(steps);
 	const decisive = steps.filter((step) => step.decision === decision);
+	// An ask from a policy always needs the user; an ask about an unreadable command carries its own answer.
+	const unattended = decision !== "ask" ? undefined : steps.every((step) => step.decision !== "ask" || step.unattended === "allow") ? "allow" : "deny";
 	return {
 		decision,
+		unattended,
 		steps,
 		reason: decisive.map((step) => `${step.summary}: ${step.reason}`).join(" | "),
 		policies: [...new Set(decisive.flatMap((step) => step.policies))],
@@ -211,15 +222,23 @@ export async function evaluateToolCall(call: ToolCall, deps: PipelineDeps): Prom
 	};
 }
 
+/**
+ * Jev's P(yes) at or above which an unreadable command is treated as likely reaching a hard
+ * point. In the O9 eval every non-obfuscated hard point scored 0.88 or more, while look-alikes
+ * scored 0.44 or less apart from one dry-run item (evals/jev/REPORT.md, results.jsonl).
+ */
+export const LIKELY_HARD_POINT = 0.8;
+
 async function filterUnclassified(part: UnclassifiedPart, jev: JevFilter | undefined, isChild: boolean): Promise<StepResult> {
 	const base = { kind: "unclassified" as const, summary: `unreadable command (${part.reason})`, policies: [] };
 	if (isChild) return { ...base, decision: "deny", reason: "child agents may not run unreadable commands that could publish" };
-	if (part.opaqueExecution) return { ...base, decision: "ask", reason: "executes computed or piped-in text; asked directly without Jev" };
-	if (!jev) return { ...base, decision: "ask", reason: "could reach a hard point; Jev filter not configured" };
+	if (part.opaqueExecution) return { ...base, decision: "ask", unattended: "deny", reason: "executes computed or piped-in text; asked directly without Jev" };
+	if (!jev) return { ...base, decision: "ask", unattended: "allow", reason: "could reach a hard point; Jev filter not configured" };
 	const verdict = await jev(part.text);
 	if (verdict.kind === "confident-no") return { ...base, decision: "allow", reason: `Jev: confident no (p=${verdict.probability.toFixed(3)})`, jev: verdict };
-	if (verdict.kind === "unavailable") return { ...base, decision: "ask", reason: `Jev unavailable (${verdict.reason})`, jev: verdict };
-	return { ...base, decision: "ask", reason: `Jev: may reach a hard point (p=${verdict.probability.toFixed(3)})`, jev: verdict };
+	if (verdict.kind === "unavailable") return { ...base, decision: "ask", unattended: "allow", reason: `Jev unavailable (${verdict.reason})`, jev: verdict };
+	const likely = verdict.probability >= LIKELY_HARD_POINT;
+	return { ...base, decision: "ask", unattended: likely ? "deny" : "allow", reason: `Jev: ${likely ? "likely reaches" : "may reach"} a hard point (p=${verdict.probability.toFixed(3)})`, jev: verdict };
 }
 
 /** Appends one row to the run's decision log (tools/decision-log) when AGENTIC_DECISION_LOG names one. */

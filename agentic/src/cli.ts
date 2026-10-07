@@ -15,7 +15,7 @@
  *   watch-pr          pull request and stack watcher, vendored from pstack (vendor/watch-pr)
  *   learning          learning loop: consolidate, approve, status (src/learning)
  */
-import { evaluateToolCall, recordDecision, validateAll, type JevFilter } from "./pipeline.ts";
+import { evaluateToolCall, recordDecision, validateAll, type JevFilter, type PipelineResult } from "./pipeline.ts";
 import { effectiveLevel, gitContext, grantsPath, readGrants, readRepoConfig, sessionFromEnv } from "./facts.ts";
 import { repoIdentity } from "./classifier.ts";
 import { jevFilterFromConfig } from "./jev-filter.ts";
@@ -86,15 +86,16 @@ async function claudeHook(): Promise<void> {
 		clearTimeout(timer);
 		const message = event.data as { ok: boolean; error?: string; result?: { decision: "allow" | "ask" | "deny"; reason: string; policies: string[] } };
 		if (!message.ok || !message.result) emit("deny", `[agentic] internal error, failing closed: ${message.error ?? "no result"}`);
-		const result = message.result as { decision: "allow" | "ask" | "deny"; reason: string; policies: string[] };
+		const result = message.result as PipelineResult;
 		// Allow emits nothing so Claude's normal permission flow still applies; an explicit
 		// "allow" would bypass the user's permission prompts.
 		if (result.decision === "allow") process.exit(0);
 		const label = `[agentic] ${result.reason}${result.policies.length ? ` (policies: ${result.policies.join(", ")})` : ""}`;
 		// Claude approves "ask" silently in modes that never prompt (bypassPermissions and any
-		// mode not known to prompt), which would let always-pause actions through, so those
-		// sessions get a deny the user can act on themselves.
+		// mode not known to prompt), so those sessions take the pipeline's unattended answer:
+		// policy asks and likely hard points are denied, other unreadable commands run.
 		if (result.decision === "ask" && mode !== undefined && !PROMPTING_MODES.has(String(mode))) {
+			if (result.unattended === "allow") process.exit(0);
 			emit("deny", `${label}. This needs the user, and this session cannot ask (permission mode ${String(mode)}): draft the command for the user to run themselves.`);
 		}
 		emit(result.decision, label);

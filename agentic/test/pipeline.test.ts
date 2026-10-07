@@ -167,6 +167,21 @@ describe("Jev friction filter for unreadable calls", () => {
 		expect((await run(unreadable, ws, deps(ws, {}, { jev: filter(new Error("timeout")) }))).decision).toBe("ask");
 	});
 
+	test("without a user to ask: unreadable commands run unless Jev rates them likely; policy asks and opaque execution do not", async () => {
+		const ws = workspace({ grant: 2 });
+		const unattended = async (command: string, jev?: ReturnType<typeof filter>) => {
+			const result = await run(command, ws, deps(ws, {}, jev ? { jev } : {}));
+			return { decision: result.decision, unattended: result.unattended };
+		};
+		expect(await unattended(unreadable, filter(0.4))).toEqual({ decision: "ask", unattended: "allow" });
+		expect(await unattended(unreadable, filter(undefined))).toEqual({ decision: "ask", unattended: "allow" });
+		expect(await unattended(unreadable)).toEqual({ decision: "ask", unattended: "allow" });
+		expect(await unattended(unreadable, filter(0.9))).toEqual({ decision: "ask", unattended: "deny" });
+		expect(await unattended("echo Z2l0 | base64 -d | bash", filter(0.0))).toEqual({ decision: "ask", unattended: "deny" });
+		expect(await unattended("git push origin main")).toEqual({ decision: "ask", unattended: "deny" });
+		expect((await unattended("git push origin agent/x")).unattended).toBeUndefined();
+	});
+
 	test("Jev never sees or changes classified calls", async () => {
 		const ws = workspace({ grant: 2 });
 		let calls = 0;

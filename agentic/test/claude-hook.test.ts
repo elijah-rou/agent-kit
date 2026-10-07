@@ -49,6 +49,15 @@ describe("Claude PreToolUse adapter", () => {
 		expect(bypass.stdout).toContain("always-pause-default-branch");
 		expect(bypass.stdout).toContain("cannot ask");
 		for (const mode of ["default", "acceptEdits", "plan"]) expect(decision(hook({ ...event, permission_mode: mode }, { AGENTIC_GRANTS: ws.grants }).stdout)).toBe("ask");
+		const aboveLevel = hook({ ...event, tool_input: { command: "git push origin topic" }, permission_mode: "bypassPermissions" }, { AGENTIC_GRANTS: repo(2).grants });
+		expect(decision(aboveLevel.stdout)).toBe("deny");
+	});
+
+	test("without prompts, an ask only because a command is unreadable defers to the session's mode", () => {
+		const ws = repo(2);
+		const event = { session_id: "s1", cwd: ws.dir, hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "node -e \"require('child_process').execSync('git status')\"" } };
+		expect(decision(hook({ ...event, permission_mode: "default" }, { AGENTIC_GRANTS: ws.grants }).stdout)).toBe("ask");
+		expect(hook({ ...event, permission_mode: "bypassPermissions" }, { AGENTIC_GRANTS: ws.grants }).stdout).toBe("");
 	});
 
 	test("a subagent call (agent_id present) is a child and is denied publication", () => {

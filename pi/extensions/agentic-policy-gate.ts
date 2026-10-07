@@ -3,7 +3,7 @@
  * commands, Cedar over the user's grants, then enforce.
  *
  * - Deny blocks with the policy ID. Ask uses a confirm dialog when Pi has a UI; without one it
- *   blocks with the reason. A handler error blocks the tool (Pi's fail-safe), so the gate fails closed.
+ *   takes the pipeline's unattended answer: policy asks block, most unreadable commands run. A handler error blocks the tool (Pi's fail-safe), so the gate fails closed.
  * - /agentic-raise <0-4>: a user-typed, session-scoped autonomy raise, capped by the grant,
  *   persisted on the session branch, and logged.
  * - Jev is configured in ~/.config/agentic/config.toml; the key comes from the keychain.
@@ -82,6 +82,9 @@ export default function agenticPolicyGate(pi: ExtensionAPI): void {
 			recordDecision(env, command, { ...result, decision: approved ? "allow" : "deny", reason: `user ${approved ? "approved" : "declined"}: ${result.reason}` });
 			return approved ? undefined : { block: true, reason: `${label} (declined by the user)` };
 		}
+		// Without a UI (print, JSON, background runs) nobody can answer: unreadable commands Jev
+		// does not rate likely to reach a hard point run; policy asks and likely ones are blocked.
+		if (result.unattended === "allow") return undefined;
 		return { block: true, reason: `${label}. This needs the user's approval; draft the command for them instead of retrying.` };
 	});
 }

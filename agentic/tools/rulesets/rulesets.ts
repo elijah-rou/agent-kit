@@ -1,4 +1,4 @@
-// Server-side backstop for the local policy gate: one GitHub ruleset, "agentic-backstop", on a
+// Server-side backstop for agents: one GitHub ruleset, "agentic-backstop", on a
 // repository's default branch. Agents use the user's token (no agent identity, design O4), so the
 // ruleset has no bypass actors: anything the user could bypass, an agent could too. It guarantees
 // mechanical properties, not that a human approved a change.
@@ -7,9 +7,8 @@
 // - baseline: the default branch cannot be deleted or force-pushed, and its history stays linear.
 //   No friction for direct pushes; apply it to every repository.
 // - merge-gate: baseline plus a pull request and the repository's passing CI checks before the
-//   default branch moves. Everyone, the user
-//   included, then lands through pull requests; apply it when a repository moves to verified
-//   stacks (autonomy A3 and above).
+//   default branch moves. Everyone, the user included, then lands through pull requests; apply it
+//   when a repository moves to verified stacks.
 
 export const RULESET_NAME = "agentic-backstop";
 

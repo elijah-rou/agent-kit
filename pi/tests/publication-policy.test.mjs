@@ -42,7 +42,7 @@ test("root execution is not blocked when child marker is absent", () => {
   }
 });
 
-test("outward-facing actions follow the autonomy level and publication stays with the coordinating agent", () => {
+test("outward-facing actions follow the standing default and publication stays with the coordinating agent", () => {
   assert.match(agents, /In a repository the user owns[^\n]*push `agent\/\*` branches, open pull requests ready for review/);
   assert.match(agents, /In any other repository, anything outward-facing \(pushing, publishing, posting, changing shared or remote systems\) needs explicit authorization/);
   assert.match(agents, /explicit authorization is still required for destructive actions[^\n]*deploys and releases, messages to people/);
@@ -64,7 +64,7 @@ test("worktree gardening reports at exact thresholds and never auto-removes", ()
   assert.match(worktrees, /Removal is never automatic/);
 });
 
-test("both harnesses carry the same autonomy ladder and interaction contract", () => {
+test("both harnesses carry the same standing default and interaction contract", () => {
   const ladder = (text) => text.match(/^- Decide routine reversible things[\s\S]*?draft the command for the user\.$/m)?.[0];
   assert.ok(ladder(agents));
   assert.equal(ladder(claude), ladder(agents));

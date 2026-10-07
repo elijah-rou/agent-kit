@@ -8,7 +8,7 @@ which rows have upstream changes to review, then read them with
 `git -C <cursor-plugins> diff <row commit> HEAD -- <upstream path>`.
 
 Changes are rejected when they bring in Cursor tools, model routing, MCP assumptions, publication
-behavior outside the autonomy ladder, or a restatement of a rule the policy layer enforces, or when
+behavior outside the standing default in the instructions, or a restatement of a rule a guard enforces, or when
 they edit text the local adaptation does not contain. The local adaptations of the 68836dd skills
 are rewrites rather than copies, so most upstream wording edits have no local counterpart.
 

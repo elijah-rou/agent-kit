@@ -1,0 +1,22 @@
+upstream_repo: https://github.com/cursor/plugins
+upstream_path: pstack/skills/poteto-mode/scripts/orch
+commit: 9f451cf875ad1239912762f67741e8e5ba6ac0f1
+license: MIT, Copyright (c) 2026 Lauren Tan; see LICENSE (copied from pstack/LICENSE)
+
+The key: value lines above are read by agentic/tools/upstream-drift. Keep them first in this
+file.
+
+Copied from a local checkout of cursor/plugins with HEAD at the commit above. Every upstream
+file in the directory was copied unchanged except as listed.
+
+Changes from upstream:
+- orch.ts: removed `import { ensureDependenciesInstalled } from "../bootstrap.ts";` and the
+  `ensureDependenciesInstalled();` call. Upstream bootstrap.ts lives outside this directory and
+  runs `bun install --frozen-lockfile` against its own package.json and bun.lock at startup;
+  here the dependency is declared in the agent-kit root package.json instead.
+- Added PROVENANCE (this file) and LICENSE.
+- Dependency: `commander` 14.0.0 (the upstream pinned version) declared in the agent-kit root
+  package.json, replacing upstream scripts/package.json and scripts/bun.lock.
+
+Not carried over: upstream's `typecheck` script (`tsc --project watch-pr/tsconfig.json`), which
+needs the typescript and bun-types dev dependencies. Tests run with `bun test agentic/vendor`.

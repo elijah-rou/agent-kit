@@ -30,4 +30,6 @@ jobs:
           if [[ "$RUNNER_OS" == Linux ]]; then sudo apt-get update && sudo apt-get install --yes ripgrep zsh; else brew list ripgrep >/dev/null 2>&1 || brew install ripgrep; fi
           bun install --global --exact @anthropic-ai/claude-code@2.1.285
           echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+      - name: Install the locked dependencies
+        run: bun install --frozen-lockfile
       - run: scripts/validate

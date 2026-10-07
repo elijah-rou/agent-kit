@@ -30,6 +30,8 @@ For new or changed deterministic input contracts, retain only relevant distingui
 
 A reproducible command or runtime journey can substitute for a conventional test. Implementation-first work is a regression check, not TDD. Performance and reliability claims need a baseline and the same journey afterward.
 
+When you write, change, or keep a test, read `references/test-behavior-not-implementation.md` first. Before you trust, report, or act on a number you measured (a speedup, latency, throughput, or eval result), read `references/explain-the-number.md`.
+
 ## Accept the integrated result
 
 Workers use the fastest sufficient inner loop. The root parent independently runs and inspects the authoritative affected boundary on the final integrated workspace. Checked child evidence is useful feedback, not runtime proof. Review does not replace this acceptance step.

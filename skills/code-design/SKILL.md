@@ -12,6 +12,8 @@ Safety first, then performance, then the experience of everyone who reads and ru
 | C, C++, Odin, Zig, or other manually managed memory | `references/manual-memory.md` |
 | Rust ownership, borrowing, or `unsafe` | `references/rust-memory.md` |
 | Time, randomness, I/O, concurrency, or anything that should be simulation-tested | `references/determinism.md` |
+| Refactoring, sizing a diff, or tempted to add an abstraction, layer, or signal threading | `references/laziness-protocol.md` |
+| Sequencing an addition, refactor, or rewrite onto code with dead paths or redundant checks | `references/subtract-before-you-add.md` |
 
 ## Safety
 

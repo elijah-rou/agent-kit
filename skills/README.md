@@ -32,6 +32,12 @@ The `unslop`, `technical-writing`, `how`, `why`, `blast-radius`,
 `9f451cf875ad1239912762f67741e8e5ba6ac0f1`; [`RESYNC.md`](RESYNC.md) records what the
 resync took and rejected.
 
+Five pstack principle skills at `9f451cf875ad1239912762f67741e8e5ba6ac0f1` are kept close to the upstream text as
+reference files inside the skill each one belongs to, rather than as skills: `verification` holds
+`test-behavior-not-implementation` and `explain-the-number`, `code-design` holds `laziness-protocol` and
+`subtract-before-you-add`, and `diagnosing-bugs` holds `attack-the-premise`. pstack reaches its principles
+through `poteto-mode`, a mode skill with no equivalent here, so each parent skill says when to read its file.
+
 Local adaptations use narrow automatic triggers, remove Cursor tools, model routing,
 MCP assumptions, cross-skill invocation, and publication behavior, and preserve evidence
 and source boundaries. The upstream MIT license is preserved in `PSTACK-LICENSE`.
@@ -98,6 +104,11 @@ A resync advances a row's commit; [`RESYNC.md`](RESYNC.md) records what each res
 | `skills/make-operations-idempotent` | `pstack/skills/principle-make-operations-idempotent` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/separate-before-serializing-shared-state` | `pstack/skills/principle-separate-before-serializing-shared-state` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/type-system-discipline` | `pstack/skills/principle-type-system-discipline` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
+| `skills/verification/references/test-behavior-not-implementation.md` | `pstack/skills/principle-test-behavior-not-implementation/SKILL.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
+| `skills/code-design/references/laziness-protocol.md` | `pstack/skills/principle-laziness-protocol/SKILL.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
+| `skills/code-design/references/subtract-before-you-add.md` | `pstack/skills/principle-subtract-before-you-add/SKILL.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
+| `skills/verification/references/explain-the-number.md` | `pstack/skills/principle-explain-the-number/SKILL.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
+| `skills/diagnosing-bugs/references/attack-the-premise.md` | `pstack/skills/principle-attack-the-premise/SKILL.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/correct` | `pstack/skills/correct` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/create-verification` | `pstack/skills/create-verification-skill` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/create-verification/references/web.md` | `cursor-team-kit/skills/control-ui/SKILL.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |

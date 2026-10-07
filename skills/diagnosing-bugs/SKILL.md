@@ -58,6 +58,8 @@ Rank them by evidence and cost to falsify. Test one variable at a time, starting
 
 Ask the user only when domain knowledge or an unapproved product, architecture, security, or scope decision can materially change the investigation.
 
+When two fixes that share one premise have failed the same check, read `references/attack-the-premise.md` before attempting a third.
+
 Completion criterion: evidence has falsified alternatives or isolated one causal mechanism.
 
 ## 5. Instrument narrowly

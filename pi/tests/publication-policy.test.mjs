@@ -1,47 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import register from "../extensions/git-interceptor.ts";
 
 const agents = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
 const gitWorkflow = await readFile(new URL("../../skills/git-workflow/SKILL.md", import.meta.url), "utf8");
 const claude = await readFile(new URL("../../claude/CLAUDE.md", import.meta.url), "utf8");
 const gatePolicies = await readFile(new URL("../../agentic/policy/global.cedar", import.meta.url), "utf8");
 const worktrees = await readFile(new URL("../extensions/worktrees.ts", import.meta.url), "utf8");
-
-function interceptor() {
-  let handler;
-  register({ on(event, callback) { if (event === "tool_call") handler = callback; } });
-  return (command) => handler({ toolName: "bash", input: { command } });
-}
-
-test("marked children cannot publish or integrate with Git", () => {
-  const original = process.env.PI_SUBAGENT_CHILD;
-  process.env.PI_SUBAGENT_CHILD = "1";
-  try {
-    const run = interceptor();
-    for (const command of ["git push origin main", "git merge topic", "git rebase main", "git cherry-pick HEAD~1", "git -C /tmp/repo pull"]) {
-      assert.equal(run(command)?.block, true, command);
-      assert.match(run(command).reason, /child publication\/integration/);
-    }
-    for (const command of ["git status --short", "git diff --check", "git log -1", "git show HEAD", "git commit -m local"]) assert.equal(run(command), undefined, command);
-  } finally {
-    if (original === undefined) delete process.env.PI_SUBAGENT_CHILD;
-    else process.env.PI_SUBAGENT_CHILD = original;
-  }
-});
-
-test("root execution is not blocked when child marker is absent", () => {
-  const original = process.env.PI_SUBAGENT_CHILD;
-  delete process.env.PI_SUBAGENT_CHILD;
-  try {
-    const run = interceptor();
-    assert.equal(run("git push origin main"), undefined);
-    assert.equal(run("git merge topic"), undefined);
-  } finally {
-    if (original !== undefined) process.env.PI_SUBAGENT_CHILD = original;
-  }
-});
 
 test("outward-facing actions follow the autonomy level and publication stays with the coordinating agent", () => {
   assert.match(agents, /A0, no grant: anything outward-facing \(pushing, publishing, posting, changing shared or remote systems\) needs explicit authorization/);

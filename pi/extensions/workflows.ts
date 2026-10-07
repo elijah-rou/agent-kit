@@ -24,7 +24,7 @@ Upstream orchestration:
 - worktree: set worktree:true per child or workflow, isolate parallel writers, and retain managed worktrees until changes are reachable
 
 Tools: subagent, subagent_wait, worktree, project_validate, semantic_search, lsp_definition, lsp_references, lsp_symbols, gh_pr_feedback, web_search, source_check, fetch_content, get_search_content, pdf_info, pdf_extract
-Safety: git-interceptor, pi-cloak`;
+Safety: agentic-policy-gate, pi-cloak`;
 
 export default function workflowsExtension(pi: ExtensionAPI) {
 	pi.registerCommand("tasks", {

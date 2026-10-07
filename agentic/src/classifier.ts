@@ -296,7 +296,7 @@ function classifySimple(simple: SimpleCommand, line: string, ctx: ClassifyContex
 	let recognized: CommandClassification | undefined;
 	switch (name) {
 		case "git":
-			recognized = classifyGit(args, ctx, text);
+			recognized = classifyGit(args, ctx, text, simple.assignments);
 			break;
 		case "gh":
 			recognized = classifyGh(args, ctx, text);
@@ -592,7 +592,24 @@ function actionResult(action: ActionId, resource: Resource, evidence: string, fo
 
 const GIT_OPTIONS_WITH_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"]);
 
-function classifyGit(args: string[], ctx: ClassifyContext, text: string): CommandClassification {
+/** Subcommands that rewrite history or integrate other work; only the root agent runs them (one topology writer). */
+const GIT_INTEGRATION = new Set(["pull", "merge", "rebase", "cherry-pick", "revert", "am", "apply", "tag"]);
+
+/** Options that keep an editor-opening subcommand non-interactive. */
+const GIT_NON_INTERACTIVE = /^(-m|-F|--message|--file|--no-edit|--dry-run|--porcelain|-C|--reuse-message|--fixup|--squash)(=|$)|^-[a-zA-Z]*m$/;
+
+/** True when the command would open an editor, which hangs a tool call that has no terminal. */
+function opensEditor(sub: string | undefined, rest: string[], assignments: string[], ctx: ClassifyContext): boolean {
+	if (assignments.some((assignment) => /^(GIT_EDITOR|GIT_SEQUENCE_EDITOR|VISUAL|EDITOR)=/.test(assignment))) return false;
+	if (ctx.env?.GIT_EDITOR || ctx.env?.VISUAL || ctx.env?.EDITOR) return false;
+	if (rest.some((arg) => GIT_NON_INTERACTIVE.test(arg))) return false;
+	if (sub === "commit") return true;
+	if (sub === "rebase") return rest.some((arg) => arg === "-i" || arg === "--interactive");
+	if (sub === "tag") return rest.some((arg) => arg === "-a" || arg === "--annotate" || arg === "-s" || arg === "--sign");
+	return false;
+}
+
+function classifyGit(args: string[], ctx: ClassifyContext, text: string, assignments: string[] = []): CommandClassification {
 	let cwd = ctx.cwd;
 	let i = 0;
 	while (i < args.length && args[i].startsWith("-")) {
@@ -603,8 +620,14 @@ function classifyGit(args: string[], ctx: ClassifyContext, text: string): Comman
 	}
 	const sub = args[i];
 	const rest = args.slice(i + 1);
-	if (sub !== "push") return result();
-	return classifyGitPush(rest, { ...ctx, cwd }, text);
+	const out = result();
+	const origin = ctx.remoteUrl(cwd, "origin");
+	const repo: Resource = { kind: "Repo", origin: origin ? repoIdentity(origin) : cwd };
+	if (rest.includes("--no-verify") || (sub === "commit" && rest.some((arg) => /^-[a-zA-Z]*n[a-zA-Z]*$/.test(arg) && !arg.startsWith("--")))) merge(out, actionResult("git.skip_hooks", repo, text));
+	if (sub !== undefined && GIT_INTEGRATION.has(sub) && !(sub === "tag" && !rest.some((arg) => !arg.startsWith("-")))) merge(out, actionResult("git.integrate", repo, text));
+	if (opensEditor(sub, rest, assignments, ctx)) merge(out, actionResult("git.interactive", repo, text));
+	if (sub === "push") merge(out, classifyGitPush(rest, { ...ctx, cwd }, text));
+	return out;
 }
 
 const PUSH_OPTIONS_WITH_VALUE = new Set(["--repo", "--receive-pack", "--exec", "-o", "--push-option", "--recurse-submodules"]);

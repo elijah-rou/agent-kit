@@ -11,7 +11,10 @@ export type ActionId =
 	| "data.delete"
 	| "file.write"
 	| "verdict.record"
-	| "verdict.forge";
+	| "verdict.forge"
+	| "git.skip_hooks"
+	| "git.integrate"
+	| "git.interactive";
 
 export const ACTION_IDS: readonly ActionId[] = [
 	"git.push",
@@ -26,6 +29,9 @@ export const ACTION_IDS: readonly ActionId[] = [
 	"file.write",
 	"verdict.record",
 	"verdict.forge",
+	"git.skip_hooks",
+	"git.integrate",
+	"git.interactive",
 ];
 
 export type Resource =

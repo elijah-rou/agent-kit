@@ -137,6 +137,27 @@ describe("pipeline", () => {
 		expect((await run("git push origin --delete agent/done", ws, deps(ws))).policies).not.toContain("always-pause-delete-shared-branch");
 	});
 
+	test("local git guards moved from git-interceptor: hooks, one topology writer, no editor", async () => {
+		const ws = workspace({ grant: 2 });
+		const decide = async (command: string, session: Partial<SessionFacts> = {}) => ({ command, decision: (await run(command, ws, deps(ws, session))).decision });
+		for (const command of ["git merge topic", "git rebase main", "git cherry-pick HEAD~1", "git -C /tmp/repo pull", "git tag v1.2.0"]) {
+			expect(await decide(command, { isChild: true })).toEqual({ command, decision: "deny" });
+			expect(await decide(command)).toEqual({ command, decision: "allow" });
+		}
+		for (const command of ["git status --short", "git diff --check", "git log -1", "git show HEAD", "git commit -m local", "git tag"]) {
+			expect(await decide(command, { isChild: true })).toEqual({ command, decision: "allow" });
+		}
+		for (const command of ["git commit -m wip --no-verify", "git commit -nm wip", "git push --no-verify origin agent/x"]) {
+			expect(await decide(command)).toEqual({ command, decision: "deny" });
+		}
+		for (const command of ["git commit", "git commit --amend", "git rebase -i main", "git tag -a v1"]) {
+			expect(await decide(command)).toEqual({ command, decision: "deny" });
+		}
+		for (const command of ["git commit -m done", "git commit --amend --no-edit", "GIT_EDITOR=true git commit", "git tag -a v1 -m release", "git rebase --continue"]) {
+			expect(await decide(command)).toEqual({ command, decision: "allow" });
+		}
+	});
+
 	test("children never publish", async () => {
 		const ws = workspace({ grant: 4 });
 		const result = await run("git push origin agent/x", ws, deps(ws, { isChild: true }));

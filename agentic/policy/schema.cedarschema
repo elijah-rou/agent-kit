@@ -89,6 +89,14 @@ action "verdict.record", "verdict.forge" appliesTo {
   context: Facts,
 };
 
+// Local git guards: skipping hooks, integrating other work (merge, rebase, pull, cherry-pick,
+// revert, am, apply, tag), and commands that would open an editor with no terminal.
+action "git.skip_hooks", "git.integrate", "git.interactive" appliesTo {
+  principal: [Agent],
+  resource: [Repo],
+  context: Facts,
+};
+
 action "file.write" appliesTo {
   principal: [Agent],
   resource: [ProtectedPath],

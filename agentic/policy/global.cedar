@@ -127,3 +127,24 @@ when { context.effectiveLevel >= 2 };
 @id("verdicts-only-through-agentic-verify")
 @effect("deny")
 forbid (principal, action == Action::"verdict.forge", resource is PullRequest);
+
+// Local git guards, moved here from the Pi git-interceptor extension so both harnesses get them.
+// Hooks run the repository's checks; skipping them hides failures.
+@id("never-skip-git-hooks")
+@effect("deny")
+forbid (principal, action == Action::"git.skip_hooks", resource is Repo);
+
+// One topology writer: only the root agent merges, rebases, pulls, or tags (pstack shipping).
+@id("children-never-integrate")
+@effect("deny")
+forbid (principal is Agent, action == Action::"git.integrate", resource is Repo)
+when { principal.isChild };
+
+@id("root-agents-integrate-locally")
+permit (principal is Agent, action == Action::"git.integrate", resource is Repo)
+unless { principal.isChild };
+
+// A tool call has no terminal, so an editor would hang it: pass -m, --no-edit, or set GIT_EDITOR.
+@id("git-runs-non-interactively")
+@effect("deny")
+forbid (principal, action == Action::"git.interactive", resource is Repo);

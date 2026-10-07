@@ -78,12 +78,22 @@ Local adaptations:
 - Transcripts are read only for the active workspace's current session.
 - Decision logs, session learning files, and the verdict ledger each have one writer.
 
-### Machine-readable provenance
+## Machine-readable provenance
 
-Read by `agentic upstream-drift`. One row per adapted path; secondary sources get their own row.
+Read by `agentic upstream-drift`. It covers every skill adapted from cursor/plugins, with one row per
+local path and upstream source; a local file merged from several upstream files has a row for each.
+A resync advances a row's commit; [`RESYNC.md`](RESYNC.md) records what each resync took and rejected.
 
 | Local | Upstream path | Commit |
 | --- | --- | --- |
+| `skills/unslop` | `pstack/skills/unslop` | `68836ddaf5697224520f1847d90cdb90ca8babaa` |
+| `skills/technical-writing` | `pstack/skills/technical-writing` | `68836ddaf5697224520f1847d90cdb90ca8babaa` |
+| `skills/how` | `pstack/skills/how` | `68836ddaf5697224520f1847d90cdb90ca8babaa` |
+| `skills/why` | `pstack/skills/why` | `68836ddaf5697224520f1847d90cdb90ca8babaa` |
+| `skills/blast-radius` | `pstack/skills/blast-radius` | `68836ddaf5697224520f1847d90cdb90ca8babaa` |
+| `skills/make-operations-idempotent` | `pstack/skills/principle-make-operations-idempotent` | `68836ddaf5697224520f1847d90cdb90ca8babaa` |
+| `skills/separate-before-serializing-shared-state` | `pstack/skills/principle-separate-before-serializing-shared-state` | `68836ddaf5697224520f1847d90cdb90ca8babaa` |
+| `skills/type-system-discipline` | `pstack/skills/principle-type-system-discipline` | `68836ddaf5697224520f1847d90cdb90ca8babaa` |
 | `skills/correct` | `pstack/skills/correct` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/create-verification` | `pstack/skills/create-verification-skill` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/create-verification/references/web.md` | `cursor-team-kit/skills/control-ui/SKILL.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
@@ -97,9 +107,14 @@ Read by `agentic upstream-drift`. One row per adapted path; secondary sources ge
 | `skills/prototype-to-decide` | `pstack/skills/poteto-mode/playbooks/prototype.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/background-run` | `pstack/skills/poteto-mode/playbooks/autonomous-run.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/background-run/references/pause-and-pickup.md` | `pstack/skills/poteto-mode/playbooks/pause-safely.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
+| `skills/background-run` | `pstack/skills/figure-it-out` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
+| `skills/background-run` | `pstack/docs/guide/07-overnight.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
+| `skills/background-run/references/pause-and-pickup.md` | `pstack/skills/poteto-mode/playbooks/session-pickup.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
+| `skills/background-run/references/coordination.md` | `pstack/skills/poteto-mode/playbooks/orchestrate.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/babysit-and-ship` | `pstack/skills/poteto-mode/playbooks/babysit.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/babysit-and-ship/references/shipping.md` | `pstack/skills/poteto-mode/playbooks/shipping.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/babysit-and-ship/references/pr-body.md` | `pstack/skills/poteto-mode/playbooks/opening-a-pr.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
+| `skills/babysit-and-ship/references/bot-triage.md` | `pstack/skills/poteto-mode/references/bugbot-triage.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 
 ## Skill boundaries
 

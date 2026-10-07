@@ -22,7 +22,7 @@ Repository conventions take precedence where they differ.
 ## Publishing and merging
 
 - Only the coordinating agent may push, merge (including local fast-forwards), deploy, or release. Subagents and external mutation-capable runners never do, and a different checkout, container, or backend does not widen that authority.
-- In a repository the user owns, push `agent/<topic>` branches and open pull requests without asking. Merging, pushing to the default branch, force-pushing or deleting shared branches, and any push to a repository the user does not own require explicit authorization naming the operation, repository, and scope.
+- In a repository the user owns, push `agent/<topic>` branches and open pull requests without asking. Merging, pushing to the default branch, force-pushing or deleting shared branches, and any push to a repository the user does not own require explicit authorization naming the operation, repository, and scope. Invoking the `ship` mode for a run authorizes merging its verified run and rebasing that run's own `agent/*` branches (`babysit-and-ship`).
 - Name every branch you intend to push `agent/<topic>`.
 - Before an authorized push or merge, recheck the exact revision and the full workspace against the final verification.
 - In a repository the user does not own, do not proactively offer to publish or open a pull request.

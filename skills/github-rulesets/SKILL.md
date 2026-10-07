@@ -21,7 +21,7 @@ Run `agentic rulesets plan <owner/repo>`. It is read-only and reports the defaul
 | Tier | Rules | Use when |
 |---|---|---|
 | `baseline` | No deletion, no force-push, linear history on the default branch | Always. It adds no friction for direct pushes. |
-| `merge-gate` | Baseline, plus a pull request and the CI checks that passed on the default branch head | The repository lands through pull requests, for example verified stacks. The user lands through pull requests too from then on. |
+| `merge-gate` | Baseline, plus a pull request, the `agentic/verdict` check that `agentic verify record` posts for a fresh verifier's verdict, and the CI checks that passed on the default branch head | The repository lands verified stacks through the `ship` mode. Every pull request then needs a verdict, the user's included. |
 
 Checks that did not pass on the head are listed and left out; a failing check would block every merge. Fix CI first if the user wants it required.
 

@@ -1,0 +1,22 @@
+#!/usr/bin/env bun
+/**
+ * agentic: entry point for the agentic stack's tools. Each subcommand passes its arguments to the
+ * tool's own CLI (each has --help):
+ *   rulesets         plan or apply the GitHub ruleset that backstops agents (tools/rulesets)
+ *   upstream-drift   report upstream changes since each adapted skill's recorded commit (tools/upstream-drift)
+ */
+import { join } from "node:path";
+
+const TOOLS: Record<string, string> = {
+	rulesets: "tools/rulesets/cli.ts",
+	"upstream-drift": "tools/upstream-drift/cli.ts",
+};
+
+const [tool, ...rest] = process.argv.slice(2);
+const script = tool === undefined ? undefined : TOOLS[tool];
+if (script === undefined) {
+	console.error(`usage: agentic ${Object.keys(TOOLS).join(" | ")} [args]`);
+	process.exit(tool === "--help" || tool === "-h" ? 0 : 2);
+}
+const child = Bun.spawnSync([process.execPath, join(import.meta.dir, "..", script), ...rest], { stdio: ["inherit", "inherit", "inherit"] });
+process.exit(child.exitCode ?? 1);

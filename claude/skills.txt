@@ -15,3 +15,11 @@ skills/why
 claude/skills/writing-for-agents
 skills/code-design
 skills/git-workflow
+skills/correct
+skills/create-verification
+skills/design-checkpoint
+skills/maintain-verification
+skills/prototype-to-decide
+skills/reflect
+skills/teach
+skills/github-rulesets

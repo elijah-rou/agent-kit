@@ -70,7 +70,7 @@ Completion criterion: each probe maps to one hypothesis and produces a bounded o
 
 ## 6. Lock the bug down before fixing
 
-At the correct public seam, turn the minimized reproduction into a failing regression test and confirm it fails for the expected reason. If no honest test seam exists, record that architectural limitation instead of adding a shallow or implementation-coupled test.
+At the correct public seam, turn the minimized reproduction into a failing regression test and confirm it fails for the expected reason. If you forced the failure by mutating code or a fixture, diff against a pristine copy to prove the mutation landed before trusting the red. If no honest test seam exists, record that architectural limitation instead of adding a shallow or implementation-coupled test.
 
 Apply the smallest causal fix. Confirm:
 

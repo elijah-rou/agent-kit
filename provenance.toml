@@ -1,0 +1,26 @@
+# Adapted skills from upstreams other than cursor/plugins, for agentic upstream-drift:
+#   agentic upstream-drift --upstream-for humanlayer/skills=<checkout> --upstream-for mattpocock/skills=<checkout>
+
+[[item]]
+local = "skills/show-me"
+repo = "humanlayer/skills"
+upstream_path = "plugins/show-me/skills/show-me"
+commit = "ca7c8088db69e315a8b2deea43820270457f8f3c"
+
+[[item]]
+local = "skills/design-control-loop"
+repo = "humanlayer/skills"
+upstream_path = "plugins/design-control-loop/skills/design-control-loop"
+commit = "3c2629142c5d437428269b1b722b08c0b87f574d"
+
+[[item]]
+local = "skills/writing-for-agents"
+repo = "mattpocock/skills"
+upstream_path = "skills/productivity/writing-for-agents"
+commit = "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76"
+
+[[item]]
+local = "skills/diagnosing-bugs"
+repo = "mattpocock/skills"
+upstream_path = "skills/engineering/diagnosing-bugs"
+commit = "f3fc5632f401156837ee3872f14fe33ccf1024ea"

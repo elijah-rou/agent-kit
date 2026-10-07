@@ -1,6 +1,6 @@
 ---
 name: feature-shaping
-description: Resolve consequential design uncertainty before broad feature or refactor implementation. Use when unsettled behavior, public contracts, persisted data, cross-system flow, UI interaction, or hard-to-reverse architecture could make rework expensive. Skip bounded fixes, mechanical edits, approved designs, and documentation-only design deliverables.
+description: Shape and slice broad feature or refactor work whose one-way doors are settled, keeping a resumable decision-and-slice plan. Use for multi-slice work after design-checkpoint has settled any public contract, persisted data, security boundary, or hard-to-reverse architecture. Skip reversible design questions (decide them, or settle them with prototype-to-decide), bounded fixes, mechanical edits, and documentation-only design deliverables.
 ---
 
 # Feature shaping
@@ -12,7 +12,7 @@ Resolve decisions while they are cheap to change. The user owns product and hard
 Inspect repository instructions, status, relevant implementation and tests before asking design questions. Identify settled requirements, existing planning conventions, and consequential unknowns.
 
 - **Direct:** requirements are settled and the work is bounded or reversible. Continue with implementation and affected verification; no plan is required.
-- **Combined design:** consequential questions remain. Resolve outcome, system fit, program shape, and slices in one plan. Ask for the outstanding decisions together, then implement within the resulting authorization.
+- **Combined design:** consequential questions remain. Resolve outcome, system fit, program shape, and slices in one plan. Take one-way doors to `design-checkpoint` for the user's review of the shape; decide reversible questions yourself or settle them with `prototype-to-decide`, and report them. Then implement within the resulting authorization.
 - **Interview:** the user requests staged design reviews, or a specific unresolved decision prevents the next design step. Work through that decision with the user. Do not turn every section into a mandatory approval stop.
 
 Choose by uncertainty and consequences, not file count. For expensive-to-reverse work whose consequential decisions cannot be reviewed coherently together, offer staged human design review. Do not impose phase-by-phase approval or fixed slice checkpoints when the design and implementation scope are already settled. An approved implementation plan, including an audit-fix plan that explicitly authorizes implementation, can supply existing authority. Approval to audit alone does not authorize mutation. Reuse settled design rather than repeating it.
@@ -28,7 +28,7 @@ Resolve applicable concerns in this order, combining those already understood:
 3. **Program shape:** important files, key types/signatures, success and failure paths, state ownership, bounds, and tests. Show enough to challenge consequential placement decisions, not every private helper.
 4. **Slices:** small end-to-end increments with observable outcomes and the affected checks. Exercise the most consequential uncertain path early. Each increment leaves working behavior unless an approved migration requires another boundary.
 
-Ask only for unresolved product, contract, data, security, or hard-to-reverse architecture decisions and any checkpoints the user requested. Silence is not approval of a new decision. Reversible implementation details within the agreed scope remain the agent's responsibility.
+Ask only for unresolved product decisions, one-way doors (through `design-checkpoint`), and any checkpoints the user requested. Silence is not approval of a new decision. Reversible implementation details within the agreed scope remain the agent's responsibility.
 
 ## Implement through acceptance
 

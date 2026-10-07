@@ -39,3 +39,15 @@ Upstream: `pstack/skills/technical-writing`, `68836dd..9f451cf` (commits e8d856f
 | A PR body is a briefing read in under a minute; link logs, SHA lists, and metric tables | Rejected | `babysit-and-ship/references/pr-body.md` owns PR bodies and already says this. This skill covers durable documents. |
 | Remove the review checklist, the worked-example commentary, the "read it aloud" and "gut feel" lines, and the source citations | No local change | The local rewrite never adopted them. |
 | Replace semicolons with periods | No local change | The local rewrite does not contain the edited sentences. |
+
+### how
+
+Upstream: `pstack/skills/how`, `68836dd..9f451cf` (commits 73f8be4, 23a56e2, e8d856f, d7cde2b, 70b2dc8, 12d587d, df58112). No change taken.
+
+| Upstream change | Decision | Reason |
+| --- | --- | --- |
+| Remove critique mode, `references/critic-prompt.md`, and `references/critique-rubric.md` | Rejected | Upstream removed a multi-model critic pipeline that the local skill never adopted. Local section 5 is a short guard used only on request (explain first, tie each criticism to an observed cost), and no other local skill critiques existing architecture. |
+| `disable-model-invocation: true` | Rejected | The local skill is model-invoked through a narrow description. |
+| Read subagent models from `pstack-models.mdc`, with new default models | Rejected | Model routing. |
+| Shorter complexity assessment ("when in doubt, take the simple path") | No local change | Local section 2 already splits work into read-only lanes only when their scopes are distinct. |
+| Wording edits in `references/explainer-prompt.md` and `references/explorer-prompt.md` | No local change | The local skill has no prompt templates. |

@@ -88,7 +88,7 @@ A resync advances a row's commit; [`RESYNC.md`](RESYNC.md) records what each res
 | --- | --- | --- |
 | `skills/unslop` | `pstack/skills/unslop` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/technical-writing` | `pstack/skills/technical-writing` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/how` | `pstack/skills/how` | `68836ddaf5697224520f1847d90cdb90ca8babaa` |
+| `skills/how` | `pstack/skills/how` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/why` | `pstack/skills/why` | `68836ddaf5697224520f1847d90cdb90ca8babaa` |
 | `skills/blast-radius` | `pstack/skills/blast-radius` | `68836ddaf5697224520f1847d90cdb90ca8babaa` |
 | `skills/make-operations-idempotent` | `pstack/skills/principle-make-operations-idempotent` | `68836ddaf5697224520f1847d90cdb90ca8babaa` |

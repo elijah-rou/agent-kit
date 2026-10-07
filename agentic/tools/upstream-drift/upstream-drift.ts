@@ -16,8 +16,9 @@
 //
 // 3. provenance.toml: [[item]] tables with string keys local, upstream_path, commit.
 //
-// Identical items from several sources are reported once. Two items with the same local path
-// but a different upstream_path or commit are an error.
+// An item is identified by its local path and upstream path, so a local file adapted from several
+// upstream sources has one item per source. Identical items from several sources are reported
+// once. Two items with the same local path and upstream path but a different commit are an error.
 //
 // For each item the report lists upstream files changed between the recorded commit and the
 // upstream HEAD under upstream_path, from
@@ -61,22 +62,22 @@ export function readProvenance(root: string): Provenance {
 		...readVendorProvenance(join(root, VENDOR), errors),
 		...readProvenanceToml(join(root, "provenance.toml"), errors),
 	];
-	const byLocal = new Map<string, Item>();
+	const byKey = new Map<string, Item>();
 	for (const item of found) {
-		const existing = byLocal.get(item.local);
+		const key = `${item.local}\0${item.upstreamPath}`;
+		const existing = byKey.get(key);
 		if (existing === undefined) {
-			byLocal.set(item.local, item);
-		} else {
-			const same = existing.upstreamPath === item.upstreamPath && existing.commit === item.commit;
-			if (!same) {
-				errors.push(
-					`${item.local}: ${existing.source} says ${existing.upstreamPath}@${existing.commit}` +
-						` but ${item.source} says ${item.upstreamPath}@${item.commit}`,
-				);
-			}
+			byKey.set(key, item);
+		} else if (existing.commit !== item.commit) {
+			errors.push(
+				`${item.local} <- ${item.upstreamPath}: ${existing.source} says ${existing.commit}` +
+					` but ${item.source} says ${item.commit}`,
+			);
 		}
 	}
-	const items = [...byLocal.values()].sort((a, b) => a.local.localeCompare(b.local));
+	const items = [...byKey.values()].sort(
+		(a, b) => a.local.localeCompare(b.local) || a.upstreamPath.localeCompare(b.upstreamPath),
+	);
 	return { items, errors };
 }
 

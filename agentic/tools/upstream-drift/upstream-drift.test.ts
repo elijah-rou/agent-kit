@@ -97,6 +97,25 @@ describe("upstream-drift", () => {
 		]);
 	});
 
+	it("keeps one item per upstream source of a local path", () => {
+		write(
+			join(root, "skills/README.md"),
+			[
+				"| Local | Upstream path | Commit |",
+				"|---|---|---|",
+				`| skills/merged | pkg/skills/beta | ${base} |`,
+				`| skills/merged | pkg/skills/alpha | ${base} |`,
+				"",
+			].join("\n"),
+		);
+		const provenance = readProvenance(root);
+		expect(provenance.errors).toEqual([]);
+		expect(provenance.items.map((i) => `${i.local} ${i.upstreamPath}`)).toEqual([
+			"skills/merged pkg/skills/alpha",
+			"skills/merged pkg/skills/beta",
+		]);
+	});
+
 	it("reports changed upstream files per item and exits 0", () => {
 		writeAllSources();
 		const run = capture();
@@ -117,13 +136,14 @@ describe("upstream-drift", () => {
 	});
 
 	it("reports unknown commits, missing paths and conflicting sources as errors", () => {
+		const head = git("rev-parse", "HEAD");
 		write(
 			join(root, "provenance.toml"),
 			[
 				`[[item]]\nlocal = "a"\nupstream_path = "pkg/skills/alpha"\ncommit = "${"0".repeat(40)}"`,
 				`[[item]]\nlocal = "b"\nupstream_path = "pkg/skills/nope"\ncommit = "${base}"`,
 				`[[item]]\nlocal = "c"\nupstream_path = "pkg/skills/beta"\ncommit = "--output=x"`,
-				`[[item]]\nlocal = "agentic/vendor/b"\nupstream_path = "pkg/skills/alpha"\ncommit = "${base}"`,
+				`[[item]]\nlocal = "agentic/vendor/b"\nupstream_path = "pkg/skills/beta"\ncommit = "${head}"`,
 			].join("\n"),
 		);
 		write(join(root, "agentic/vendor/b/PROVENANCE"), `upstream_path: pkg/skills/beta\ncommit: ${base}\n`);
@@ -137,8 +157,8 @@ describe("upstream-drift", () => {
 		const errors = run.err.join("");
 		expect(errors).toContain("agentic/vendor/b2/PROVENANCE: needs upstream_path and commit");
 		expect(errors).toContain(
-			`agentic/vendor/b: agentic/vendor/b/PROVENANCE says pkg/skills/beta@${base}` +
-				` but provenance.toml item 4 says pkg/skills/alpha@${base}`,
+			`agentic/vendor/b <- pkg/skills/beta: agentic/vendor/b/PROVENANCE says ${base}` +
+				` but provenance.toml item 4 says ${head}`,
 		);
 	});
 

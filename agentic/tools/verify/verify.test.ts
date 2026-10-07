@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openStore } from "../../vendor/orch/store.ts";
-import { currentVerdict, evidenceCell, githubSlug, readLedger, statusFor } from "./verify.ts";
+import { currentVerdict, evidenceCell, githubSlug, orchStore, readLedger, statusFor } from "./verify.ts";
 
 describe("verdicts", () => {
 	test("a verdict covers only the head it was recorded on, so a rebase voids it", () => {
@@ -34,6 +34,11 @@ describe("verdicts", () => {
 			await store.close();
 		}
 		expect(readLedger(dir)).toEqual([{ pr: 7, sha: "aaa", verdict: "unit-test-verified" }]);
+	});
+
+	test("every worktree of a repository shares one untracked store in git's common directory", () => {
+		expect(orchStore("/src/app/.git", {})).toBe("/src/app/.git/agentic/orch");
+		expect(orchStore("/src/app/.git", { AGENTIC_ORCH_STORE: "/tmp/store" })).toBe("/tmp/store");
 	});
 
 	test("finds owner/name only in GitHub remotes", () => {

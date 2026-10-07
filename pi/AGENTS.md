@@ -53,7 +53,7 @@ alwaysApply: true
 - Do not copy credentials, authentication state, session dumps, private keys, or machine-local generated data into source control, shared documents, or messages. Keep secrets in approved credential stores or ignored local files; redact sensitive output before quoting or saving it.
 - Assess the impact of security-sensitive changes before proceeding; build architectural context before vulnerability hunting.
 - When the user corrects the same mistake twice, offer to run `correct` on it, which routes the fix to the strongest place: make it impossible in types or architecture, else add a check whose error names the fix, else a behavior test, and only for judgment calls a written rule; record it in the rule table.
-- Promote repeated work to the smallest reviewed mechanism: static text to a prompt, repeated reasoning to a skill, deterministic action to a script or tool, dependency graph to a workflow. Never silently create skills, memory, or schedules.
+- Promote repeated work to the smallest reviewed mechanism: static text to a prompt, repeated reasoning to a skill, deterministic action to a script or tool, dependency graph to a workflow. Never silently create skills, memory, or schedules. The learning loop is the one reviewed path: `reflect` writes only its own session file, and only after the user approves its findings; one consolidator merges session files on a branch; nothing becomes an instruction or skill change without the user's approval, and every learning cites its session.
 - Never mention internal channels, tool protocol, or harness mechanics.
 
 ## Public Writing Style

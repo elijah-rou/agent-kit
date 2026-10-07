@@ -2,6 +2,7 @@
  * The agentic stack CLI, loaded by bin/agentic. Policy subcommands:
  *   check           read {"toolName","input","cwd"} JSON on stdin, print the decision JSON
  *   claude-hook     Claude Code PreToolUse adapter: Claude hook JSON in, hook decision JSON out
+ *   claude-stop     Claude Code Stop hook: says when a reflection is due (learning loop cadence)
  *   explain <cmd>   classify and evaluate a shell command in the current directory
  *   validate        validate global and repo policies against the schema
  *   status [--json] the effective autonomy level for the current repository and its inputs
@@ -21,7 +22,9 @@ import { evaluateToolCall, recordDecision, validateAll, type JevFilter, type Pip
 import { effectiveLevel, gitContext, grantsPath, readGrants, readRepoConfig, sessionFromEnv } from "./facts.ts";
 import { repoIdentity } from "./classifier.ts";
 import { jevFilterFromConfig } from "./jev-filter.ts";
-import { readConfig, typesafeKey } from "./config.ts";
+import { agenticHome, readConfig, typesafeKey } from "./config.ts";
+import { reflectionDue, type CadenceState } from "./learning/learning.ts";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const TOOLS: Record<string, string> = {
@@ -62,6 +65,30 @@ async function withDeadline<T>(work: Promise<T>, ms: number, onTimeout: () => T)
 
 function jev(): JevFilter | undefined {
 	return jevFilterFromConfig(process.env);
+}
+
+/**
+ * Claude Code Stop hook: the learning loop's session-end trigger (design D9). It counts turns per
+ * session and, at the cadence of at least 10 turns and 120 minutes, shows the user that a
+ * reflection is due. It writes no learnings and never blocks or fails a stop.
+ */
+async function claudeStop(): Promise<void> {
+	try {
+		const event = JSON.parse(await readStdin()) as { session_id?: string; stop_hook_active?: boolean };
+		// Only the stop that can still be blocked counts, so an observation-only repeat is not a turn.
+		if (event.stop_hook_active === false) process.exit(0);
+		const file = join(agenticHome(process.env), "state", "cadence", `${(event.session_id ?? "unknown").replace(/[^\w.-]/g, "_")}.json`);
+		const saved = existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as CadenceState) : { turnsSinceLast: 0, lastRunAt: null };
+		let state: CadenceState = { ...saved, turnsSinceLast: saved.turnsSinceLast + 1 };
+		const due = reflectionDue(state, new Date());
+		if (due) state = { turnsSinceLast: 0, lastRunAt: new Date().toISOString() };
+		mkdirSync(join(file, ".."), { recursive: true, mode: 0o700 });
+		writeFileSync(file, `${JSON.stringify(state)}\n`, { mode: 0o600 });
+		if (due) console.log(JSON.stringify({ systemMessage: "A reflection is due: run the reflect skill to capture this session's learnings (you approve each one)." }));
+	} catch {
+		// A reminder only: a failure here must not affect the session.
+	}
+	process.exit(0);
 }
 
 /** Claude Code permission modes in which an "ask" decision shows the user a prompt. */
@@ -123,6 +150,9 @@ switch (sub) {
 	}
 	case "claude-hook":
 		await claudeHook();
+		break;
+	case "claude-stop":
+		await claudeStop();
 		break;
 	case "explain": {
 		if (rest.length === 0) usage(2);

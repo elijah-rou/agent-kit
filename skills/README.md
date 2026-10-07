@@ -91,7 +91,7 @@ A resync advances a row's commit; [`RESYNC.md`](RESYNC.md) records what each res
 | `skills/how` | `pstack/skills/how` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/why` | `pstack/skills/why` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/blast-radius` | `pstack/skills/blast-radius` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/make-operations-idempotent` | `pstack/skills/principle-make-operations-idempotent` | `68836ddaf5697224520f1847d90cdb90ca8babaa` |
+| `skills/make-operations-idempotent` | `pstack/skills/principle-make-operations-idempotent` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/separate-before-serializing-shared-state` | `pstack/skills/principle-separate-before-serializing-shared-state` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/type-system-discipline` | `pstack/skills/principle-type-system-discipline` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/correct` | `pstack/skills/correct` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |

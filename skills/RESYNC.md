@@ -89,3 +89,7 @@ Upstream: `pstack/skills/principle-type-system-discipline`, `68836dd..9f451cf` (
 | --- | --- | --- |
 | Drop "Manual duplication drifts" and "Extra precision costs reuse and ceremony and buys no safety" | Rejected | The local skill keeps both points (sections 5 and 6) because they justify its stopping rule. |
 | Drop "worth naming" and the "cast you bury today" aphorism; replace semicolons with periods | No local change | The local rewrite does not contain these sentences. |
+
+### make-operations-idempotent
+
+Upstream: `pstack/skills/principle-make-operations-idempotent`, unchanged between 68836dd and 9f451cf. Nothing to review; the provenance row advances to record that the skill is current.

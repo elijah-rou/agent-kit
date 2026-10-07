@@ -62,7 +62,7 @@ Batch every known fix into one push wave, then rearm the watcher.
 
 `agentic watch-pr` reports forge state as JSON (`--pretty` for people). Use `--pr <n>` for one PR, `--stack` for a connected stack, `--status-only` in `check` mode. Its verdicts are `READY`, `WAITING`, `ADVANCE`, and `COMPLETE`. In `drive`, stop at `READY`; on `ADVANCE`, move to the new frontier. Rearm after every push wave. The watcher is the only wake source; never add a second sleep loop. Approval from an owner is a wait, not a blocker to fix.
 
-Babysitting never merges. A request to land or ship goes to Ship. The one exception is an `autopilot-full` owner, whose lifecycle in `references/autopilot-full.md` overrides this section and section 3 for its own PR.
+Babysitting never merges. A request to land or ship goes to Ship. The one exception is an `autopilot-full` owner, whose lifecycle in `references/autopilot-full.md` overrides sections 2 to 4 for its own PR.
 
 ## 5. Ship (the `ship` mode only)
 

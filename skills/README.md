@@ -66,7 +66,7 @@ CLI recipes in `create-verification` come from cursor-team-kit (MIT, copyright C
 | [design-checkpoint](design-checkpoint/SKILL.md) | model and manual | `pstack/skills/architect/`, `pstack/skills/arena/` |
 | [prototype-to-decide](prototype-to-decide/SKILL.md) | model and manual | `pstack/skills/poteto-mode/playbooks/prototype.md` |
 | [background-run](background-run/SKILL.md) | manual | `pstack/skills/poteto-mode/playbooks/autonomous-run.md`, `pause-safely.md`, `session-pickup.md`, `orchestrate.md`; `pstack/skills/figure-it-out/`; `pstack/docs/guide/07-overnight.md` |
-| [babysit-and-ship](babysit-and-ship/SKILL.md) | manual | `pstack/skills/poteto-mode/playbooks/babysit.md`, `shipping.md`, `opening-a-pr.md`; `pstack/skills/poteto-mode/references/bugbot-triage.md` |
+| [babysit-and-ship](babysit-and-ship/SKILL.md) | manual | `pstack/skills/poteto-mode/playbooks/babysit.md`, `shipping.md`, `opening-a-pr.md`, `autopilot-full.md`; `pstack/skills/poteto-mode/references/bugbot-triage.md` |
 
 Local adaptations:
 
@@ -76,7 +76,7 @@ Local adaptations:
   to the repository being worked on; never copy a tool into it.
 - The wording is runtime-neutral so one copy serves Pi and the Claude export.
 - Publication follows the standing default in the instructions; landing happens only in the
-  `autopilot-stack` and `ship` modes that `babysit-and-ship` defines. Messages to people are drafted
+  `autopilot-stack`, `ship`, and `autopilot-full` modes that `babysit-and-ship` defines. Messages to people are drafted
   for the user, and a blocked or denied action is final.
 - Expensive or side-effecting workflows set `disable-model-invocation: true`.
 - Transcripts are read only for the active workspace's current session.
@@ -117,6 +117,7 @@ A resync advances a row's commit; [`RESYNC.md`](RESYNC.md) records what each res
 | `skills/background-run/references/coordination.md` | `pstack/skills/poteto-mode/playbooks/orchestrate.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/babysit-and-ship` | `pstack/skills/poteto-mode/playbooks/babysit.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/babysit-and-ship/references/shipping.md` | `pstack/skills/poteto-mode/playbooks/shipping.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
+| `skills/babysit-and-ship/references/autopilot-full.md` | `pstack/skills/poteto-mode/playbooks/autopilot-full.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/babysit-and-ship/references/pr-body.md` | `pstack/skills/poteto-mode/playbooks/opening-a-pr.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 | `skills/babysit-and-ship/references/bot-triage.md` | `pstack/skills/poteto-mode/references/bugbot-triage.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
 

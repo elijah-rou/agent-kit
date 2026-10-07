@@ -1,16 +1,16 @@
 ---
 name: babysit-and-ship
-description: Drive pull requests from open to merge-ready (modes drive, background, threads-only, check), working only the merge frontier, and, in the `autopilot-stack` and `ship` modes the user invokes, deliver a verified stack or land the contiguous run of independently verified PRs from its bottom. Covers PR bodies, CI triage, and bot review threads. Use when the user asks to babysit a PR or stack, get it green, check on it, address review threads, or land or ship it. Not for opening a PR mid-build.
+description: Drive pull requests from open to merge-ready (modes drive, background, threads-only, check), working only the merge frontier, and, in the `autopilot-stack`, `ship`, and `autopilot-full` modes the user invokes, deliver a verified stack, land its contiguous verified run, or run a queue of independent PRs to merged. Covers PR bodies, CI triage, and bot review threads. Use when the user asks to babysit a PR or stack, get it green, check on it, address review threads, or land or ship it. Not for opening a PR mid-build.
 disable-model-invocation: true
 ---
 
 # Babysit and ship
 
-You own the merge frontier: declare a babysit mode, clear one PR at a time, and stop where the user's call begins. Landing is a separate, stricter step, only in the `ship` mode.
+You own the merge frontier: declare a babysit mode, clear one PR at a time, and stop where the user's call begins. Landing is a separate, stricter step, only in the `ship` and `autopilot-full` modes.
 
 ## Authority
 
-The standing default in the instructions applies: in a repository the user owns, push `agent/*` branches, open PRs ready for review, babysit them to merge-ready, and reply to bot threads. In any other repository, run `check` mode only and prepare branches and PR bodies for the user. Babysitting never merges.
+The standing default in the instructions applies: in a repository the user owns, push `agent/*` branches, open PRs ready for review, babysit them to merge-ready, and reply to bot threads. In any other repository, run `check` mode only and prepare branches and PR bodies for the user. Babysitting never merges; only the modes below land work.
 
 Landing happens only in a mode the user invoked for this run:
 
@@ -18,13 +18,14 @@ Landing happens only in a mode the user invoked for this run:
 |---|---|---|
 | `autopilot-stack` | "autopilot this", "build it as a verified stack" | one linear stack, every PR verified as `references/shipping.md` steps 1 and 2 describe; the user lands |
 | `ship` | "ship it", "land the stack", "going to bed, land it" | `autopilot-stack`, then land the contiguous verified run that Jev's risk screen clears (Ship below) |
+| `autopilot-full` | "full autopilot", "autopilot this queue", "merge these when they're verified" | a queue of independent PRs, each carried from build to merge by its own owner after your clean verdict (`references/autopilot-full.md`) |
 
 Check a mode's preconditions when it is invoked, and again before relying on it:
 
 1. **Owned repository:** `gh repo view --json owner -q .owner.login` matches `gh api user -q .login`.
 2. **Verification skill:** the repository has one under `.agents/skills/verify-*/`, so verifiers can produce real verdicts. Without it, offer `create-verification` first.
-3. **For `ship` only, the forge gate:** `agentic rulesets plan <owner/repo> --tier merge-gate` reports `up to date`, so the forge itself refuses a merge without a passing `agentic/verdict`.
-4. **For `ship` only, Jev's screen can run:** the repository is public and a TypeSafe key is set (`TYPESAFE_API_KEY`, or on macOS the keychain item `typesafe-jev`). Otherwise every PR would hold, so offer `autopilot-stack` instead.
+3. **For `ship` and `autopilot-full`, the merge gate:** `agentic rulesets plan <owner/repo> --tier merge-gate` reports `up to date`, so the forge itself refuses a merge without a passing `agentic/verdict`. For `autopilot-full` in a private repository where rulesets are unavailable (exit 3), the gate is local instead: right before each merge, `agentic verify status <pr>` must exit 0. Say in the invocation's log row and the report that nothing outside the agents enforces the verdict there.
+4. **For `ship`, and `autopilot-full` in a public repository, Jev's screen can run:** a TypeSafe key is set (`TYPESAFE_API_KEY`, or on macOS the keychain item `typesafe-jev`), and for `ship` the repository is public. Otherwise every PR would hold, so offer `autopilot-stack` instead. Private repositories are never sent to Jev, so `autopilot-full` there runs without the screen.
 
 When one fails, refuse the mode, name the failed precondition and what would fix it, and carry on under the standing default. A mode lasts the run it was invoked in; record the invocation with the user's words as evidence (`show-me-your-work`).
 
@@ -61,7 +62,7 @@ Batch every known fix into one push wave, then rearm the watcher.
 
 `agentic watch-pr` reports forge state as JSON (`--pretty` for people). Use `--pr <n>` for one PR, `--stack` for a connected stack, `--status-only` in `check` mode. Its verdicts are `READY`, `WAITING`, `ADVANCE`, and `COMPLETE`. In `drive`, stop at `READY`; on `ADVANCE`, move to the new frontier. Rearm after every push wave. The watcher is the only wake source; never add a second sleep loop. Approval from an owner is a wait, not a blocker to fix.
 
-Babysitting never merges. A request to land or ship goes to Ship.
+Babysitting never merges. A request to land or ship goes to Ship. The one exception is an `autopilot-full` owner, whose lifecycle in `references/autopilot-full.md` overrides sections 2 to 4 for its own PR.
 
 ## 5. Ship (the `ship` mode only)
 

@@ -30,6 +30,24 @@ test("marked children cannot publish or integrate with Git", () => {
   }
 });
 
+test("an autopilot-full owner child may publish its own pull request; other roles may not", () => {
+  const saved = { child: process.env.PI_SUBAGENT_CHILD, agent: process.env.PI_SUBAGENT_CHILD_AGENT };
+  process.env.PI_SUBAGENT_CHILD = "1";
+  try {
+    process.env.PI_SUBAGENT_CHILD_AGENT = "autopilot-owner";
+    const owner = interceptor();
+    for (const command of ["git push --force-with-lease origin agent/x", "git rebase origin/main", "git pull --ff-only"]) assert.equal(owner(command), undefined, command);
+    assert.equal(owner("git commit --no-verify -m x")?.block, true);
+    process.env.PI_SUBAGENT_CHILD_AGENT = "deep";
+    assert.equal(interceptor()("git push origin agent/x")?.block, true);
+  } finally {
+    for (const [key, value] of [["PI_SUBAGENT_CHILD", saved.child], ["PI_SUBAGENT_CHILD_AGENT", saved.agent]]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("root execution is not blocked when child marker is absent", () => {
   const original = process.env.PI_SUBAGENT_CHILD;
   delete process.env.PI_SUBAGENT_CHILD;
@@ -52,6 +70,7 @@ test("outward-facing actions follow the standing default and publication stays w
   assert.match(gitWorkflow, /Name every branch you intend to push `agent\/<topic>`/);
   assert.match(agents, /The parent owns planning, decisions, acceptance, and outward-facing actions/);
   assert.match(agents, /`git-workflow` for worktrees, history, pushing, merging, and pull requests/);
+  assert.match(gitWorkflow, /except an `autopilot-full` owner for its own `agent\/\*` branch and pull request/);
   assert.match(gitWorkflow, /Only the coordinating agent may push, merge[^\n]*Subagents and external mutation-capable runners never do/);
   assert.match(gitWorkflow, /recheck the exact revision and the full workspace against the final verification/i);
   assert.match(agents, /Write a short ADR only for public contracts, persisted formats, security boundaries, major dependencies, hard-to-reverse architecture, or substantial operational commitments/i);

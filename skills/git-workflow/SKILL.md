@@ -21,8 +21,8 @@ Repository conventions take precedence where they differ.
 
 ## Publishing and merging
 
-- Only the coordinating agent may push, merge (including local fast-forwards), deploy, or release. Subagents and external mutation-capable runners never do, and a different checkout, container, or backend does not widen that authority.
-- In a repository the user owns, push `agent/<topic>` branches and open pull requests without asking. Merging, pushing to the default branch, force-pushing or deleting shared branches, and any push to a repository the user does not own require explicit authorization naming the operation, repository, and scope. Invoking the `ship` mode for a run authorizes merging its verified run and rebasing that run's own `agent/*` branches (`babysit-and-ship`).
+- Only the coordinating agent may push, merge (including local fast-forwards), deploy, or release. Subagents and external mutation-capable runners never do, except an `autopilot-full` owner for its own `agent/*` branch and pull request (`babysit-and-ship`), and a different checkout, container, or backend does not widen that authority.
+- In a repository the user owns, push `agent/<topic>` branches and open pull requests without asking. Merging, pushing to the default branch, force-pushing or deleting shared branches, and any push to a repository the user does not own require explicit authorization naming the operation, repository, and scope. Invoking the `ship` mode for a run authorizes merging its verified run and rebasing that run's own `agent/*` branches; invoking `autopilot-full` authorizes each owner to do the same for its own pull request after the coordinator's clean verdict (`babysit-and-ship`).
 - Name every branch you intend to push `agent/<topic>`.
 - Before an authorized push or merge, recheck the exact revision and the full workspace against the final verification.
 - In a repository the user does not own, do not proactively offer to publish or open a pull request.

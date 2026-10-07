@@ -17,7 +17,8 @@ extensions, skills, prompt, and theme from it in place. Codex and Claude read li
 
 ## Policy layer
 
-Every Pi tool call passes through `pi/extensions/agentic-policy-gate.ts`; Claude Code runs
+[ADR 0001](docs/adr/0001-agentic-policy-layer.md) records why it exists, its threat model, and
+when to reverse it. Every Pi tool call passes through `pi/extensions/agentic-policy-gate.ts`; Claude Code runs
 `agentic claude-hook` as a `PreToolUse` hook. Both evaluate the same Cedar policies in
 `agentic/policy/` against your autonomy grants, which live outside every repository:
 

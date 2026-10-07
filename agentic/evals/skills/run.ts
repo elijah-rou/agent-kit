@@ -43,8 +43,8 @@ export const CANDIDATE_THINKING = "medium";
 export const JUDGE_MODEL = "sonnet";
 export const JUDGE_THINKING = "high";
 export const REPS = 2;
-/** 32 planned runs plus 16 for reruns after infrastructure failures (planning context isolation, raw output reuse). */
-const CANDIDATE_LAUNCH_BUDGET = 48;
+/** 32 planned runs, 16 reruns after infrastructure failures (planning context isolation, raw output reuse), and 4 planning reruns after the design-checkpoint edit. */
+const CANDIDATE_LAUNCH_BUDGET = 52;
 const JUDGE_LAUNCH_BUDGET = 16;
 const CONCURRENCY = 4;
 const RUN_TIMEOUT_MS = 20 * 60_000;

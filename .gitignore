@@ -2,3 +2,4 @@ node_modules/
 .claude-plugin/types/
 .DS_Store
 agentic/evals/skills/runs/
+agentic/evals/skills/runs-archive/

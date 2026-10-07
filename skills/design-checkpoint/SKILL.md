@@ -17,6 +17,8 @@ The work is a one-way door when it fixes any of:
 - hard-to-reverse architecture: process boundaries, ownership of shared state, a major dependency;
 - for systems and games: core data structures, memory ownership, the concurrency or threading model, the simulation loop and its determinism.
 
+For command-line flags and API parameters, a change that keeps every existing caller working is reversible, not a door: a new optional flag, or a rename that keeps the old name as an alias. Build it. Persisted data and wire formats stay doors even when the change is additive, because written data and other readers keep its shape.
+
 If none applies, do not use this skill: build it (reversible), or use `prototype-to-decide` (a fork observation can settle). If you are unsure, treat it as a door.
 
 Completion criterion: the door is named in one sentence, with the irreversible part separated from the reversible work around it.

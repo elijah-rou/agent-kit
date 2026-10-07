@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -33,6 +33,16 @@ describe("claude-hook startup failures", () => {
 		const result = hook(join(AGENTIC, "bin", "claude-hook"), { PATH: "/usr/bin:/bin", HOME: root });
 		expect(result).toMatchObject({ status: 0, decision: "deny" });
 		expect(result.reason).toContain("bun was not found");
+	});
+
+	test("without bun on PATH, the bun beside bootstrap's agent-kit link is found", () => {
+		const tools = join(root, "tools");
+		mkdirSync(join(tools, "bin"), { recursive: true });
+		symlinkSync(join(AGENTIC, ".."), join(tools, "agent-kit"));
+		symlinkSync(process.execPath, join(tools, "bin", "bun"));
+		const result = hook(join(tools, "agent-kit", "agentic", "bin", "claude-hook"), { PATH: "/usr/bin:/bin", HOME: root, AGENTIC_HOME: root, AGENTIC_NO_KEYCHAIN: "1", AGENTIC_JEV_THRESHOLD: "" });
+		expect(result.status).toBe(0);
+		expect(result.reason ?? "").not.toContain("bun was not found");
 	});
 
 	test("a missing CLI denies", () => {

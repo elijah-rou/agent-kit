@@ -11,7 +11,7 @@
  */
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { configPath } from "./config.ts";
 import { grantsPath, orchStore } from "./facts.ts";
 
@@ -25,11 +25,15 @@ const SEVERITY: ProtectedKind[] = ["grants", "user-config", "global-policy", "le
  * directory that directly contains a protected path (a copy into it can replace the file).
  * "ancestor": any directory above one (moving or removing it takes the protected path along).
  */
-export type Reach = "path" | "parent" | "ancestor";
+export type Reach = "path" | "parent" | "ancestor" | "checkout";
 
 export interface ProtectedPath {
 	kind: ProtectedKind;
 	path: string;
+	/** A git checkout: only commands that rewrite its working tree (reach "checkout") match. */
+	checkout?: boolean;
+	/** A symlink whose own location matters (the hook's path to the gate), kept unresolved. */
+	link?: boolean;
 }
 
 /**
@@ -77,7 +81,10 @@ export function protectedPaths(env: NodeJS.ProcessEnv, repoRoot: string | undefi
 		const kitRoot = dirname(agenticRoot);
 		paths.push({ kind: "enforcement", path: agenticRoot });
 		for (const file of [join("pi", "extensions", "agentic-policy-gate.ts"), "node_modules", "package.json", "bun.lock"]) paths.push({ kind: "enforcement", path: join(kitRoot, file) });
+		paths.push({ kind: "enforcement", path: kitRoot, checkout: true });
 	}
+	// Claude's hook command and Pi's package path reach the gate through bootstrap's link.
+	paths.push({ kind: "enforcement", path: join(env.BOOTSTRAP_ROOT ?? join(home, ".local", "share", "bootstrap"), "tools", "agent-kit"), link: true });
 	const claudeHome = env.CLAUDE_CONFIG_DIR ?? join(home, ".claude");
 	for (const file of ["settings.json", "settings.local.json"]) paths.push({ kind: "enforcement", path: join(claudeHome, file) });
 	paths.push({ kind: "enforcement", path: join(env.PI_CODING_AGENT_DIR ?? join(home, ".pi", "agent"), "settings.json") });
@@ -87,7 +94,7 @@ export function protectedPaths(env: NodeJS.ProcessEnv, repoRoot: string | undefi
 		paths.push({ kind: "repo-policy", path: join(repoRoot, ".agents", "policy") });
 		for (const file of ["state.json", "LEARNED.md", "proposed-global.md", "backlog.json"]) paths.push({ kind: "learned", path: join(repoRoot, ".agents", "learning", file) });
 	}
-	return paths.map((entry) => ({ ...entry, path: canonical(entry.path) }));
+	return paths.map((entry) => ({ ...entry, path: entry.link ? join(canonical(dirname(entry.path)), basename(entry.path)) : canonical(entry.path) }));
 }
 
 export interface KindOptions {
@@ -109,6 +116,7 @@ export function protectedKindOf(paths: ProtectedPath[], cwd: string, candidate: 
 	const reach = options.reach ?? "path";
 	const hits = paths.filter(
 		(entry) =>
+			entry.checkout ? reach === "checkout" && (absolute === entry.path || absolute.startsWith(`${entry.path}/`)) :
 			absolute === entry.path ||
 			absolute.startsWith(`${entry.path}/`) ||
 			(reach === "parent" && dirname(entry.path) === absolute) ||

@@ -161,6 +161,7 @@ function substitutions(word: string): string[] {
 }
 
 function resolvePath(ctx: ClassifyContext, path: string): string {
+	if (path === "~") return ctx.homeDir;
 	if (path.startsWith("~/")) return join(ctx.homeDir, path.slice(2));
 	return isAbsolute(path) ? path : resolve(ctx.cwd, path);
 }
@@ -179,9 +180,10 @@ export function classifyCommand(command: string, ctx: ClassifyContext, depth = 0
 }
 
 /**
- * Tracks cd and pushd so later relative paths in the same command resolve where the shell would
- * write them. Only path resolution follows; git context stays at the call's directory. A target
- * that cannot be read statically ($VAR, -) leaves the directory unchanged.
+ * Tracks cd and pushd so later relative paths in the same command may resolve where the shell
+ * would write them. Only path resolution follows; git context stays at the call's directory. A cd
+ * can fail or sit in a subshell, so relative paths are checked against both the call's directory
+ * and the tracked one. A target that cannot be read statically ($VAR, -) is not followed.
  */
 function afterDirectoryChange(simple: SimpleCommand, ctx: ClassifyContext): ClassifyContext {
 	const [name, ...args] = simple.words;
@@ -282,6 +284,18 @@ function classifySimple(simple: SimpleCommand, line: string, ctx: ClassifyContex
 }
 
 const READ_ONLY = new Set(["cat", "head", "tail", "less", "more", "grep", "egrep", "rg", "ls", "wc", "diff", "jq", "bat", "stat", "file", "test", "[", "realpath", "readlink", "du", "sha256sum", "shasum", "md5", "md5sum", "column", "sort", "uniq", "cut", "echo", "printf", "basename", "dirname", "tree", "eza"]);
+/** Git subcommands that rewrite the working tree or move HEAD under it. */
+const GIT_REWRITES_TREE = new Set(["checkout", "switch", "reset", "restore", "stash", "clean", "rebase", "merge", "pull", "am", "apply", "cherry-pick", "revert", "rm", "mv", "worktree", "bisect"]);
+
+/** The subcommand of a git invocation, skipping global options and their values. */
+function gitSubcommand(args: string[]): string | undefined {
+	for (let i = 0; i < args.length; i++) {
+		if (["-C", "-c", "--git-dir", "--work-tree", "--namespace"].includes(args[i])) i++;
+		else if (!args[i].startsWith("-")) return args[i];
+	}
+	return undefined;
+}
+
 const GIT_READ_ONLY = new Set(["log", "show", "status", "diff", "rev-parse", "for-each-ref", "ls-remote", "cat-file", "ls-files", "ls-tree", "blame", "describe", "shortlog", "rev-list", "merge-base", "grep"]);
 
 function isReadOnly(name: string, args: string[]): boolean {
@@ -305,25 +319,37 @@ function protectedWrites(simple: SimpleCommand, words: string[], name: string, c
 		seen.add(path);
 		out.actions.push({ action: "file.write", resource: { kind: "ProtectedPath", protectedKind: kind, path }, force: false, evidence: text });
 	};
-	const cwd = ctx.pathCwd ?? ctx.cwd;
-	for (const target of simple.writes) {
-		const kind = ctx.protectedKind(target, { cwd });
-		if (kind) add(target, kind);
-	}
+	const cwds = [...new Set([ctx.cwd, ctx.pathCwd ?? ctx.cwd])];
+	const check = (candidate: string, reach: "path" | "parent" | "ancestor" | "checkout" = "path") => {
+		const here = candidate.replace(/^(?:\$PWD|\$\{PWD\}|\$\(pwd\)|`pwd`)(?=\/|$)/, "");
+		for (const cwd of cwds) {
+			const path = here === candidate ? candidate : `${cwd}${here}`;
+			const kind = ctx.protectedKind?.(path, { cwd, reach });
+			if (kind) return add(candidate, kind);
+		}
+	};
+	for (const target of simple.writes) check(target);
 	if (words.length > 0 && !isReadOnly(name, words.slice(1))) {
 		const operands = words.slice(1).filter((word) => !word.startsWith("-"));
 		const destination = operands.at(-1);
 		const script = RUNS_SCRIPT.has(name) ? operands[0] : undefined;
-		// Prefix assignments such as ORCH_STORE=dir configure where the command writes.
-		const values = simple.assignments.map((assignment) => assignment.slice(assignment.indexOf("=") + 1));
+		// Assignments (prefix, or through env) such as ORCH_STORE=dir configure where the command writes.
+		const assigned = [...simple.assignments, ...simple.words.filter((word) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(word))];
+		const values = assigned.map((assignment) => expandVariables(assignment.slice(assignment.indexOf("=") + 1), ctx, text));
 		for (const word of [...words.slice(1), ...values]) {
 			if (word === script) continue;
 			const reach = REMOVES.has(name) ? "ancestor" : COPIES_INTO.has(name) && word === destination ? "parent" : "path";
-			const candidates = word.includes("=") ? [word, word.slice(word.indexOf("=") + 1)] : [word];
-			for (const candidate of candidates) {
-				const kind = ctx.protectedKind(candidate, { cwd, reach });
-				if (kind) add(candidate, kind);
-			}
+			for (const candidate of word.includes("=") ? [word, word.slice(word.indexOf("=") + 1)] : [word]) check(candidate, reach);
+		}
+		// A copy lands at destination/basename(source), or in the destination itself for a source
+		// ending in "/"; landing on a directory above a protected path can replace it.
+		if (COPIES_INTO.has(name) && destination !== undefined) {
+			for (const source of operands.slice(0, -1)) check(source.endsWith("/") ? destination : `${destination.replace(/\/$/, "")}/${basename(source)}`, "ancestor");
+		}
+		// Commands that rewrite a checkout's working tree, in the checkout the gate runs from.
+		if (name === "git" && GIT_REWRITES_TREE.has(gitSubcommand(words.slice(1)) ?? "")) {
+			const dirs = words.flatMap((word, index) => (words[index - 1] === "-C" ? [word] : []));
+			check(dirs.length > 0 ? dirs.reduce((dir, next) => (isAbsolute(next) ? next : `${dir}/${next}`)) : ".", "checkout");
 		}
 	}
 	if (words.some((word) => word.endsWith("learning/cli.ts")) && words.includes("approve")) add("learning approve", "learned");

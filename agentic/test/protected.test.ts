@@ -157,4 +157,49 @@ describe("protected configuration paths", () => {
 		const policy = await evaluateToolCall({ toolName: "write", input: { path: join(import.meta.dir, "..", "policy", "global.cedar"), content: "" }, cwd: ws.repo }, deps);
 		expect(policy.decision).toBe("deny");
 	});
+
+	test("cd that fails or sits in a subshell, env and $PWD assignments, copies into a grandparent", async () => {
+		const ws = setup();
+		const deps = { ...ws.deps, classifyContext: { ...ws.deps.classifyContext!, homeDir: ws.root } };
+		const run = async (command: string) => ({ command, decision: (await evaluateToolCall({ toolName: "bash", input: { command }, cwd: ws.repo }, deps)).decision });
+		for (const command of [
+			"cd /nonexistent; rm -rf .agents/orch",
+			"(cd /tmp); rm -rf .agents/orch",
+			"cd src; cd -; rm -rf .agents/orch",
+			"env ORCH_STORE=.agents/orch agentic orch ledger record 1 a pass",
+			"ORCH_STORE=$PWD/.agents/orch agentic orch ledger record 1 a pass",
+			'ORCH_STORE="$(pwd)/.agents/orch" agentic orch ledger record 1 a pass',
+			"cp -R fake/.agents .",
+			"rsync -a fake/ ./",
+		]) {
+			expect(await run(command)).toEqual({ command, decision: "deny" });
+		}
+		expect(await run("pushd /tmp; popd; echo x > .agents/policy/a")).toEqual({ command: "pushd /tmp; popd; echo x > .agents/policy/a", decision: "ask" });
+		for (const command of ["cp file .", "rm -rf build", "mv a b", "cd src && npm test", "git clean -fd", "cp -R src dist", "rsync -a src/ dist/", "git checkout -b topic"]) {
+			expect(await run(command)).toEqual({ command, decision: "allow" });
+		}
+	});
+
+	test("cd ~ then removing the harness settings directory asks", async () => {
+		const ws = setup();
+		const deps = { ...ws.deps, env: { ...ws.deps.env, CLAUDE_CONFIG_DIR: join(ws.root, ".claude") }, classifyContext: { ...ws.deps.classifyContext!, homeDir: ws.root } };
+		const result = await evaluateToolCall({ toolName: "bash", input: { command: "cd ~ && rm -rf .claude" }, cwd: ws.repo }, deps);
+		expect(result.policies).toEqual(["gate-wiring-needs-user"]);
+	});
+
+	test("rewriting the gate's checkout or moving bootstrap's link to it asks", async () => {
+		const ws = setup();
+		const kit = join(import.meta.dir, "..", "..");
+		const bootstrapRoot = join(ws.root, "bootstrap");
+		mkdirSync(join(bootstrapRoot, "tools"), { recursive: true });
+		symlinkSync(kit, join(bootstrapRoot, "tools", "agent-kit"));
+		const deps = { ...ws.deps, env: { ...ws.deps.env, BOOTSTRAP_ROOT: bootstrapRoot } };
+		for (const command of [`git -C ${kit} checkout --detach main`, `git -C ${kit} reset --hard HEAD~3`, `mv ${bootstrapRoot}/tools /tmp/t`, `rm ${bootstrapRoot}/tools/agent-kit`]) {
+			const result = await evaluateToolCall({ toolName: "bash", input: { command }, cwd: ws.repo }, deps);
+			// Removing the link resolves through it to the kit, above the blocked global policies.
+			expect({ command, stopped: result.policies.some((id) => ["gate-wiring-needs-user", "protect-control-files"].includes(id)) }).toEqual({ command, stopped: true });
+		}
+		const commit = await evaluateToolCall({ toolName: "bash", input: { command: `git -C ${kit} status` }, cwd: ws.repo }, deps);
+		expect(commit.decision).toBe("allow");
+	});
 });

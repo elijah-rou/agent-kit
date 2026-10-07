@@ -9,8 +9,10 @@ entry="$(dirname "$0")/agentic"
 [ -f "$entry" ] || deny "the agentic CLI is missing"
 bun="$(command -v bun 2>/dev/null)"
 # Bootstrap links agent-kit at tools/agent-kit and bun at tools/bin/bun, for sessions started
-# without bootstrap's PATH.
-for candidate in "$(dirname "$0")/../../../bin/bun" "${BUN_INSTALL:+$BUN_INSTALL/bin/bun}" "$HOME/.bun/bin/bun"; do
+# without bootstrap's PATH. The tools directory is taken from $0 textually, because ".." would
+# resolve through the agent-kit link.
+tools="${0%/*}"; tools="${tools%/*}"; tools="${tools%/*}"; tools="${tools%/*}"
+for candidate in "$tools/bin/bun" "${BUN_INSTALL:+$BUN_INSTALL/bin/bun}" "$HOME/.bun/bin/bun"; do
 	[ -n "$bun" ] && break
 	if [ -n "$candidate" ] && [ -x "$candidate" ]; then bun="$candidate"; fi
 done

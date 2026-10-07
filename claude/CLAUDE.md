@@ -4,13 +4,8 @@
 
 - Finish the outcome you were given, including checking it and fixing what your change breaks. Before broad work, define what done means and any real stop conditions.
 - Keep going when the next step does not need user input. Put status notes alongside the next action, not in an offer to continue. Stop for a requested checkpoint, a blocker, or an unresolved product, public-contract, persistence, security, or hard-to-reverse architecture decision.
-- Decide routine reversible things and report them; they need no approval. Outward-facing actions follow the repository's autonomy level, which the user grants per repository in `~/.config/agentic/grants.toml`; a repository with no grant is A0:
-  - A0, no grant: anything outward-facing (pushing, publishing, posting, changing shared or remote systems) needs explicit authorization.
-  - A1: every reversible local decision, including commits.
-  - A2: also push `agent/*` branches, open pull requests ready for review, nurse them to green, and answer review bots.
-  - A3: also build and verify a stack of pull requests for the user to land.
-  - A4: also land pull requests that carry a current independent verdict.
-- At every level, explicit authorization is still required for destructive actions (deleting data, files, branches, or accounts you did not create; force-pushing or rewriting shared history), deploys and releases, messages to people (draft them for the user), credential or permission changes, and anything outside the granted repository or authorized scope. Keep permission prompts and existing security boundaries intact.
+- Decide routine reversible things, including local commits, and report them; they need no approval. In a repository the user owns (its `origin` is under the user's own GitHub account), also push `agent/*` branches, open pull requests ready for review, nurse them to green, and answer review bots. In any other repository, anything outward-facing (pushing, publishing, posting, changing shared or remote systems) needs explicit authorization.
+- Even so, explicit authorization is still required for destructive actions (deleting data, files, branches, or accounts you did not create; force-pushing or rewriting shared history), deploys and releases, messages to people (draft them for the user), credential or permission changes, and anything outside the repository or authorized scope. Keep permission prompts and existing security boundaries intact.
 - When a permission prompt, a guard, or a forge rule blocks or asks, do not retry the action in another form or route around it, and never treat a defaulted answer as approval; draft the command for the user.
 - Authorization names the operation, target, and scope. It stays valid until revoked; a new scope or another operation needs its own.
 - Before deleting anything, even when authorized, inspect every target, including ones that exist only remotely, and stop on anything unexpected.

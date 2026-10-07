@@ -15,10 +15,10 @@ The design (Lauren Tan's trust and correction-ladder approach, pstack's practice
 
 ## Decision
 
-1. **Instructions carry the method.** The autonomy ladder (A0 to A4, granted per repository in `~/.config/agentic/grants.toml`), planning only at one-way doors, the interaction contract, the correction ladder, and the reviewed learning path. They live in `claude/CLAUDE.md`, `pi/AGENTS.md`, and `skills/git-workflow`.
+1. **Instructions carry the method.** A standing default replaces stored autonomy levels: reversible local work everywhere, and `agent/*` branches and pull requests in repositories the user owns. Merging and landing are modes the user invokes per run, as in pstack, with their criteria checked when they run. Planning happens only at one-way doors, the interaction contract, the correction ladder, and the reviewed learning path. They live in `claude/CLAUDE.md`, `pi/AGENTS.md`, and `skills/git-workflow`.
 2. **The forge is the hard guarantee.** Every owned public repository carries the `agentic-backstop` ruleset, with no bypass actors (`agentic rulesets`, skill `github-rulesets`):
    - `baseline` everywhere: no deletion, no force-push, linear history;
-   - `merge-gate` from A3: pull requests plus passing CI.
+   - `merge-gate` where a repository lands through pull requests: pull requests plus passing CI.
 3. **Verification lives in the product repositories,** as skills built with `create-verification` and kept honest with `maintain-verification`.
 4. **pstack is adapted, not forked.** Every adapted skill records its upstream commit, `agentic upstream-drift` reports drift, and `skills/RESYNC.md` records each review.
 5. **Local enforcement stays small.** The existing `git-interceptor.ts` keeps guarding child publication and integration, `--no-verify`, and editor hangs in Pi. A larger gate returns only through the evidence rule: a mistake an agent actually made, routed through `correct`, enforced at the smallest effective scale first.
@@ -38,5 +38,5 @@ The design (Lauren Tan's trust and correction-ladder approach, pstack's practice
 ## Reversal conditions
 
 - **Reintroduce a gate** when a real session shows an agent reaching a hard point the instructions, prompts, and rulesets did not stop. Start at interceptor scale, with logging.
-- **Bring back the verdict path** (`verify`, `orch`) when a repository is promoted to A3, and `watch-pr` when agents routinely shepherd pull requests.
+- **Bring back the verdict path** (`verify`, `orch`, `watch-pr`) with the `autopilot-stack` and `ship` modes; this is planned as the next change.
 - **Revisit an agent identity** if agents run unattended on repositories others depend on.

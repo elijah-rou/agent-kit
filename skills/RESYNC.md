@@ -93,3 +93,21 @@ Upstream: `pstack/skills/principle-type-system-discipline`, `68836dd..9f451cf` (
 ### make-operations-idempotent
 
 Upstream: `pstack/skills/principle-make-operations-idempotent`, unchanged between 68836dd and 9f451cf. Nothing to review; the provenance row advances to record that the skill is current.
+
+### diagnosing-bugs
+
+Upstream: `mattpocock/skills` `skills/engineering/diagnosing-bugs`, `6654f6b..f3fc563`.
+
+| Upstream change | Decision | Reason |
+| --- | --- | --- |
+| After watching a forced failure, diff against a pristine copy to prove the mutation landed | Taken | It closes a real gap in the local reproduce-then-fix step: a red caused by a mutation that never landed proves nothing. |
+| Read `GLOSSARY.md` instead of `CONTEXT.md` | No local change | The local adaptation names neither file. |
+
+### show-me
+
+Upstream: `humanlayer/skills` `plugins/show-me/skills/show-me`, `3c26291..ca7c808`. No change taken.
+
+| Upstream change | Decision | Reason |
+| --- | --- | --- |
+| `disable-model-invocation: true` (user invocation only) | Rejected | The local description already limits automatic use to an explicit request to show or diagram something; a natural-language request should still reach the skill, not only the command form. |
+| Agent metadata for another harness (`agents/openai.yaml`) | No local change | Not part of the adapted skill. |

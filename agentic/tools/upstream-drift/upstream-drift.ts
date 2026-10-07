@@ -35,6 +35,8 @@ export interface Item {
 	readonly upstreamPath: string;
 	readonly commit: string;
 	readonly source: string;
+	/** Upstream repository (owner/name) when it is not the default upstream. */
+	readonly repo?: string;
 }
 
 export interface ChangedFile {
@@ -198,17 +200,18 @@ function readProvenanceToml(path: string, errors: string[]): Item[] {
 	for (const [index, entry] of raw.entries()) {
 		const record = entry as Record<string, unknown>;
 		const source = `provenance.toml item ${index + 1}`;
-		const { local, upstream_path: upstreamPath, commit } = record;
-		const valid = [local, upstreamPath, commit].every((v) => typeof v === "string" && v !== "");
+		const { local, upstream_path: upstreamPath, commit, repo } = record;
+		const valid = [local, upstreamPath, commit].every((v) => typeof v === "string" && v !== "") && (repo === undefined || (typeof repo === "string" && /^[\w.-]+\/[\w.-]+$/.test(repo)));
 		if (valid) {
 			items.push({
 				local: local as string,
 				upstreamPath: upstreamPath as string,
 				commit: commit as string,
 				source,
+				...(repo === undefined ? {} : { repo: repo as string }),
 			});
 		} else {
-			errors.push(`${source}: needs string local, upstream_path and commit`);
+			errors.push(`${source}: needs string local, upstream_path and commit, and repo as owner/name when present`);
 		}
 	}
 	return items;

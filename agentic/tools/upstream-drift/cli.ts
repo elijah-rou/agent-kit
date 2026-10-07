@@ -8,19 +8,23 @@ import { readProvenance, reportItem, upstreamHead, type ItemReport } from "./ups
 const DEFAULT_UPSTREAM = join(homedir(), "Projects", "cursor-plugins");
 const AGENT_KIT_ROOT = join(import.meta.dir, "..", "..", "..");
 
-const USAGE = `Usage: upstream-drift [--root <dir>] [--upstream <repo>] [--fail-on-drift]
+const USAGE = `Usage: upstream-drift [--root <dir>] [--upstream <repo>] [--upstream-for <owner/name>=<repo>]... [--fail-on-drift]
 
 Report upstream files that changed since each adapted item's recorded commit.
 
 Provenance is read from <root>/skills/README.md (table rows with Local, Upstream path and
 Commit columns), <root>/agentic/vendor/*/PROVENANCE (upstream_path: and commit: lines), and
-<root>/provenance.toml ([[item]] with local, upstream_path, commit). For each item it runs
+<root>/provenance.toml ([[item]] with local, upstream_path, commit, and optional repo for an
+upstream other than the default). For each item it runs
 git -C <upstream> diff --numstat --no-renames <commit> HEAD -- <upstream_path>.
 
 Options:
   --root <dir>       Project root (default: the agent-kit checkout holding this tool).
   --upstream <repo>  Upstream checkout (default: $UPSTREAM_DRIFT_REPO, else
                      ~/Projects/cursor-plugins).
+  --upstream-for <owner/name>=<repo>
+                     Checkout for provenance.toml items with that repo; repeatable. An item
+                     whose repo has no checkout is reported as an error.
   --fail-on-drift    Exit 1 when any item has upstream changes.
   --help             Show this help.
 
@@ -48,6 +52,7 @@ export function main(argv: readonly string[], io: Io = defaultIo): number {
 			options: {
 				root: { type: "string" },
 				upstream: { type: "string" },
+				"upstream-for": { type: "string", multiple: true },
 				"fail-on-drift": { type: "boolean" },
 				help: { type: "boolean" },
 			},
@@ -71,17 +76,33 @@ export function main(argv: readonly string[], io: Io = defaultIo): number {
 			return 2;
 		}
 	}
-	return report(root, upstream, values["fail-on-drift"] === true, io);
+	const others = new Map<string, string>();
+	for (const pair of values["upstream-for"] ?? []) {
+		const at = pair.indexOf("=");
+		const path = pair.slice(at + 1);
+		if (at < 1 || !existsSync(path)) {
+			io.stderr(`error: --upstream-for needs owner/name=<existing checkout>, got ${pair}\n`);
+			return 2;
+		}
+		others.set(pair.slice(0, at), path);
+	}
+	return report(root, upstream, others, values["fail-on-drift"] === true, io);
 }
 
-function report(root: string, upstream: string, failOnDrift: boolean, io: Io): number {
+function report(root: string, upstream: string, others: ReadonlyMap<string, string>, failOnDrift: boolean, io: Io): number {
 	const provenance = readProvenance(root);
 	for (const error of provenance.errors) {
 		io.stderr(`error: ${error}\n`);
 	}
 	const head = upstreamHead(upstream);
 	io.stdout(`upstream ${upstream} at ${head.slice(0, 12)}\n`);
-	const reports = provenance.items.map((item) => reportItem(upstream, item));
+	for (const [repo, path] of others) io.stdout(`upstream ${repo} ${path} at ${upstreamHead(path).slice(0, 12)}\n`);
+	// An item from another repository needs its checkout; without one it is an error, not silently skipped.
+	const reports = provenance.items.map((item): ItemReport => {
+		if (item.repo === undefined) return reportItem(upstream, item);
+		const path = others.get(item.repo);
+		return path === undefined ? { kind: "error", item, message: `no checkout for ${item.repo}; pass --upstream-for ${item.repo}=<path>` } : reportItem(path, item);
+	});
 	for (const entry of reports) {
 		io.stdout(formatReport(entry));
 	}
@@ -96,7 +117,7 @@ function report(root: string, upstream: string, failOnDrift: boolean, io: Io): n
 
 function formatReport(entry: ItemReport): string {
 	const { item } = entry;
-	const label = `${item.local} <- ${item.upstreamPath} @ ${item.commit.slice(0, 12)}`;
+	const label = `${item.local} <- ${item.repo ? `${item.repo}:` : ""}${item.upstreamPath} @ ${item.commit.slice(0, 12)}`;
 	switch (entry.kind) {
 		case "error":
 			return `${label}: error: ${entry.message} (${item.source})\n`;

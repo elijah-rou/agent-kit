@@ -11,6 +11,7 @@ The `show-me` and `design-control-loop` skills are adapted from
 
 Local adaptations narrow automatic invocation, use portable skill paths, require an
 approved control-loop design before implementation, and tighten workflow safety.
+Both are reviewed against `ca7c8088db69e315a8b2deea43820270457f8f3c` ([`RESYNC.md`](RESYNC.md)); drift is tracked in `provenance.toml`.
 The upstream MIT license is preserved in `HUMANLAYER-LICENSE`.
 
 The `writing-for-agents` and `diagnosing-bugs` skills are adapted from
@@ -19,8 +20,9 @@ The `writing-for-agents` and `diagnosing-bugs` skills are adapted from
 
 Local adaptations support Pi and Codex skill contracts, narrow automatic triggers, remove
 foreign-harness orchestration and implicit publication, and keep application debugging
-separate from the coredump workflow. The upstream MIT license is
-preserved in `POCOCK-LICENSE`.
+separate from the coredump workflow. `diagnosing-bugs` is resynced to
+`f3fc5632f401156837ee3872f14fe33ccf1024ea` ([`RESYNC.md`](RESYNC.md)); drift is tracked in `provenance.toml`.
+The upstream MIT license is preserved in `POCOCK-LICENSE`.
 
 The `unslop`, `technical-writing`, `how`, `why`, `blast-radius`,
 `make-operations-idempotent`, `separate-before-serializing-shared-state`, and

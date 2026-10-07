@@ -182,4 +182,17 @@ describe("upstream-drift", () => {
 		});
 		expect(missing.status).toBe(2);
 	});
+
+	it("reads items from another upstream repository through --upstream-for, and errors without its checkout", () => {
+		write(join(root, "skills/README.md"), "# Skills\n");
+		write(join(root, "provenance.toml"), `[[item]]\nlocal = "skills/alpha"\nrepo = "other/skills"\nupstream_path = "pkg/skills/alpha"\ncommit = "${base}"\n`);
+		expect(readProvenance(root).items).toEqual([expect.objectContaining({ local: "skills/alpha", repo: "other/skills" })]);
+		const withCheckout = capture();
+		expect(main(["--root", root, "--upstream", upstream, "--upstream-for", `other/skills=${upstream}`], withCheckout.io)).toBe(0);
+		expect(withCheckout.out.join("")).toContain("skills/alpha <- other/skills:pkg/skills/alpha");
+		expect(withCheckout.out.join("")).toContain("2 files changed upstream");
+		const withoutCheckout = capture();
+		expect(main(["--root", root, "--upstream", upstream], withoutCheckout.io)).toBe(1);
+		expect(withoutCheckout.out.join("")).toContain("no checkout for other/skills");
+	});
 });

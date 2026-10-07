@@ -53,10 +53,10 @@
     {
       "subject": "planning",
       "current": [
+        1,
         0.5,
         1,
-        1,
-        0
+        1
       ],
       "weakened": [
         0.5,
@@ -64,10 +64,10 @@
         1,
         1
       ],
-      "currentMean": 0.625,
+      "currentMean": 0.875,
       "weakenedMean": 0.75,
-      "margin": -0.125,
-      "passesOnCurrent": false,
+      "margin": 0.125,
+      "passesOnCurrent": true,
       "failsOnWeakened": false,
       "accepted": false
     }
@@ -138,7 +138,7 @@
       "of": 2
     },
     "planning/no_plan_request/current": {
-      "met": 1,
+      "met": 2,
       "of": 2
     },
     "planning/no_plan_request/weakened": {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { desiredRuleset, ruleDiff, splitChecks, verified } from "./rulesets.ts";
+import { desiredRuleset, ruleDiff, settingsDiff, splitChecks, verified } from "./rulesets.ts";
 
 describe("agentic-backstop ruleset", () => {
 	test("baseline protects the default branch without bypass and without requiring pull requests", () => {
@@ -26,5 +26,15 @@ describe("agentic-backstop ruleset", () => {
 		expect(ruleDiff(desired, desired)).toEqual({ add: [], remove: [], change: [] });
 		expect(verified([{ type: "deletion" }, { type: "non_fast_forward" }], desired)).toBe(false);
 		expect(verified([{ type: "deletion" }, { type: "non_fast_forward" }, { type: "required_linear_history" }, { type: "pull_request" }], desired)).toBe(true);
+	});
+
+	test("a ruleset that is not enforced, can be bypassed, or targets another branch is not up to date", () => {
+		const desired = desiredRuleset("baseline", []);
+		expect(settingsDiff(desired, desired)).toEqual([]);
+		expect(settingsDiff({ ...desired, conditions: { ref_name: { exclude: [], include: ["~DEFAULT_BRANCH"] } } }, desired)).toEqual([]);
+		expect(settingsDiff({ ...desired, enforcement: "disabled" }, desired)).toEqual(["enforcement"]);
+		expect(settingsDiff({ ...desired, enforcement: "evaluate", bypass_actors: [{ actor_id: 5, actor_type: "RepositoryRole", bypass_mode: "always" }] }, desired)).toEqual(["enforcement", "bypass_actors"]);
+		expect(settingsDiff({ ...desired, conditions: { ref_name: { include: ["refs/heads/dev"], exclude: [] } } }, desired)).toEqual(["conditions"]);
+		expect(settingsDiff({}, desired)).toEqual(["enforcement", "bypass_actors", "conditions"]);
 	});
 });

@@ -30,7 +30,7 @@ For new or changed deterministic input contracts, retain only relevant distingui
 
 A reproducible command or runtime journey can substitute for a conventional test. Implementation-first work is a regression check, not TDD. Performance and reliability claims need a baseline and the same journey afterward.
 
-When you write, change, or keep a test, read `references/test-behavior-not-implementation.md` first. Before you trust, report, or act on a number you measured (a speedup, latency, throughput, or eval result), read `references/explain-the-number.md`.
+When you write, change, or keep a test, read `references/test-behavior-not-implementation.md` first. Before you trust, report, or act on a number you measured (a speedup, latency, throughput, or eval result), read `references/explain-the-number.md`. To time a whole command (a CLI, script, build, or test suite), read `references/command-benchmarks.md`.
 
 ## Accept the integrated result
 

@@ -29,7 +29,7 @@ Include variants the user did not ask for when they could win; discard approache
 The observation is the test:
 
 - **Visual:** drive each variant with a browser harness and capture a screenshot per variant, plus the interaction that matters.
-- **Behavioral or timing:** log the timing, print the output, or watch the render, the same way for every variant. For a performance fork, run each variant several times and report the spread.
+- **Behavioral or timing:** log the timing, print the output, or watch the render, the same way for every variant. For a performance fork, run each variant several times and report the spread; time whole commands with the `verification` skill's command benchmark method.
 - **Games:** record each variant with the same scripted input. Feel stays with the user: hand them the switcher to play.
 
 Completion criterion: one piece of evidence per variant, captured the same way.

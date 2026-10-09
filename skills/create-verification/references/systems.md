@@ -39,6 +39,7 @@ A number is evidence only after it has been vetted:
 - **Limiter:** name what bounds the result (CPU, memory bandwidth, I/O, lock contention, the benchmark harness itself) and show the measurement that says so.
 - **Repeatability:** several runs, with the spread reported; pin CPU frequency and isolate the machine where possible; warm up first.
 - **Relevance:** the workload resembles real use; the same scenario runs before and after the change.
+- **Whole commands:** time a binary, build, or test suite with the `verification` skill's command benchmark method.
 
 Report one primary number in `before -> after` form with its unit and spread.
 

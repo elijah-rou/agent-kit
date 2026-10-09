@@ -19,7 +19,7 @@ Check `hyperfine --version` first. This file describes 2.x, which removed `--ref
 2. Run both in one invocation, baseline first, because 2.x compares every command with the first: `hyperfine -n before '<baseline>' -n after '<changed>' --export-json <scratch>/bench-1.json`. For a CPU-bound change in a single process, add `--metrics time_wall_clock,instructions`.
 3. Run the same invocation again, exporting to `bench-2.json`. Claim a difference only when it holds in both runs and is larger than the spread on each side. Wall time is noisy when other processes or agents share the machine; instruction counts are much steadier, so agreement between the two supports the claim.
 
-Instruction counts cover only the process hyperfine starts, not its children, so they miss the work of a wrapper script or of a build or test runner that spawns workers; use wall time there. hyperfine rejects hardware counters when a shell is enabled (`-S`), and they are not available on every platform.
+On macOS, instruction counts cover only the process hyperfine starts, not its children, so they miss the work of a wrapper script or of a build or test runner that spawns workers; use wall time there. Linux counts include children. hyperfine rejects hardware counters when a shell is enabled (`-S`), and they are not available on every platform.
 
 ## Read and report
 

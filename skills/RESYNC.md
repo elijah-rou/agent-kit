@@ -111,3 +111,20 @@ Upstream: `humanlayer/skills` `plugins/show-me/skills/show-me`, `3c26291..ca7c80
 | --- | --- | --- |
 | `disable-model-invocation: true` (user invocation only) | Rejected | The local description already limits automatic use to an explicit request to show or diagram something; a natural-language request should still reach the skill, not only the command form. |
 | Agent metadata for another harness (`agents/openai.yaml`) | No local change | Not part of the adapted skill. |
+
+## 2026-10-11: cursor/plugins rows resynced from 9f451cf to 11713c6
+
+Upstream commits: 00b14f1 (`refactor(pstack): distill skill prompts to cut tokens`, #538) and 978ca6e (`feat(pstack): add /ketchup skill`, #539). The distill cuts restated "Why" paragraphs, step lists that repeat the headings, and duplicated sentences; it states no new rule. Rows with no upstream change advance with the drifted ones.
+
+| Local | Upstream change | Decision | Reason |
+| --- | --- | --- | --- |
+| `verification/references/explain-the-number.md` | Drop the opening claim and the "Why" paragraph; fold "why not double" and "code that never ran" into the bullets | Taken | The file tracks upstream text. The local baseline line and the pointer to the instructions' evidence rules stay. |
+| `verification/references/test-behavior-not-implementation.md` | Rewrite as one rule, five short failing shapes, one fix paragraph, and the keep list; drop the "Why" paragraph and some matcher examples | Taken | The file tracks upstream text, and the rule and the fixes are unchanged. |
+| `code-design/references/subtract-before-you-add.md` | Drop the "Why" paragraph and the "The pattern" label | Taken | Same. |
+| `type-system-discipline` | Fold the "tests" list into the pattern bullets and cut the opening | No local change | The local skill is a rewrite with numbered steps and completion criteria; it contains none of the cut text. |
+| `babysit-and-ship/references/pr-body.md` | Compress the opening-a-pr sections; move "commit bodies don't restate the subject" into Commits | No local change | The local reference is already condensed and covers only the PR body. |
+| `background-run` (figure-it-out) | Shorter description and joined sentences | No local change | Wording only; the local skill does not contain the edited sentences. |
+| `design-checkpoint` (architect), `design-checkpoint/references` (arena) | Merge phase paragraphs; arena's Start list becomes one line; the synthesis note gains the cross-judge verdict and convergence | No local change | The local skill has no multi-model arena, and its rationale template already records the chosen shape and rejected candidates. |
+| `how`, `why`, `reflect` | Merge the per-step subagent settings into one line, cut repeated posture and process text in the prompts | No local change | The local skills replaced the subagent and MCP pipelines, so none of the cut text exists here. |
+| `technical-writing`, `unslop` | Wording cuts inside existing rules | No local change | The local rewrites do not contain the edited sentences. |
+| none (new `ketchup` skill) | A command that catches the user up since their last message, with an executive summary for each action item | Not adopted | The instructions' "Needs you" opening and question contract, and `show-me-your-work`'s catch-up on a run, cover it. |

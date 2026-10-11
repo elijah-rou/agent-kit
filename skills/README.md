@@ -29,10 +29,10 @@ The `unslop`, `technical-writing`, `how`, `why`, `blast-radius`,
 `type-system-discipline` skills are adapted from
 [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack/skills) at commit
 `68836ddaf5697224520f1847d90cdb90ca8babaa` and resynced to
-`9f451cf875ad1239912762f67741e8e5ba6ac0f1`; [`RESYNC.md`](RESYNC.md) records what the
+`11713c683fe4add4fd403ea880580abbc9e0875f`; [`RESYNC.md`](RESYNC.md) records what the
 resync took and rejected.
 
-Five pstack principle skills at `9f451cf875ad1239912762f67741e8e5ba6ac0f1` are kept close to the upstream text as
+Five pstack principle skills, adapted at `9f451cf875ad1239912762f67741e8e5ba6ac0f1` and resynced to `11713c683fe4add4fd403ea880580abbc9e0875f`, are kept close to the upstream text as
 reference files inside the skill each one belongs to, rather than as skills: `verification` holds
 `test-behavior-not-implementation` and `explain-the-number`, `code-design` holds `laziness-protocol` and
 `subtract-before-you-add`, and `diagnosing-bugs` holds `attack-the-premise`. pstack reaches its principles
@@ -96,41 +96,41 @@ A resync advances a row's commit; [`RESYNC.md`](RESYNC.md) records what each res
 
 | Local | Upstream path | Commit |
 | --- | --- | --- |
-| `skills/unslop` | `pstack/skills/unslop` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/technical-writing` | `pstack/skills/technical-writing` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/how` | `pstack/skills/how` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/why` | `pstack/skills/why` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/blast-radius` | `pstack/skills/blast-radius` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/make-operations-idempotent` | `pstack/skills/principle-make-operations-idempotent` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/separate-before-serializing-shared-state` | `pstack/skills/principle-separate-before-serializing-shared-state` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/type-system-discipline` | `pstack/skills/principle-type-system-discipline` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/verification/references/test-behavior-not-implementation.md` | `pstack/skills/principle-test-behavior-not-implementation/SKILL.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/code-design/references/laziness-protocol.md` | `pstack/skills/principle-laziness-protocol/SKILL.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/code-design/references/subtract-before-you-add.md` | `pstack/skills/principle-subtract-before-you-add/SKILL.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/verification/references/explain-the-number.md` | `pstack/skills/principle-explain-the-number/SKILL.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/diagnosing-bugs/references/attack-the-premise.md` | `pstack/skills/principle-attack-the-premise/SKILL.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/correct` | `pstack/skills/correct` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/create-verification` | `pstack/skills/create-verification-skill` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/create-verification/references/web.md` | `cursor-team-kit/skills/control-ui/SKILL.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/create-verification/references/cli-tui.md` | `cursor-team-kit/skills/control-cli/SKILL.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/maintain-verification` | `pstack/skills/maintain-verification-skill` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/teach` | `pstack/skills/teach` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/show-me-your-work` | `pstack/skills/show-me-your-work` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/reflect` | `pstack/skills/reflect` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/design-checkpoint` | `pstack/skills/architect` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/design-checkpoint/references` | `pstack/skills/arena` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/prototype-to-decide` | `pstack/skills/poteto-mode/playbooks/prototype.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/background-run` | `pstack/skills/poteto-mode/playbooks/autonomous-run.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/background-run/references/pause-and-pickup.md` | `pstack/skills/poteto-mode/playbooks/pause-safely.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/background-run` | `pstack/skills/figure-it-out` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/background-run` | `pstack/docs/guide/07-overnight.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/background-run/references/pause-and-pickup.md` | `pstack/skills/poteto-mode/playbooks/session-pickup.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/background-run/references/coordination.md` | `pstack/skills/poteto-mode/playbooks/orchestrate.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/babysit-and-ship` | `pstack/skills/poteto-mode/playbooks/babysit.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/babysit-and-ship/references/shipping.md` | `pstack/skills/poteto-mode/playbooks/shipping.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/babysit-and-ship/references/autopilot-full.md` | `pstack/skills/poteto-mode/playbooks/autopilot-full.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/babysit-and-ship/references/pr-body.md` | `pstack/skills/poteto-mode/playbooks/opening-a-pr.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
-| `skills/babysit-and-ship/references/bot-triage.md` | `pstack/skills/poteto-mode/references/bugbot-triage.md` | `9f451cf875ad1239912762f67741e8e5ba6ac0f1` |
+| `skills/unslop` | `pstack/skills/unslop` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/technical-writing` | `pstack/skills/technical-writing` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/how` | `pstack/skills/how` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/why` | `pstack/skills/why` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/blast-radius` | `pstack/skills/blast-radius` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/make-operations-idempotent` | `pstack/skills/principle-make-operations-idempotent` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/separate-before-serializing-shared-state` | `pstack/skills/principle-separate-before-serializing-shared-state` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/type-system-discipline` | `pstack/skills/principle-type-system-discipline` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/verification/references/test-behavior-not-implementation.md` | `pstack/skills/principle-test-behavior-not-implementation/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/code-design/references/laziness-protocol.md` | `pstack/skills/principle-laziness-protocol/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/code-design/references/subtract-before-you-add.md` | `pstack/skills/principle-subtract-before-you-add/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/verification/references/explain-the-number.md` | `pstack/skills/principle-explain-the-number/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/diagnosing-bugs/references/attack-the-premise.md` | `pstack/skills/principle-attack-the-premise/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/correct` | `pstack/skills/correct` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/create-verification` | `pstack/skills/create-verification-skill` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/create-verification/references/web.md` | `cursor-team-kit/skills/control-ui/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/create-verification/references/cli-tui.md` | `cursor-team-kit/skills/control-cli/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/maintain-verification` | `pstack/skills/maintain-verification-skill` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/teach` | `pstack/skills/teach` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/show-me-your-work` | `pstack/skills/show-me-your-work` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/reflect` | `pstack/skills/reflect` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/design-checkpoint` | `pstack/skills/architect` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/design-checkpoint/references` | `pstack/skills/arena` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/prototype-to-decide` | `pstack/skills/poteto-mode/playbooks/prototype.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/background-run` | `pstack/skills/poteto-mode/playbooks/autonomous-run.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/background-run/references/pause-and-pickup.md` | `pstack/skills/poteto-mode/playbooks/pause-safely.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/background-run` | `pstack/skills/figure-it-out` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/background-run` | `pstack/docs/guide/07-overnight.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/background-run/references/pause-and-pickup.md` | `pstack/skills/poteto-mode/playbooks/session-pickup.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/background-run/references/coordination.md` | `pstack/skills/poteto-mode/playbooks/orchestrate.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/babysit-and-ship` | `pstack/skills/poteto-mode/playbooks/babysit.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/babysit-and-ship/references/shipping.md` | `pstack/skills/poteto-mode/playbooks/shipping.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/babysit-and-ship/references/autopilot-full.md` | `pstack/skills/poteto-mode/playbooks/autopilot-full.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/babysit-and-ship/references/pr-body.md` | `pstack/skills/poteto-mode/playbooks/opening-a-pr.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/babysit-and-ship/references/bot-triage.md` | `pstack/skills/poteto-mode/references/bugbot-triage.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 
 ## Skill boundaries
 

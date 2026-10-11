@@ -20,7 +20,7 @@ Borrow from control theory. The codebase is a dynamic system being changed conti
 - **Actuator** — a coding agent that applies the selected change in an isolated workspace and returns a reviewable patch and evidence.
 - The result feeds back into the next run. A human stays *on* the loop to steer it.
 
-If these concepts are unfamiliar or terminology obstructs a design choice, read `references/control-loop-taxonomy.md` and explain the relevant concepts. Otherwise, proceed with the design. Use `references/example-control-loop.md` when a worked example helps; treat it as an illustration, not a blueprint.
+If these concepts are unfamiliar or terminology obstructs a design choice, read `references/control-loop-taxonomy.md` and explain the relevant concepts.
 
 ## How to run this skill
 
@@ -29,11 +29,11 @@ If these concepts are unfamiliar or terminology obstructs a design choice, read 
 - **Make each component runnable locally and standalone before wiring it into CI** (Phase D). The workflow should only orchestrate pieces the user can already run by hand.
 - **Capture the agreed design in writing** before building, so the user can correct it cheaply.
 - **Resume from settled decisions.** Read an existing approved design and continue from its first incomplete phase; do not repeat completed interviews or approvals.
-- **Preserve authority boundaries.** Creating skills or memory, changing credentials, publishing, and enabling schedules require approval. Implement only the outputs covered by the agreed design; do not infer operational authority from permission to design the loop.
+- **Preserve authority boundaries.** Creating skills or memory, changing credentials, publishing, and enabling schedules require approval. Implement only the outputs covered by the agreed design. Permission to design the loop does not grant operational authority.
 
 ## Outputs
 
-Create or update the approved outputs in the target repo, tailored to the agreed design:
+Create or update the approved outputs in the target repo:
 
 - The **sensor** and **controller** as version-controlled commands/scripts the user can run locally.
 - A repo-local `SKILL.md` — the **actuator** skill capturing the agent's judgement. Use `.agents/skills/<skill-name>/SKILL.md` for Codex or shared skills; retain `.pi/skills/<skill-name>/SKILL.md` for an established Pi-only layout.
@@ -62,7 +62,7 @@ Completion criterion: you can name the repo's package manager, install command, 
 
 Use `references/control-loop-taxonomy.md` when unfamiliar terminology obstructs a design choice, and `references/example-control-loop.md` when an example helps. Read `references/agent-runner-templates.md` when selecting the runner and credential boundary.
 
-Design the loop with the user. Work through each unresolved component below, starting with the set point. Propose options grounded in Phase A and explain trade-offs rather than mandating a choice. Record the decisions as you go.
+Work through each unresolved component below, starting with the set point. Propose options grounded in Phase A and explain trade-offs rather than mandating a choice. Record the decisions as you go.
 
 1. **Set point.** What property are we driving, and to what target? Examples: an invariant ("no procedures use the old pattern"), a threshold ("test coverage ≥ X in these packages"), or a direction ("reduce occurrences each run"). Also pin the **scope**: which directories/packages the loop may change, and which it may only read.
 
@@ -79,7 +79,7 @@ Design the loop with the user. Work through each unresolved component below, sta
 
 Completion criterion: a short written design naming the set point, sensor, controller, actuator (agent + skill + validation), and disturbances/dampener — with each component something the user can run locally.
 
-Get explicit approval of the written design and implementation scope before creating or modifying implementation files. If that design and scope are already approved, continue without asking again.
+Get explicit approval of the written design and implementation scope before creating or modifying implementation files.
 
 ### Phase C — Build the actuator skill
 
@@ -158,7 +158,7 @@ Completion criterion: concurrent runs cannot overlap, and any enabled publisher 
 
 **Validate** the workflow YAML (`bunx js-yaml file.yml`, `python -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))" file.yml`, or `yq`) and confirm every path named by the skill, workflow, and memory file exists or is created by this task.
 
-**Dry-run.** Validate locally in an isolated worktree first. After the workflow reaches the repository's default branch through the normal reviewed process, use `workflow_dispatch` for the first live run. Do not add a temporary push trigger, push branches, or dispatch workflows without explicit user approval. Review any PR it opens before enabling a schedule.
+**Dry-run.** Validate locally in an isolated worktree first. After the workflow reaches the default branch through normal review, use `workflow_dispatch` for the first live run. Do not add a temporary push trigger, push branches, or dispatch workflows without explicit user approval. Review any PR it opens before enabling a schedule.
 
 **Ready to iterate faster** (once the loop is tuned and producing consistent, high-quality output): increase the schedule frequency; widen the controller's batch (e.g. select N targets per run); run the sense→control→actuate cycle N times per workflow run; or run the workflow multiple times and assign one PR to each teammate.
 
@@ -168,7 +168,7 @@ Completion criterion: the workflow YAML parses, all referenced files exist, and 
 
 Each phase above names the references relevant to it — read each one when you reach that phase. Full index:
 
-- `references/control-loop-taxonomy.md` — the control-loop components and design questions; use it when the concepts are unfamiliar or terminology needs clarification.
+- `references/control-loop-taxonomy.md` — the control-loop components and design questions.
 - `references/example-control-loop.md` — one fully worked loop, annotated component-by-component. An illustration, not a template.
 - `references/agent-runner-templates.md` — shared isolation/output contract and runtime-specific headless commands; use only the chosen runtime's branch.
 - `references/workflow-template.yml` — recurring loop workflow skeleton with discrete sensor/controller/actuator steps.

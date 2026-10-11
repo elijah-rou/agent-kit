@@ -1,6 +1,6 @@
 # Feedback-loop options
 
-Choose the first option that reaches the real symptom with adequate fidelity. Do not build a larger harness when a smaller one is sufficient.
+Choose the first option that reaches the real symptom with adequate fidelity.
 
 1. **Focused failing test** at the public seam that exposes the bug.
 2. **CLI command with a fixture** and an assertion on exit status, stdout, stderr, or output files.
@@ -29,4 +29,4 @@ Measure a reproduction rate over a bounded sample. In a disposable local or test
 
 ## Performance regressions
 
-Use repeatable inputs and warmup policy. Capture distributions rather than one timing. Prefer profilers, query plans, allocation data, and version/configuration comparisons. Establish the baseline before changing code.
+Use repeatable inputs and warmup policy. Prefer profilers, query plans, allocation data, and version/configuration comparisons. Establish the baseline before changing code.

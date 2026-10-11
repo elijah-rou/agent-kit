@@ -21,11 +21,11 @@ Safety first, then performance, then the experience of everyone who reads and ru
 - Split compound assertions: `assert(a); assert(b);` rather than `assert(a and b)`. Assert implications as `if (a) assert(b);`. Pair assertions across paths, for example before a write and after the matching read.
 - Assert relationships between compile-time constants and type sizes at compile time. Where a condition is critical and surprising, state it as a blatantly true assertion rather than a comment, so it documents and checks at once.
 - Assertions are design checks, not debug noise; they turn correctness bugs into crashes that tests and fuzzers find. They do not replace understanding: build the mental model first, then encode it.
-- Keep preconditions true for the whole function: after an `await`, yield, or callback, recheck any state asserted before it rather than relying on the earlier assertion.
+- Keep preconditions true for the whole function: after an `await`, yield, or callback, recheck any state asserted before it.
 - Handle every error. Fail fast on programmer error and during initialization; recover gracefully in runtime loops.
 - Put a limit on everything: loops, queues, retries, buffers, concurrency, and execution time. A loop that must not terminate, such as an event loop, asserts that.
 - Prefer explicitly sized integer types (`u32`, `i64`) over architecture-dependent ones where the language allows.
-- Do not act directly on external events. Queue them and process them at the program's own pace, in bounded batches, so control flow and work per tick stay under the program's control. Run timers and periodic work on fixed intervals rather than ad hoc delays.
+- Do not act directly on external events. Queue them and process them at the program's own pace, in bounded batches. Run timers and periodic work on fixed intervals rather than ad hoc delays.
 - Minimize dependencies; each one adds supply-chain, safety, and performance risk. Prefer the standard library and a small amount of owned code over a package for something simple, and a small standard toolbox over many specialized tools.
 
 ## Control flow
@@ -36,7 +36,7 @@ Safety first, then performance, then the experience of everyone who reads and ru
 - Prefer higher-order functions (`map`, `filter`, `fold`, iterator pipelines) where the language supports them and they read clearly. In hot loops, or where a closure would hide allocation or dispatch cost, use a plain bounded loop in a standalone function with primitive arguments.
 - Prefer iteration where execution must be bounded. Where recursion is natural for the domain or idiomatic in the language, as in OCaml, Elixir, Gleam, or Clojure, use it, preferably tail-recursive, and bound its depth by construction or with an explicit limit.
 - Split compound conditions into nested branches, and turn `else if` chains that do not share one discriminant into nested `else { if ... }` trees. Give each `if` a matching `else` when the negative space needs handling or an assertion. State invariants positively: `if (index < count)` rather than `if (index >= count)`.
-- Keep functions within 70 lines, so each fits on one screen. Split along the control-flow and data-flow seams above: the parent keeps the branches, and helpers take the straight-line work. Within a function, group logic visually and read top to bottom.
+- Keep functions within 70 lines, and split longer ones along the control-flow and data-flow seams above. Within a function, group logic visually and read top to bottom.
 
 ## Data and performance
 
@@ -44,8 +44,8 @@ Safety first, then performance, then the experience of everyone who reads and ru
 - Choose data shapes from the dominant access patterns and invariants before layering logic. Prefer fixed-size, cache-friendly layouts on hot paths: size hot structs to the cache line and align them to their largest field.
 - Separate the control plane from the data plane, and batch work to amortize fixed costs. Batching is also what makes dense assertions affordable.
 - Avoid copies and repeated serialization on the data plane. Pass large values by reference when a copy is not intended, and do not keep aliases or duplicate state that can drift out of sync.
-- Match the memory strategy to the language and setting. In garbage-collected or runtime-managed languages (Go, Python, TypeScript, JavaScript, Clojure, Elixir, Gleam) and in Rust, static allocation does not apply: bound sizes, preallocate where it is cheap, and keep allocation out of hot loops.
-- In manually managed languages (C, C++, Odin, Zig), attempt static allocation of long-lived state at startup, and use common sense about where dynamic allocation is the better design, such as game engines streaming assets or workloads sized only at runtime. When allocating dynamically, prefer arenas and pools with obvious lifetimes.
+- In garbage-collected or runtime-managed languages (Go, Python, TypeScript, JavaScript, Clojure, Elixir, Gleam) and in Rust, static allocation does not apply: bound sizes, preallocate where it is cheap, and keep allocation out of hot loops.
+- In manually managed languages (C, C++, Odin, Zig), attempt static allocation of long-lived state at startup. Where dynamic allocation is the better design, prefer arenas and pools with obvious lifetimes.
 
 ## Interfaces and structure
 
@@ -60,8 +60,8 @@ Safety first, then performance, then the experience of everyone who reads and ru
 
 ## Naming and comments
 
-- Follow the language's and the project's naming conventions. Where the choice is open, use `snake_case` and keep acronyms capitalized (`VSRState`, not `VsrState`).
-- Get the nouns and verbs right; names say what a thing is or does. Give each name one meaning, never one that shifts with context, and prefer nouns that also work in documentation and conversation. No abbreviations outside conventional loop indices and math.
+- Where the language and project leave naming open, use `snake_case` and keep acronyms capitalized (`VSRState`, not `VsrState`).
+- Get the nouns and verbs right; names say what a thing is or does. Give each name one meaning, and prefer nouns that also work in documentation and conversation. No abbreviations outside conventional loop indices and math.
 - Put units and qualifiers last, most significant first: `latency_ms_max`, not `max_latency_ms`. Prefer related names of equal length, such as `source` and `target`.
 - Name things by role so their handling is clear: `arena` versus `gpa` says whether to free. Prefix a callback with its caller's name: `read_sector` and `read_sector_callback`. Callbacks go last in parameter lists. Name nullable parameters so `null` reads clearly at the call site.
 - Order files for a top-down first read: important things and entry points first. Within a type, put fields first, then nested types, then methods, and promote a complex nested type to the top level. When no order is clearly better, sort alphabetically by big-endian name.
@@ -71,6 +71,6 @@ Safety first, then performance, then the experience of everyone who reads and ru
 
 - Treat warnings as errors at the strictest practical setting, from the start.
 - Configuration precedence: command-line flag, environment variable, config file, sensible default. Default logging to debug; use info or warn for noteworthy events.
-- Follow the language's and the project's formatter and conventions. Where the choice is open, use 4-space indentation, lines of at most 100 columns, and braces on every `if` that does not fit on one line.
+- Where the language's and project's formatter and conventions leave the choice open, use 4-space indentation, lines of at most 100 columns, and braces on every `if` that does not fit on one line.
 - Use long-form flags in scripts and documentation (`--force`, not `-f`); single-letter flags are for interactive use.
 - Write scripts and tooling in the language the product is built in, so they are portable, typed, tested, and share its toolchain. Exceptions are repositories that span several languages, where tooling follows the part it serves, and places that need a shell script, such as bootstrapping before the toolchain exists.

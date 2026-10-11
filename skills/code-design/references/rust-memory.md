@@ -1,6 +1,6 @@
 # Memory and ownership in Rust
 
-The goal is ownership a reader can follow without lifetime puzzles: each value has one obvious owner, borrows are short, and shared or cyclic structures use explicit handles.
+Aim for ownership a reader can follow without lifetime puzzles.
 
 ## Choose the holder
 
@@ -14,7 +14,7 @@ The goal is ownership a reader can follow without lifetime puzzles: each value h
 
 - Keep lifetimes local. When a struct needs a lifetime parameter to hold a borrow, consider owning the data or storing an index instead.
 - Do not `.clone()` just to satisfy the borrow checker; restructure so the borrow ends, or clone something cheap (an `Arc` or a handle) deliberately.
-- Preallocate with `with_capacity` from named limits and keep allocation out of hot loops; reuse buffers with `clear()`.
+- Preallocate with `with_capacity` from named limits, and reuse buffers with `clear()`.
 - Prefer exhaustive `match` over `if let` chains, and iterator adapters over index loops, except in hot paths where a plain loop is clearer or measurably faster.
 - Make invalid states unrepresentable with enums and newtypes, and keep constructors as the only way to build checked types.
 - Minimize `unsafe`. Isolate each block behind a safe API, write a `// SAFETY:` comment stating the invariant it relies on, and assert that invariant in debug builds.

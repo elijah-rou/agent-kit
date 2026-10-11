@@ -114,7 +114,7 @@ export function prState(input: { repo: string; title: string; body: string; stat
 	return [`Repository: ${input.repo}`, `Subject: ${input.title}`, `Body: ${body.slice(0, 600)}`, `Files changed (${files}):`, ...shown, "Diff (truncated to 6000 characters):", diff].join("\n");
 }
 
-const CREDENTIAL = [/gh[pousr]_[A-Za-z0-9]{20,}/, /github_pat_[A-Za-z0-9_]{20,}/, /\bsk-[A-Za-z0-9_-]{20,}/, /AKIA[0-9A-Z]{16}/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /\bxox[abprs]-[A-Za-z0-9-]{10,}/, /AIza[0-9A-Za-z_-]{35}/, /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\./, /\bapikey_[0-9a-f]{20,}/i, /(?:password|passwd|secret|token|api[_\s-]?key)\s*[:=]\s*\S{8,}/i];
+const CREDENTIAL = [/gh[pousr]_[A-Za-z0-9]{20,}/, /github_pat_[A-Za-z0-9_]{20,}/, /\bsk-[A-Za-z0-9_-]{20,}/, /AKIA[0-9A-Z]{16}/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /\bxox[abprs]-[A-Za-z0-9-]{10,}/, /AIza[0-9A-Za-z_-]{35}/, /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\./, /apikey_[0-9a-f]{20,}/i, /(?:password|passwd|secret|token|api[_\s-]*key)\s*[:=]\s*\S{8,}/i];
 
 /**
  * The text as it may be sent to TypeSafe: home directories become "~", and text containing a common

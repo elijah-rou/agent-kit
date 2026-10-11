@@ -65,6 +65,8 @@ describe("what leaves the machine", () => {
 		const typesafe = "apikey_" + "0".repeat(34) + "_" + "c".repeat(64);
 		expect(sendable(`use the jev api directly, I have an api key: ${typesafe}`)).toBeUndefined();
 		expect(sendable(`here it is ${typesafe}`)).toBeUndefined();
+		expect(sendable(`configure Jev with _${typesafe}_ for this project`)).toBeUndefined();
+		expect(sendable("the api  key: abcd1234efgh5678 for staging")).toBeUndefined();
 		expect(sendable("my api key: abcdefgh12345678 for staging")).toBeUndefined();
 		expect(sendable("rename the token parser module and update its callers")).toBe("rename the token parser module and update its callers");
 		expect(sendable("document the apikey_ prefix rule and the api key rotation steps")).toBe("document the apikey_ prefix rule and the api key rotation steps");

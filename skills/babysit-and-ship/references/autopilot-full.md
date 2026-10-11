@@ -12,7 +12,7 @@ You own the verdicts, never the PRs. One owner carries each PR from build to mer
 
 Each owner is a child launched with the `autopilot-owner` role, the only child role the harness's guards let publish. Brief it with the item, its worktree and `agent/<topic>` branch off current trunk, and this lifecycle:
 
-1. Build the change in thin verified units, pushing the branch after each one. Open the PR ready for review (not draft) after the first push, with the body from `pr-body.md`, so the URL and checks form a trail early.
+1. Build the change in thin verified units, pushing the branch after each one. Open the PR ready for review (not draft) after the first push, with the body from `pr-body.md`, so the URL and checks form a trail early. Its adversarial review comes from the coordinator's verification rounds (section 3), not from a reviewer you spawn.
 2. Keep its own decision log (`show-me-your-work`), uncommitted, and return it with its reports.
 3. Prove the change on the real artifact with the repository's verification skill, before reporting it code-ready.
 4. Rebase onto current trunk once before the code-ready report. After that, rebase again only at merge prep, on a conflict with trunk, or on a CI failure caused by a trunk change. Publish a rebase only to its own branch: first check that `git ls-remote origin <branch>` still shows the head it last pushed (if not, someone else wrote to the branch; stop and report), then push with `git push --force-with-lease=<branch>:<that head>`.
@@ -27,7 +27,7 @@ A round starts at an owner's code-ready head and at every later push that change
 
 - **Live lane (required):** drive the load-bearing behavior on the real surface through the repository's verification skill. A verdict without it is not clean.
 - **Regression lane:** run the same scenario on current trunk. If trunk lacks the feature, say so and check the end state the user waits for instead.
-- **Audit lane:** read the diff against trunk, distrusting the PR body: callers, data and configuration safety, races, and the repository's review rules (`rules.toml` rows at level `review`).
+- **Audit lane:** read the diff against trunk, distrusting the PR body: callers, data and configuration safety, races, and the repository's review rules (`rules.toml` rows at level `review`). This lane is the PR's adversarial review (`git-workflow`).
 
 Aggregate the lanes into one verdict; a lane's note about a defect is a finding, and a verdict without a passing live lane is `verifier-blocked` at best. In a public repository, run `agentic jev pr-risk <pr>` on the round's head before publishing: a hold makes the PR the user's: still record and publish its verdict so the user can merge it, but never tell the owner it is clean; it stops at merge-ready and goes under "Needs you" with the score. You did not write the code, so you record the verdict with `AGENTIC_AGENT_ID` set to your own ID, which the ledger records: `agentic verify record <pr> --verdict <verdict> --evidence <path or URL>`, then `agentic verify publish <pr>`. Send every proven finding to the owner in one fix-forward, with a failing test for each behavior defect where one can show it. The new head gets a fresh round; lane results carry over only where `shipping.md` step 3's patch-ID rule holds.
 

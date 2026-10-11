@@ -4,7 +4,9 @@ One fresh reviewer tries to break each change before it is published and applies
 
 ## When
 
-Before opening a pull request, or marking a draft ready, whose diff changes code, configuration, or agent instructions. A later push that changes the patch gets a focused re-review of what changed. In a `babysit-and-ship` verification round, the audit lane plays this role.
+Before opening a pull request, or marking a draft ready, whose diff changes code, configuration, or agent instructions. After a later push that changes its behavior (not a rebase, a conflict resolution, or a formatting fix), run a focused re-review of what changed.
+
+In `autopilot-full`, an owner opens its pull request early by design and does not spawn reviewers. The coordinator's verification round provides this review through its audit lane, before merge.
 
 ## Run it
 

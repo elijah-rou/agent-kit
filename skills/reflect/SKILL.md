@@ -30,11 +30,11 @@ Completion criterion: three numbered finding lists, or a recorded reason a lens 
 
 ## 3. Synthesize
 
-Spawn one synthesizer subagent with `references/synthesizer.md` and the three outputs inlined. It returns Accepted, Rejected, and Backlog, with a scope (`repo` or `global`) on every Accepted and Backlog item.
+Spawn one synthesizer subagent with `references/synthesizer.md` and the three outputs inlined; if subagents are unavailable, follow that reference yourself and say so. It returns Accepted, Rejected, and Backlog, with a scope (`repo` or `global`) on every Accepted and Backlog item.
 
 ## 4. Route enforceable items to Backlog
 
-Check every Accepted row yourself. Anything a lint, type, test, script, hook, or Cedar policy could enforce moves to Backlog, marked enforceable. Those items feed `correct`; skill prose is only for what no mechanism can enforce.
+Check every Accepted row yourself. Anything a lint, type, test, script, hook, or (where the repository evaluates one) Cedar policy could enforce moves to Backlog, marked enforceable. Those items feed `correct`; skill prose is only for what no mechanism can enforce.
 
 ## 5. Get approval before any edit
 

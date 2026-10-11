@@ -26,7 +26,7 @@ Completion criterion: a list of classes, each with two or more concrete evidence
 
 1. **Architecture.** One owner per piece of state, one supported way per task, internals that fail to import from outside, one source of truth instead of hand-synced lists. Delete old ways and dead code an agent would copy.
 2. **Types.** Make the bad state unrepresentable.
-3. **Lint or CI check.** When bad code still compiles, add a check whose error message names the file, type, or function to use instead. When the action is an agent action rather than code (publishing, merging, posting, editing a protected path), the enforcer may be a Cedar `forbid` policy in the repository's `.agents/policy/*.cedar`, identified by its `@id("...")`. Repository policy files contain only `forbid` statements.
+3. **Lint or CI check.** When bad code still compiles, add a check whose error message names the file, type, or function to use instead. When the action is an agent action rather than code (publishing, merging, posting, editing a protected path), the enforcer may be a Cedar `forbid` policy in the repository's `.agents/policy/*.cedar`, but only where something in the repository evaluates those policies (otherwise use a hook or check that runs), identified by its `@id("...")`. Repository policy files contain only `forbid` statements.
 4. **Behavior test.** Fix or delete any test that would still pass if every function it calls returned nothing.
 5. **Docs or agent rules, last,** and only for real judgment calls. Nothing fails when an agent skips them.
 

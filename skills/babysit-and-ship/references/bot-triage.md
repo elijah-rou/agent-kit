@@ -19,7 +19,7 @@ When in doubt, ask. Skipping a noisy style comment is cheap; skipping a real dat
 
 ## Check cheaply before classifying
 
-- If the claim names a test or check, run it on the PR head. A failing run confirms the claim; a passing run is the disproof.
+- If the claim names a test or check, run it on the PR head. A failing run confirms the claim only if it fails for the stated reason; a passing run disproves it only if the check exercises the claimed failure.
 - If the claim says something is unused, check the rest of the stack before dismissing; it may be used upstack.
 - If the claim cites a missing guard, confirm the guard runs before the side effect on the current head, not just that it exists.
 

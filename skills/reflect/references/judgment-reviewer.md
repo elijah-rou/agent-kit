@@ -17,12 +17,14 @@ Scan for:
 
 ## Route only to what the session used
 
-A finding must point to a skill or tool the session actually used: a read of a `SKILL.md`, a skill invocation, or commands matching a skill's documented commands. Two valid shapes:
+A finding must point to a skill or tool the session actually used: a read of a `SKILL.md`, a skill invocation, or commands matching a skill's documented commands. Three valid shapes:
 
 - The session used the skill and you found a real gap in its body: route to that skill's section.
 - An available skill did not trigger when it would have helped: route as `tune description: <skill path>`.
 
-If neither applies, drop the finding.
+- The pattern recurs and no existing skill is a real home: route as `new skill: <kebab-name>`.
+
+If none applies, drop the finding.
 
 Skip trivial things (typos, retries, mechanical setup), anything the followed skill already says clearly, and details that drift (SHAs, current paths, version numbers, exact counts). Only surface patterns that survive code changes.
 

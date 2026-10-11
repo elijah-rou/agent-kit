@@ -4,7 +4,7 @@ One fresh reviewer tries to break each change before it is published and applies
 
 ## When
 
-Before opening a pull request, or marking a draft ready, whose diff changes code, configuration, or agent instructions. After a later push that changes its behavior (not a rebase, a conflict resolution, or a formatting fix), run a focused re-review of what changed.
+Before opening a pull request, or marking a draft ready, whose diff changes code, configuration, or agent instructions. After a later push that changes its behavior, run a focused re-review of what changed. A rebase with no conflicts or a formatting-only change needs none; a conflict resolution does.
 
 In `autopilot-full`, an owner opens its pull request early by design and does not spawn reviewers. The coordinator's verification round provides this review through its audit lane, before merge.
 

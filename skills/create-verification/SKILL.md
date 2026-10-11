@@ -1,16 +1,16 @@
 ---
 name: create-verification
-description: Generate and prove a repository-local verification skill at `.agents/skills/verify-<app>/` that launches the app, health-checks it, drives it the way a user does, captures evidence that survives cleanup, and carries a seeded feature map. Covers web, CLI and TUI, systems, and game projects. Use when the user invokes create-verification or asks for a scripted way to verify this repository's app. Not for a one-off check of a single change.
+description: Generate and prove a repository-local verification skill at `.agents/skills/verify-<app>/` that launches the app, health-checks it, drives it as a user does, keeps evidence through cleanup, and seeds a feature map. Covers web, CLI and TUI, systems, and game projects. Use when the user invokes create-verification or asks for a scripted way to verify this repository's app. Not for a one-off check of a single change.
 disable-model-invocation: true
 ---
 
 # Create a verification skill
 
-Generate the skill an agent will read cold, mid-task, having never seen the app. Every command in it must come from this repository and must have run once.
+Generate the skill for an agent reading it cold, mid-task, having never seen the app. Every command in it must come from this repository and have run once.
 
 ## 1. Interview the repository, not the user
 
-Answer from the code; ask the user only what you cannot observe:
+Answer from the code. Ask the user only what you cannot observe:
 
 - **Surface:** what a user touches (web UI, CLI or TUI, desktop app, API, library, simulation, game). Pick the primary surface and note the rest.
 - **Run:** the repository's own start command, ports, environment variables, seed data, auth, and container setup.
@@ -27,7 +27,7 @@ Then read the recipe for the domain:
 | Systems: libraries, services, storage, concurrency | `references/systems.md` |
 | Games and real-time simulations | `references/games.md` |
 
-Edit scope: everything you write lives in `.agents/skills/verify-<app>/`, including harness scripts and evidence hooks. Change product code only when the checkout actually fails to build or start, and then only the smallest fix, reported to the user; a working base is never modified to make verification easier. A missing asset irrelevant to the surface may be created as marked verification scaffolding and removed in cleanup.
+Edit scope: everything you write, including harness scripts and evidence hooks, lives in `.agents/skills/verify-<app>/`. Change product code only when the checkout fails to build or start, and then only the smallest fix, reported to the user. Never modify a working base to make verification easier. A missing asset irrelevant to the surface may be created as marked verification scaffolding and removed in cleanup.
 
 Completion criterion: each of the five questions has an answer backed by a path or command, and a recipe is chosen.
 
@@ -48,9 +48,7 @@ Completion criterion: every section names real commands and paths from this repo
 
 Create `.agents/skills/verify-<app>/features/README.md` plus one file for each of the top three to five user-facing features, found from routes, commands, menus, or docs. Follow `references/feature-map-example/`: the README holds baseline preconditions, driving conventions, and proof and skip rules; each feature file has an H1, one paragraph, and exactly four H2 sections in this order: `Sub-features`, `How to get to it (user POV)`, `Driving it with <harness>`, `Gotchas`. The map is the repository's verification source: a proof that drives one convenient entry point is incomplete when the map lists others.
 
-Check the map: every feature file is listed in `features/README.md`, every listed file exists, and each feature file has exactly the four sections above.
-
-Completion criterion: the map passes that check.
+Completion criterion: the map check passes. Every feature file is listed in `features/README.md`, every listed file exists, and each feature file has exactly the four sections above.
 
 ## 4. Prove the generated skill end to end
 
@@ -64,7 +62,7 @@ Follow the generated skill's own text, literally:
 6. Confirm the evidence still exists and is non-empty at its named location.
 7. Confirm nothing this run started remains: no session, process, container, or bound port.
 
-When a step fails, fix the generated skill, run its Cleanup, and start again from step 1. A skill never executed end to end is a draft, not a deliverable.
+When a step fails, fix the generated skill, run its Cleanup, and start again from step 1.
 
 Completion criterion: steps 6 and 7 were observed on the final version of the skill.
 

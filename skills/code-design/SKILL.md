@@ -14,6 +14,7 @@ Safety first, then performance, then the experience of everyone who reads and ru
 | Time, randomness, I/O, concurrency, or anything that should be simulation-tested | `references/determinism.md` |
 | Refactoring, sizing a diff, or tempted to add an abstraction, layer, or signal threading | `references/laziness-protocol.md` |
 | Sequencing an addition, refactor, or rewrite onto code with dead paths or redundant checks | `references/subtract-before-you-add.md` |
+| Non-trivial edits, migrations, analyses, or checks you would otherwise do by hand, or work fanned out to subagents | `references/build-the-lever.md` |
 
 ## Safety
 

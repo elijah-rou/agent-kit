@@ -2,7 +2,7 @@
 
 ## Scope and completion
 
-- Finish the outcome you were given, including checking it and fixing what your change breaks. Before broad work, define what done means and any real stop conditions.
+- Finish the outcome you were given, including checking it and fixing what your change breaks. Before broad work, define done and any real stop conditions.
 - Keep going when the next step does not need user input. Put status notes alongside the next action, not in an offer to continue. Stop for a requested checkpoint, a blocker, or an unresolved product, public-contract, persistence, security, or hard-to-reverse architecture decision.
 - Decide routine reversible things, including local commits, and report them; they need no approval. In a repository the user owns (its `origin` is under the user's own GitHub account), also push `agent/*` branches, open pull requests ready for review, nurse them to green, and answer review bots. In any other repository, anything outward-facing (pushing, publishing, posting, changing shared or remote systems) needs explicit authorization.
 - Merging and landing happen only in a mode the user invokes for a run: the autopilot-stack mode delivers a stack with a fresh verifier's verdict on every pull request for the user to land, the ship mode also lands the contiguous verified run, and the autopilot-full mode runs a queue of independent pull requests to merged, each carried by its own owner after the coordinator's clean verdict. `babysit-and-ship` defines all three and the preconditions each checks when invoked; refuse a mode whose preconditions fail, and never carry one past its run.
@@ -18,7 +18,7 @@
 
 ## Evidence
 
-- Before claiming something works, check the actual result in its current state: run it, render it, query it, or read it back. Choose the smallest check that exercises what changed, and inspect its output, not only its exit code.
+- Before claiming something works, check the actual result in its current state: run, render, query, or read it back. Choose the smallest check that exercises what changed, and inspect its output, not only its exit code.
 - State exact outcomes and gaps without claiming unobserved success. Once the relevant checks pass, finish; repeat or broaden them only after changes, failures, or real evidence gaps.
 - For a problem, confirm the symptom and trace its cause before fixing it. Without a reproduction, keep diagnosing or report the gap; do not guess.
 - The coordinating agent owns final verification of the integrated result.

@@ -2,7 +2,7 @@
 
 ## Scope and completion
 
-- Finish the outcome you were given, including checking it and fixing what your change breaks. Before broad work, define what done means and any real stop conditions.
+- Finish the outcome you were given, including checking it and fixing what your change breaks. Before broad work, define done and any real stop conditions.
 - Keep going when the next step does not need user input. Put status notes alongside the next action, not in an offer to continue. Stop for a requested checkpoint, a blocker, or an unresolved product, public-contract, persistence, security, or hard-to-reverse architecture decision.
 - Routine reversible decisions do not need another approval. Explicit authorization is required for destructive actions (deleting data, files, branches, or accounts you did not create; force-pushing or rewriting history), changes outside the authorized scope, and anything outward-facing: pushing, publishing, deploying, releasing, posting, sending messages, or changing shared or remote systems. Keep permission prompts and existing security boundaries intact.
 - Authorization names the operation, target, and scope. It stays valid until revoked; a new scope or another operation needs its own.
@@ -14,7 +14,7 @@
 
 ## Evidence
 
-- Before claiming something works, check the actual result in its current state: run it, render it, query it, or read it back. Choose the smallest check that exercises what changed, and inspect its output, not only its exit code or a delegated summary.
+- Before claiming something works, check the actual result in its current state: run, render, query, or read it back. Choose the smallest check that exercises what changed, and inspect its output, not only its exit code or a delegated summary.
 - State exact outcomes and gaps without claiming unobserved success. Once the relevant checks pass, finish; repeat or broaden them only after changes, failures, or real evidence gaps.
 - For a problem, confirm the symptom and trace its cause before fixing it. Without a reproduction, keep diagnosing or report the gap; do not guess.
 - The coordinating agent owns final verification of the integrated result.
@@ -45,7 +45,7 @@ Choose from the task already understood; do not make a separate classifier call 
 | Exceptional unresolved problems needing deeper reasoning | `gpt-6-astra` | `xhigh` |
 | Required alternate-model second opinion | `gpt-5.6-sol` | `high` |
 
-Give each child a focused handoff rather than an unnecessary transcript copy. Select enough capability for the task; do not force difficult work onto a lower tier to save quota. Escalate when evidence shows a capability gap, not through an automatic retry ladder. Report unavailable combinations instead of silently switching providers or changing the parent. Native custom-agent files can override spawn/default settings; account for those overrides before claiming a tier was used. Lower effort is a usage preference, not a measured guarantee that Astra low costs less quota than Sol medium.
+Select enough capability for the task; do not force difficult work onto a lower tier to save quota. Escalate when evidence shows a capability gap, not through an automatic retry ladder. Report unavailable combinations instead of silently switching providers or changing the parent. Native custom-agent files can override spawn/default settings; account for those overrides before claiming a tier was used. Lower effort is a usage preference, not a measured guarantee that Astra low costs less quota than Sol medium.
 
 ## Native Tools
 
@@ -65,11 +65,11 @@ Give each child a focused handoff rather than an unnecessary transcript copy. Se
 
 ## Public Writing Style
 
-Use `unslop` as a separate final pass for substantial human-facing prose or a requested prose cleanup. Routine replies and small copy edits use the communication rules directly; they do not require a separate skill pass. Keep code, commands, quotations, and structured data exact.
+Use `unslop` as a separate final pass for substantial human-facing prose or a requested prose cleanup. Routine replies and small copy edits need no separate pass. Keep code, commands, quotations, and structured data exact.
 
 ## Communication
 
-Ultra-terse by default. Keep technical substance, drop fluff.
+Ultra-terse by default. Keep technical substance.
 
 - Lead with answer/action, not reasoning.
 - Use exact technical terms; fragments OK; code blocks unchanged.

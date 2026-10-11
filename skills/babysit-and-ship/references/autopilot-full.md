@@ -19,17 +19,17 @@ Each owner is a child launched with the `autopilot-owner` role, the only child r
 5. Report code-ready with the head SHA. Then babysit to green (sections 2 to 4 of `babysit-and-ship`, with `agentic watch-pr --pr <n>`), and report merge-ready with the head SHA. Where those sections say to report a rebase and stop, or that babysitting never merges, this lifecycle overrides them for the owner's own PR.
 6. Never record or publish a verdict, and never merge before you say the verdict is clean.
 
-Run owners in parallel when their PRs touch disjoint files; serialize only work that genuinely overlaps. Owners do not stack: sequenced work is merge, then branch.
+Run owners in parallel when their PRs touch disjoint files, and serialize only overlapping work. Owners do not stack: sequenced work is merge, then branch.
 
 ## 3. Verify every round
 
 A round starts at an owner's code-ready head and at every later push that changes the patch. For each round, spawn fresh verifiers that did not write the code, preferably on a different model family, with these lanes:
 
-- **Live lane (required):** drive the load-bearing behavior on the real surface through the repository's verification skill. A verdict without it is not clean.
+- **Live lane (required):** drive the load-bearing behavior on the real surface through the repository's verification skill.
 - **Regression lane:** run the same scenario on current trunk. If trunk lacks the feature, say so and check the end state the user waits for instead.
 - **Audit lane:** read the diff against trunk, distrusting the PR body: callers, data and configuration safety, races.
 
-Aggregate the lanes into one verdict; a lane's note about a defect is a finding, and a verdict without a passing live lane is `verifier-blocked` at best. In a public repository, run `agentic jev pr-risk <pr>` on the round's head before publishing: a hold makes the PR the user's: still record and publish its verdict so the user can merge it, but never tell the owner it is clean; it stops at merge-ready and goes under "Needs you" with the score. You did not write the code, so you record the verdict: `agentic verify record <pr> --verdict <verdict> --evidence <path or URL>`, then `agentic verify publish <pr>`. Send every proven finding to the owner in one fix-forward, with a failing test for each behavior defect where one can show it. The new head gets a fresh round; lane results carry over only where `shipping.md` step 3's patch-ID rule holds.
+Aggregate the lanes into one verdict. A lane's note about a defect is a finding, and a verdict without a passing live lane is `verifier-blocked` at best. In a public repository, run `agentic jev pr-risk <pr>` on the round's head before publishing. A hold makes the PR the user's: still record and publish its verdict so the user can merge it, but never tell the owner it is clean. The PR stops at merge-ready and goes under "Needs you" with the score. You did not write the code, so you record the verdict: `agentic verify record <pr> --verdict <verdict> --evidence <path or URL>`, then `agentic verify publish <pr>`. Send every proven finding to the owner in one fix-forward, with a failing test for each behavior defect where one can show it. The new head gets a fresh round; lane results carry over only where `shipping.md` step 3's patch-ID rule holds.
 
 When an owner reports a new head after a rebase, compute its patch ID yourself (`gh pr diff <pr> | git patch-id --stable`) and compare it with the `patch:` suffix of the verdict's ledger row; `agentic verify status` reports `void` for any new SHA and cannot tell you. If the patch is unchanged, carry the verdict to the new SHA: record it again for that head, with evidence naming both SHAs and the shared patch ID, and publish it. If the patch changed, start a new round.
 

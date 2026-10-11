@@ -1,6 +1,6 @@
 # Pull request body
 
-A briefing, not a lab notebook. A reviewer who has the diff should learn, in under a minute, why the change exists, what it leaves out, what it could break, how it was proved, and how to undo it. Short sentences, few identifiers. The squash commit body is the PR body, so keep it under about 40 lines.
+A briefing, not a lab notebook. A reviewer who has the diff should understand the change in under a minute. Short sentences, few identifiers. The squash commit body is the PR body, so keep it under about 40 lines.
 
 Use these `##` sections, in order. Drop a section only when it has nothing to say; Scope, Verification, and Revert are always present.
 

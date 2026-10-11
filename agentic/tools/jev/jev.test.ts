@@ -62,7 +62,12 @@ describe("what leaves the machine", () => {
 		expect(sendable(`rotate the key ${"sk-" + "a".repeat(24)} in config`)).toBeUndefined();
 		expect(sendable(`use ${"ghp_" + "b".repeat(30)}`)).toBeUndefined();
 		expect(sendable("set password=hunter2hunter2 in the env file")).toBeUndefined();
+		const typesafe = "apikey_" + "0".repeat(34) + "_" + "c".repeat(64);
+		expect(sendable(`use the jev api directly, I have an api key: ${typesafe}`)).toBeUndefined();
+		expect(sendable(`here it is ${typesafe}`)).toBeUndefined();
+		expect(sendable("my api key: abcdefgh12345678 for staging")).toBeUndefined();
 		expect(sendable("rename the token parser module and update its callers")).toBe("rename the token parser module and update its callers");
+		expect(sendable("document the apikey_ prefix rule and the api key rotation steps")).toBe("document the apikey_ prefix rule and the api key rotation steps");
 		const [mac, linux] = ["/" + "Users/someone", "/" + "home/dev"];
 		expect(sendable(`fix the build script in ${mac}/src/app and ${linux}/x`)).toBe("fix the build script in ~/src/app and ~/x");
 	});

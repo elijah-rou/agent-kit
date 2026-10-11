@@ -5,13 +5,13 @@ description: Shape and slice broad feature or refactor work whose one-way doors 
 
 # Feature shaping
 
-Resolve decisions while they are cheap to change. The user owns product and hard-to-reverse choices; current code establishes existing behavior. This skill supplies design methods, not additional approval gates for work the user has already authorized.
+Resolve decisions while they are cheap to change. The user owns product and hard-to-reverse choices, and current code establishes existing behavior. This skill supplies design methods, not new approval gates for work the user already authorized.
 
 ## Choose the depth
 
 Inspect repository instructions, status, relevant implementation and tests before asking design questions. Identify settled requirements, existing planning conventions, and consequential unknowns.
 
-- **Direct:** requirements are settled and the work is bounded or reversible. Continue with implementation and affected verification; no plan is required.
+- **Direct:** requirements are settled and the work is bounded or reversible. Implement and run the affected verification, with no plan.
 - **Combined design:** consequential questions remain. Resolve outcome, system fit, program shape, and slices in one plan. Take one-way doors to `design-checkpoint` for the user's review of the shape; decide reversible questions yourself or settle them with `prototype-to-decide`, and report them. Then implement within the resulting authorization.
 - **Interview:** the user requests staged design reviews, or a specific unresolved decision prevents the next design step. Work through that decision with the user. Do not turn every section into a mandatory approval stop.
 
@@ -19,7 +19,7 @@ Choose by uncertainty and consequences, not file count. For expensive-to-reverse
 
 ## Record only useful design
 
-For consequential combined design or interview work, maintain a persistent decision-and-slice plan that can stand alone as resume context. An adequate existing approved artifact satisfies this requirement; direct work remains plan-free. Use the repository's planning convention, or read `references/plan-template.md` and create `plans/<feature-slug>.md` when none exists. Omit inapplicable sections. Record approved, open, reopened, and completed items separately so another session can resume without a transcript.
+For consequential combined design or interview work, keep a persistent decision-and-slice plan that stands alone as resume context. An adequate existing approved artifact satisfies this. Use the repository's planning convention, or when none exists, read `references/plan-template.md` and create `plans/<feature-slug>.md`. Record approved, open, reopened, and completed items separately so another session can resume without a transcript.
 
 Resolve applicable concerns in this order, combining those already understood:
 
@@ -28,7 +28,7 @@ Resolve applicable concerns in this order, combining those already understood:
 3. **Program shape:** important files, key types/signatures, success and failure paths, state ownership, bounds, and tests. Show enough to challenge consequential placement decisions, not every private helper.
 4. **Slices:** small end-to-end increments with observable outcomes and the affected checks. Exercise the most consequential uncertain path early. Each increment leaves working behavior unless an approved migration requires another boundary.
 
-Ask only for unresolved product decisions, one-way doors (through `design-checkpoint`), and any checkpoints the user requested. Silence is not approval of a new decision. Reversible implementation details within the agreed scope remain the agent's responsibility.
+Ask only for unresolved product decisions, one-way doors (through `design-checkpoint`), and any checkpoints the user requested. Silence is not approval of a new decision. The agent decides reversible implementation details within the agreed scope.
 
 ## Implement through acceptance
 
@@ -42,4 +42,4 @@ Continue in the same session while context is usable. Compact or start fresh onl
 
 On resume, read the plan and only the referenced artifacts needed for the next incomplete item. Check current code and workspace state for drift; reopen a decision only when evidence warrants it.
 
-At completion, verify the integrated changed path under the repository's verification policy. Reuse valid current evidence; do not rerun unchanged checks merely to close a planning phase. Record outcomes, residual gaps, and accepted deviations, then mark the plan complete. Follow repository policy for ADRs, publication, and cleanup; do not create extra artifacts just to complete a template.
+At completion, verify the integrated changed path under the repository's verification policy. Reuse valid current evidence instead of rerunning unchanged checks merely to close a planning phase. Record outcomes, residual gaps, and accepted deviations, then mark the plan complete. Follow repository policy for ADRs, publication, and cleanup; do not create extra artifacts just to complete a template.

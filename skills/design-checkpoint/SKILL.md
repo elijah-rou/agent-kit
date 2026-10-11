@@ -19,20 +19,20 @@ The work is a one-way door when it fixes any of:
 
 For command-line flags and API parameters, a change that keeps every existing caller working is reversible, not a door: a new optional flag, or a rename that keeps the old name as an alias. Build it. Persisted data and wire formats stay doors even when the change is additive, because written data and other readers keep its shape.
 
-If none applies, do not use this skill: build it (reversible), or use `prototype-to-decide` (a fork observation can settle). If you are unsure, treat it as a door.
+If none applies, build it (reversible) or use `prototype-to-decide` (a fork observation can settle). If unsure, treat it as a door.
 
 Completion criterion: the door is named in one sentence, with the irreversible part separated from the reversible work around it.
 
 ## 2. Ground the problem
 
-Trace every system the new shape touches, from entry points to effects, with source citations. When the design changes ownership or layering, find why the current shape exists, so that reason becomes a constraint rather than a guess. Skip only for true greenfield work with nothing to integrate.
+Trace every system the new shape touches, from entry points to effects, with source citations. When the design changes ownership or layering, find why the current shape exists, so that reason becomes a constraint rather than a guess. Skip only for greenfield work with nothing to integrate.
 
 ## 3. Generate candidates
 
 Require at least two structurally distinct candidates: different whole shapes, not variations inside one shape.
 
 1. Write the rubric first: three to six gradeable criteria for this task. Candidates never see it.
-2. Spawn one subagent per candidate, in parallel, each in its own scratch directory or worktree, each with the same prompt: `references/candidate-prompt.md`, the task, and the grounding. Prefer different model families across candidates, through role or agent profiles on different providers or models where available. Candidates do not know about each other.
+2. Spawn one subagent per candidate, in parallel, each in its own scratch directory or worktree, with the same prompt: `references/candidate-prompt.md`, the task, and the grounding. Prefer different model families across candidates, through role or agent profiles on different providers or models where available. Candidates do not know about each other.
 3. If subagents are unavailable, write the candidates yourself in sequence, each before looking back at the last, and say so.
 
 Each candidate returns a package shaped by `references/rationale-template.md`: caller usage first, then types and signatures with `not implemented` bodies, a module map, and a rationale. A candidate that fails to return is dropped and noted.
@@ -56,7 +56,7 @@ Commit the synthesized sketch and rationale on the working branch, in the reposi
 - the synthesis decision, the tradeoffs accepted, and the alternatives rejected;
 - each open question with concrete options, your recommendation and its reason, and the default you will take.
 
-Wait for the user's review before building anything that depends on the shape. Meanwhile, continue reversible work that does not depend on it. Pushback on the shape is new grounding: return to step 2.
+Build nothing that depends on the shape until the user reviews it. Meanwhile, continue reversible work that does not. Pushback on the shape is new grounding: return to step 2.
 
 ## 6. Build against the sketch
 

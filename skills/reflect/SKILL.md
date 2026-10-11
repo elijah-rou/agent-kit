@@ -10,7 +10,7 @@ Turn one session into durable learnings with evidence, and route each to its str
 
 ## 1. Locate this session's transcript
 
-Use only the active workspace's transcript for this session: this session's transcript file under the current project's session directory. Never glob or read other projects' transcripts. Confirm the file is this session by matching its first user message. If no file resolves, write a tight digest of the session and use that instead.
+Use only this session's transcript file, under the current project's session directory. Never glob or read other projects' transcripts. Confirm the file is this session by matching its first user message. If no file resolves, write a tight digest of the session and use that instead.
 
 Record the session ID and today's date; every learning carries them.
 

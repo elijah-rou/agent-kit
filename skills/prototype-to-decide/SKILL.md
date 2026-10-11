@@ -22,7 +22,7 @@ Include variants the user did not ask for when they could win; discard approache
 - Work in a scratch directory outside production source (a system temporary directory, or an ignored `scratch/` path). Never import prototype code into the product.
 - Visual decisions: the lightest stack that renders the idea, such as plain HTML, CSS, and JavaScript with a hot-reloading server.
 - Behavioral or timing decisions: the smallest script that exercises the question.
-- Put every variant behind one switcher with visible labels: buttons or a key press for visual variants; one flag or environment variable for scripts. Comparing variants side by side through one entry point is the point.
+- Put every variant behind one switcher with visible labels: buttons or a key press for visual variants; one flag or environment variable for scripts.
 
 ## 4. Observe each variant
 

@@ -5,7 +5,7 @@ description: Diagnose hard, ambiguous, intermittent application bugs and perform
 
 # Diagnosing hard bugs
 
-Find the cause through a bounded feedback loop, falsifiable hypotheses, and direct evidence. This skill is self-contained; read only its named local references and do not invoke another skill. Do not start by editing production code.
+Find the cause through a bounded feedback loop, falsifiable hypotheses, and direct evidence. This skill is self-contained; read only its named local references and do not invoke another skill, except the repository's own verification skill where steps 1 and 2 point to it. Do not start by editing production code.
 
 ## 1. Define the exact symptom
 
@@ -16,13 +16,15 @@ Record:
 - last known good state when available;
 - evidence already collected and hypotheses already ruled out.
 
+When the report is vague (a screenshot, a feature name, a pasted error) and the repository has a verification feature map under `.agents/skills/verify-*/features/`, match the report to a mapped feature and the ways a user reaches it.
+
 Read exact errors and the relevant control/data path. Redact credentials, authorization headers, tokens, personal data, and machine-specific secrets before quoting or saving output.
 
 Completion criterion: one sentence distinguishes this bug from nearby failures.
 
 ## 2. Build the tightest practical feedback loop
 
-Choose the smallest command or interaction that exercises the real symptom. Read `references/feedback-loops.md` for candidate loop shapes.
+Choose the smallest command or interaction that exercises the real symptom. Read `references/feedback-loops.md` for candidate loop shapes. If the repository has a verification harness under `.agents/skills/verify-*/`, try its drive commands first: they reach the surface the user reported and keep evidence. Reproduce on that surface before narrowing to a lower-level test.
 
 Prefer a loop that is:
 

@@ -64,7 +64,7 @@ CLI recipes in `create-verification` come from cursor-team-kit (MIT, copyright C
 | Skill | Invocation | Upstream sources |
 | --- | --- | --- |
 | [correct](correct/SKILL.md) | manual | `pstack/skills/correct/` |
-| [create-verification](create-verification/SKILL.md) | manual | `pstack/skills/create-verification-skill/`; recipes from `cursor-team-kit/skills/control-ui/` and `cursor-team-kit/skills/control-cli/` |
+| [create-verification](create-verification/SKILL.md) | manual | `pstack/skills/create-verification-skill/`; recipes from `cursor-team-kit/skills/control-ui/` and `cursor-team-kit/skills/control-cli/`; the control CLI is informed by `cli-for-agent/skills/cli-for-agents/` and `pstack/docs/guide/06-verify-and-ship.md`, not vendored |
 | [maintain-verification](maintain-verification/SKILL.md) | manual | `pstack/skills/maintain-verification-skill/` |
 | [teach](teach/SKILL.md) | model and manual | `pstack/skills/teach/`; the failure and surprise trigger is from design D6 |
 | [show-me-your-work](show-me-your-work/SKILL.md) | model and manual | `pstack/skills/show-me-your-work/` |

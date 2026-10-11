@@ -20,6 +20,8 @@ Identify the intended outcome, changed workspace, affected runtime surfaces, ris
 
 A parser cannot prove a setting is consumed. A stubbed integration can prove control flow but not external service compatibility or real latency. State those distinctions rather than inflating the claim. Avoid unrelated suites and repeat checks only after relevant changes, failures, or material evidence gaps, or when the repository requires them.
 
+When the repository has a verification skill under `.agents/skills/verify-*/`, use it for every runtime journey: drive the change through its commands, cover each entry point its `features/` map lists for the affected feature, and keep evidence where it says. When the map lacks the affected feature, drive it through the skill's launch and doctor with the closest recipe, and report the missing map entry. Verify on the surface the change affects. A check on another surface, or an inconclusive one, is not a pass; report it as such.
+
 ## Establish the problem before the fix
 
 Define expected behavior and inventory existing coverage before production edits. For defects, reuse the smallest reproducer or add one durable case, observe RED, implement the causal fix, then observe GREEN. If no check or journey reproduces the symptom, continue diagnosis or report the gap without speculative production changes.
@@ -38,4 +40,4 @@ Workers use the fastest sufficient inner loop. The root parent independently run
 
 Keep evidence bound to repository, revision, and the tested changes. Use existing receipt IDs when available; do not introduce receipt machinery just for a simple edit. Treat receipts as immutable attempt facts, not authority. Distinguish assertion failures, execution errors, unsupported tools, cancellations, and timeouts.
 
-Report exercised behavior, inspected artifacts, exact outcomes, and residual gaps. Once the affected checks pass, finish within the authorized scope. Add a repository-owned runtime adapter only after repeated setup or interaction failures show that it would remove a recurring evidence gap.
+Report exercised behavior, inspected artifacts, exact outcomes, and residual gaps. Once the affected checks pass, finish within the authorized scope. When a change needed a runtime journey and the repository has no verification skill, drive the journey with the tools at hand, then report the missing skill as an evidence gap `create-verification` would close. Add a repository-owned runtime adapter only after repeated setup or interaction failures show that it would remove a recurring evidence gap.

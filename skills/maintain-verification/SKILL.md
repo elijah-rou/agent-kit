@@ -18,13 +18,13 @@ End with exactly one, and say which:
 
 ## Edit scope
 
-Edit only the verification skill's own directory: its `SKILL.md`, `features/`, and the helpers it owns. Never edit product code. A behavior the map describes that the app no longer has is either doc drift (fix the map) or a product regression (report it; never paper over it in the docs).
+Edit only the verification skill's own directory (its `SKILL.md`, `features/`, and the helpers it owns) and its discovery symlinks in other runtimes' project skill directories. Never edit product code. A behavior the map describes that the app no longer has is either doc drift (fix the map) or a product regression (report it; never paper over it in the docs).
 
 ## Pass
 
 0. **Locate the target.** Find the skill under `.agents/skills/verify-*/`. With several candidates, ask which one, recommending the one whose surface the user's request names. With none, stop and point to `create-verification`.
 
-1. **Index hygiene.** Read `features/README.md` and list its sibling files. Fix missing, extra, duplicate, or dead entries, and check that each feature file has its four sections.
+1. **Index hygiene.** Read `features/README.md` and list its sibling files. Fix missing, extra, duplicate, or dead entries, check that each feature file has its four sections, check that the control CLI has exactly one drive target per feature file, and check that every agent runtime the user works with here can discover the skill: each one that does not read `.agents/skills/` has a discovery symlink resolving to the skill's `SKILL.md`. Add a missing symlink or repair a broken one as part of this step.
 
 2. **Source wave.** Spawn one read-only subagent per feature file, concurrently, using a role or type without write or shell-mutation tools. Each explains how the feature works from source, flags likely drift with `file:line` citations, and returns one live-verification recipe. Children never drive the app, never edit files, and never publish. Return shape: feature summary, source entry points, likely drift or `none`, one recipe. If subagents are unavailable, read each feature yourself and say so.
 
@@ -39,13 +39,13 @@ Edit only the verification skill's own directory: its `SKILL.md`, `features/`, a
 
 5. **Triage** each finding:
    - **Doc drift:** the user-POV description is wrong or missing. Fix the map.
-   - **Harness gap:** working behavior the harness cannot drive. Fix the harness; shipped scripts are executable and their invocation is in the skill body.
+   - **Harness gap:** working behavior the harness cannot drive, or a skill without the control CLI that `create-verification` step 2 defines. Fix the harness to that contract; shipped scripts are executable and their invocation is in the skill body. A new control CLI is proven by driving every feature through it in the live pass.
    - **Product gap:** the app is actually broken. Record it for the user with its evidence; keep it out of the corrections.
 
-6. **Land or stop.** For `changed`, re-read every changed file, recheck the index and sections, and commit on one branch. In a repository the user owns, push an `agent/*` branch and open one pull request; otherwise leave the branch for the user. For `clean` or `blocked`, change nothing and report.
+6. **Land or stop.** For `changed`, re-read every changed file, recheck the index, sections, drive targets, and symlinks, and commit on one branch. In a repository the user owns, push an `agent/*` branch and open one pull request; otherwise leave the branch for the user. For `clean` or `blocked`, change nothing and report.
 
 Keep run notes (features covered, unreachable prerequisites, confirmed drift) in a scratch location outside the repository; do not commit them.
 
 ## Reply
 
-Lead with product gaps and anything blocked. Then the outcome, coverage per feature (source and live, with evidence paths), drift fixed, harness fixes and their re-proofs, the index and section check from step 6, and the branch or pull request if any.
+Lead with product gaps and anything blocked. Then the outcome, coverage per feature (source and live, with evidence paths), drift fixed, harness fixes and their re-proofs, the index, section, drive-target, and symlink check from step 6, and the branch or pull request if any.

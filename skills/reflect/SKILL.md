@@ -63,7 +63,7 @@ Write the approved Accepted and Backlog items, and nothing rejected, to `.agents
 
 - `kind`: `repo` for this repository, `global` for every repository.
 - `enforceable`: `true` for Backlog items routed to `correct`.
-- This session writes only its own file. Never edit another session's file or merge files; merging session files into repository learnings is a separate step the user reviews of combined results.
+- This session writes only its own file. Never edit another session's file or merge files; merging session files into repository learnings is a separate step, and the user reviews its combined results.
 
 Parse the file back after writing it.
 

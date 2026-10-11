@@ -18,7 +18,7 @@
 
 ## Evidence
 
-- Before claiming something works, check the actual result in its current state: run it, render it, query it, or read it back. Choose the smallest check that exercises what changed, and inspect its output, not only its exit code.
+- Before claiming something works, check the actual result in its current state: run it, render it, query it, or read it back. Choose the smallest check that exercises what changed, and inspect its output, not only its exit code or a delegated summary.
 - State exact outcomes and gaps without claiming unobserved success. Once the relevant checks pass, finish; repeat or broaden them only after changes, failures, or real evidence gaps.
 - For a problem, confirm the symptom and trace its cause before fixing it. Without a reproduction, keep diagnosing or report the gap; do not guess.
 - The coordinating agent owns final verification of the integrated result.

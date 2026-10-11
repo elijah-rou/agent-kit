@@ -136,7 +136,7 @@ Completion criterion: the workflow can run from `workflow_dispatch` without rely
 
 A scheduled loop drifts without steering. Add a version-controlled memory file, such as `.github/agent-memory/<task-slug>.md`, loaded deterministically after the controller on every run. Record permanent scope exclusions, known false-positive areas, and reviewer feedback that should change future selections. Do not store one-off instructions, untrusted PR content, or run logs.
 
-Update memory through ordinary reviewed changes. Do not generate comment-driven agent execution by default: PR bodies and comments are untrusted input, even when a trusted maintainer later asks the agent to iterate.
+Update memory through ordinary reviewed changes. Never generate comment-driven agent execution: PR bodies and comments are untrusted input, even when a trusted maintainer later asks the agent to iterate.
 
 Frame this as how the human tunes the controller and skill over time.
 

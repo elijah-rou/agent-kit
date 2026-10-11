@@ -37,7 +37,7 @@ Completion criterion: the decisive constraints are ordered and supported by repo
 
 ## 3. Apply the default preferences
 
-Use these preferences only after mandatory constraints:
+Use these preferences only as tie-breakers after mandatory constraints, not as universal rankings:
 
 - **Zig:** systems or performance-critical work that needs explicit memory control when Rust's safety machinery would add disproportionate complexity.
 - **Rust:** systems, safety-critical, or performance-critical work, and small standalone CLIs where strong compile-time guarantees justify the build cost.
@@ -47,8 +47,6 @@ Use these preferences only after mandatory constraints:
 - **Bash:** small Unix utility scripts whose state, error handling, and portability remain easy to audit.
 - **Internal frontends:** prefer server-rendered HTML with HTMX and the host language's templates before adding a browser application stack.
 - **TypeScript or JavaScript:** use when browser or Node ecosystem requirements demand it; prefer Svelte, Astro, or Solid when a client framework is necessary.
-
-Treat these as tie-breakers, not universal rankings.
 
 Completion criterion: each surviving option satisfies every mandatory constraint before preferences are applied.
 

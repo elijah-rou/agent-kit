@@ -39,7 +39,7 @@ Look for these patterns in context rather than applying mechanical word bans:
 - excessive headings, bold lead-ins, decorative punctuation, or list structure that makes ordinary prose look templated;
 - chatbot framing, praise, performative agreement, and closing invitations that the recipient did not need.
 
-Retain a flagged word or construction when it is the most accurate or natural choice. The goal is credible prose, not compliance with a forbidden-word list.
+Retain a flagged word or construction when it is the most accurate or natural choice.
 
 Completion criterion: each retained sentence contributes a concrete fact, instruction, judgment, transition, or necessary qualification.
 

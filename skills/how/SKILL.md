@@ -72,6 +72,4 @@ Explain the current system before judging it. Tie each criticism to an observed 
 - valid but low-value observation;
 - unsupported concern.
 
-Do not turn a walkthrough into unsolicited redesign.
-
 Completion criterion: recommendations, when requested, cite the current mechanism and the concrete cost they address.

@@ -28,7 +28,7 @@ Before the first iteration, write down:
 - **Done predicate:** a check that can pass or fail on the real artifact, such as tests green, zero old callers, the repro fixed, or every listed PR merge-ready. A duration is not a predicate.
 - **Scope:** units of work, rough effort, blockers found while grounding, and what is out of scope.
 - **Rigor:** the gates each unit passes. A one-way door inside the run goes through `design-checkpoint` before anything depends on it.
-- **Authority:** the standing default in the instructions, plus `autopilot-stack` or `ship` only if the user invoked it for this run ("going to bed, land the stack"). `babysit-and-ship` defines both modes and the preconditions to check before relying on one. The invocation gets its own log row with the user's words as evidence and lasts this run only.
+- **Authority:** the standing default in the instructions, plus `autopilot-stack`, `ship`, or `autopilot-full` only if the user invoked it for this run ("going to bed, land the stack"). `babysit-and-ship` defines the three modes and the preconditions to check before relying on one. The invocation gets its own log row with the user's words as evidence and lasts this run only.
 - **Workspace:** a fresh worktree off the named base, with one writer.
 - **Log:** `.audit/<task-slug>.tsv`, kept as `show-me-your-work` describes, with a first row recording the framing.
 

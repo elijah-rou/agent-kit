@@ -48,4 +48,4 @@ Keep run notes (features covered, unreachable prerequisites, confirmed drift) in
 
 ## Reply
 
-Lead with product gaps and anything blocked. Then the outcome, coverage per feature (source and live, with evidence paths), drift fixed, harness fixes and their re-proofs, the linter output, and the branch or pull request if any.
+Lead with product gaps and anything blocked. Then the outcome, coverage per feature (source and live, with evidence paths), drift fixed, harness fixes and their re-proofs, the index and section check from step 6, and the branch or pull request if any.

@@ -32,7 +32,7 @@ Log decision points, not every action:
 - a unit finished, with its verification result;
 - a pivot or revert, with what triggered it;
 - a blocker surfaced, or a blocked action or escalation the agent acted on;
-- a mode the user invoked for the run (`autopilot-stack`, `ship`), with the user's words as evidence;
+- a mode the user invoked for the run (`autopilot-stack`, `ship`, `autopilot-full`), with the user's words as evidence;
 - in a loop, one row per iteration.
 
 Write each cell the way you would tell a teammate: plain words, concrete actions. `evidence` is a pointer that resolves (commit SHA, PR number, `file:line`, artifact path), never prose. `result` is the outcome or predicate state: `tests green`, `reverted`, `pixel-diff 0`, `INCONCLUSIVE`, `open`.

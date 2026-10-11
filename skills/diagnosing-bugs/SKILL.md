@@ -5,7 +5,7 @@ description: Diagnose hard, ambiguous, intermittent application bugs and perform
 
 # Diagnosing hard bugs
 
-Find the cause through a bounded feedback loop, falsifiable hypotheses, and direct evidence. This skill is self-contained; read only its named local reference and do not invoke another skill. Do not start by editing production code.
+Find the cause through a bounded feedback loop, falsifiable hypotheses, and direct evidence. This skill is self-contained; read only its named local references and do not invoke another skill. Do not start by editing production code.
 
 ## 1. Define the exact symptom
 

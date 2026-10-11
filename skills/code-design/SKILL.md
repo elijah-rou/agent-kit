@@ -60,7 +60,7 @@ Safety first, then performance, then the experience of everyone who reads and ru
 
 ## Naming and comments
 
-- Follow the language's and the project's naming conventions. Where the choice is open, use `snake_case` and keep acronyms capitalized (`VSRState`, not `VsrState`).
+- Follow the language's and the project's naming conventions. Where the choice is open, use `snake_case` for functions and variables, and keep acronyms capitalized in type names (`VSRState`, not `VsrState`).
 - Get the nouns and verbs right; names say what a thing is or does. Give each name one meaning, never one that shifts with context, and prefer nouns that also work in documentation and conversation. No abbreviations outside conventional loop indices and math.
 - Put units and qualifiers last, most significant first: `latency_ms_max`, not `max_latency_ms`. Prefer related names of equal length, such as `source` and `target`.
 - Name things by role so their handling is clear: `arena` versus `gpa` says whether to free. Prefix a callback with its caller's name: `read_sector` and `read_sector_callback`. Callbacks go last in parameter lists. Name nullable parameters so `null` reads clearly at the call site.

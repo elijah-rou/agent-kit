@@ -18,7 +18,7 @@ Apply every criterion to every finding:
 - **Convergent:** findings from two or more reviewers carry more weight. A singleton must clear a higher bar on the other criteria.
 - **Decision-changing:** a future agent acts differently because of the edit, not just reads more text.
 - **Structural:** route to Backlog, marked enforceable, when a lint, type, test, script, hook, or policy enforces the rule or could enforce it cheaply. Prose is only for what no mechanism can enforce.
-- **Skill was used:** accept only findings routed to a skill or tool the session used, or `tune description: <skill path>` for one that should have triggered. Otherwise reject as `skill-not-used`.
+- **Skill was used:** accept only findings routed to a skill or tool the session used, `tune description: <skill path>` for one that should have triggered, or `new skill: <kebab-name>` that meets Existing skill first. Otherwise reject as `skill-not-used`.
 - **Not already covered:** read the target skill before accepting a body edit. If clear, well-placed guidance already says it, reject as `already-covered`. If the guidance exists but is buried or weak, accept the row as a wording or placement change.
 
 Give every Accepted and Backlog item a scope: `repo` when it holds only for this repository, `global` when it holds for every repository.

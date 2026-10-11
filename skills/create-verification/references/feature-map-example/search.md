@@ -33,7 +33,7 @@ Preconditions:
 - **Clear.** Run `notes-harness browser click --role button --name "Clear search"`. The search box is empty and `Recent notes` replaces the results.
 - **CLI match.** Run `notes-harness cli -- notes search "quarterly" --format json`. Exit code is `0` and stdout holds one object titled `Quarterly plan`.
 - **CLI miss.** Run `notes-harness cli -- notes search "volcano" --format json`. Exit code is `0` and stdout is `[]`.
-- **Proof.** With results showing, run `notes-harness browser snapshot --aria --path "$EVIDENCE_DIR/search/results.aria.txt"` and `notes-harness browser screenshot --path "$EVIDENCE_DIR/search/results.png"`. Both show Notes, the query, and `Quarterly plan`.
+- **Proof.** Reopen search and fill `quarterly` again so results show, then run `notes-harness browser snapshot --aria --path "$EVIDENCE_DIR/search/results.aria.txt"` and `notes-harness browser screenshot --path "$EVIDENCE_DIR/search/results.png"`. Both show Notes, the query, and `Quarterly plan`.
 
 ## Gotchas
 

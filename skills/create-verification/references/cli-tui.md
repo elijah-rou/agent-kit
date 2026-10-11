@@ -45,12 +45,18 @@ def expect(fd, needle, deadline):
 primary, secondary = pty.openpty()
 proc = subprocess.Popen(["<command>"], stdin=secondary, stdout=secondary, stderr=secondary, close_fds=True)
 os.close(secondary)
-print(expect(primary, b"<ready text>", time.time() + 30).decode(errors="replace"))
-os.write(primary, b"help\n")
-print(expect(primary, b"<expected output>", time.time() + 30).decode(errors="replace"))
-proc.terminate()
-proc.wait(timeout=10)
-os.close(primary)
+try:
+    print(expect(primary, b"<ready text>", time.time() + 30).decode(errors="replace"))
+    os.write(primary, b"help\n")
+    print(expect(primary, b"<expected output>", time.time() + 30).decode(errors="replace"))
+finally:
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=10)
+    os.close(primary)
 ```
 
 ## Interaction rules

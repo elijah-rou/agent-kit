@@ -1,8 +1,8 @@
 # Shared agent skills
 
 Pi loads this library directly. Codex exports the reviewed selection in
-[`codex/skills.txt`](../../codex/skills.txt) through the standard shared skill directory;
-see [the Codex guide](../../codex/README.md). Runtime-specific behavior stays in explicit
+[`codex/skills.txt`](../codex/skills.txt) through the standard shared skill directory;
+see [the Codex instructions](../codex/AGENTS.md). Runtime-specific behavior stays in explicit
 branches, so the two consumers do not need separate copies.
 
 The `show-me` and `design-control-loop` skills are adapted from
@@ -85,7 +85,7 @@ Local adaptations:
   `autopilot-stack`, `ship`, and `autopilot-full` modes that `babysit-and-ship` defines. Messages to people are drafted
   for the user, and a blocked or denied action is final.
 - Expensive or side-effecting workflows set `disable-model-invocation: true`.
-- Transcripts are read only for the active workspace's current session.
+- Transcripts are read only for the active workspace's current session, except that a session pickup reads the prior run it resumes in the same workspace.
 - Decision logs, session learning files, and the verdict ledger each have one writer.
 
 ## Machine-readable provenance

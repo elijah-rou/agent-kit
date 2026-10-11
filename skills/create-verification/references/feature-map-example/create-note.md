@@ -23,6 +23,7 @@ Preconditions:
 - No note is titled `Release checklist` or `CLI note`.
 
 - **Open the editor.** Choose `New note`. Run `notes-harness browser click --role button --name "New note"`. A form named `Note editor` appears with focus in the `Title` field.
+- **Keyboard entry.** Run `notes-harness browser click --role button --name "Cancel"`, focus the page, and run `notes-harness browser press --key "n"`. The same `Note editor` form opens and no `n` is typed into the page.
 - **Enter content.** Run `notes-harness browser fill --role textbox --name "Title" --value "Release checklist"` and `notes-harness browser fill --role textbox --name "Body" --value "Tag and publish"`. `Save note` becomes enabled.
 - **Save.** Run `notes-harness browser click --role button --name "Save note"`. A status `Note saved` appears and the heading reads `Release checklist`.
 - **Confirm it persisted.** Run `notes-harness browser click --role link --name "All notes"`, then `notes-harness browser click --role link --name "Release checklist"`. The editor shows both saved values.

@@ -58,7 +58,7 @@ Rank them by evidence and cost to falsify. Test one variable at a time, starting
 
 Ask the user only when domain knowledge or an unapproved product, architecture, security, or scope decision can materially change the investigation.
 
-When two fixes that share one premise have failed the same check, read `references/attack-the-premise.md` before attempting a third.
+When two fixes that share one premise have failed the same check, write down the premise every failed fix assumed and test it before attempting a third. If the failure is an imbalance across several actors, read `references/attack-the-premise.md` for the census and the asymmetry fix.
 
 Completion criterion: evidence has falsified alternatives or isolated one causal mechanism.
 

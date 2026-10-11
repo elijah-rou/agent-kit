@@ -1,6 +1,6 @@
 ---
 name: correct
-description: Find the mistake classes agents repeat in this repository and make each one impossible, fixing at the highest level that works (architecture, types, a lint or CI check whose error names the fix, a test, docs last), proving every new check fails on a real past mistake, and recording it in the rule-to-enforcer table `rules.toml`. Use when the user invokes correct, or asks to stop a recurring agent mistake for good. Not for fixing one bug.
+description: Find the mistake classes agents repeat in this repository and make each one impossible, fixing at the highest level that works (architecture, types, a lint or CI check whose error names the fix, a test, a review rule the pull-request reviewer applies, docs last), proving every new check fails on a real past mistake, and recording it in the rule-to-enforcer table `rules.toml`. Use when the user invokes correct, or asks to stop a recurring agent mistake for good. Not for fixing one bug.
 disable-model-invocation: true
 ---
 
@@ -28,7 +28,8 @@ Completion criterion: a list of classes, each with two or more concrete evidence
 2. **Types.** Make the bad state unrepresentable.
 3. **Lint or CI check.** When bad code still compiles, add a check whose error message names the file, type, or function to use instead. When the action is an agent action rather than code (publishing, merging, posting, editing a protected path), the enforcer may be a Cedar `forbid` policy in the repository's `.agents/policy/*.cedar`, but only where something in the repository evaluates those policies (otherwise use a hook or check that runs), identified by its `@id("...")`. Repository policy files contain only `forbid` statements.
 4. **Behavior test.** Fix or delete any test that would still pass if every function it calls returned nothing.
-5. **Docs or agent rules, last,** and only for real judgment calls. Nothing fails when an agent skips them.
+5. **Review rule.** For a judgment call no check can decide: a `rules.toml` row at level `review`, stated so a reviewer can point at the violating line. The adversarial pull-request reviewer (`git-workflow`) applies it to every change.
+6. **Docs or agent rules, last,** only for guidance no reviewer can check. Nothing fails when an agent skips them.
 
 Ratchet common patterns: when a pattern already appears widely, fail only when a change adds more of it, against a committed baseline count. Never weaken an existing check to make a new one pass.
 
@@ -43,6 +44,8 @@ Fix the most frequent classes first, one commit per class.
 3. Run the same command on the fixed tree and observe a pass.
 4. Wire the same command into the repository's local check and CI, so both run it identically.
 
+For a review rule, give the reviewer brief from `git-workflow` the past mistake's diff and the rule, and observe a finding that cites the rule; record the brief's inputs as the command.
+
 A check that has never failed on a real mistake is unproven; do not record it as an enforcer.
 
 Completion criterion: for each new check, the failing and passing outputs were observed and their commands recorded.
@@ -53,7 +56,7 @@ An exception lives on the offending line, as the check's suppression syntax, wit
 
 ## 5. Maintain `rules.toml`
 
-`rules.toml` is the single rule-to-enforcer table. Instruction files may link to it; do not hand-copy it into them. Each `[[rule]]` row pairs a rule (`id`, `statement`) with its enforcer level, the enforcer itself (check command, test, or type), and its proof (the past mistake and the command that failed on it). After every edit, confirm that each row's enforcer still exists and that its proof command still fails on the past mistake. Drop a row once its mistake can no longer happen, and delete the instruction text it made redundant.
+`rules.toml` is the single rule-to-enforcer table. Instruction files may link to it; do not hand-copy it into them. Each `[[rule]]` row pairs a rule (`id`, `statement`) with its enforcer level, the enforcer itself (check command, test, type, or `pr-review` for a review rule), and its proof (the past mistake and the command that failed on it). After every edit, confirm that each row's enforcer still exists and that its proof command still fails on the past mistake. Drop a row once its mistake can no longer happen, and delete the instruction text it made redundant.
 
 Completion criterion: every row names an enforcer that exists and a proof that was observed.
 

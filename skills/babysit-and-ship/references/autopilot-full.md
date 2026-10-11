@@ -27,7 +27,7 @@ A round starts at an owner's code-ready head and at every later push that change
 
 - **Live lane (required):** drive the load-bearing behavior on the real surface through the repository's verification skill. A verdict without it is not clean.
 - **Regression lane:** run the same scenario on current trunk. If trunk lacks the feature, say so and check the end state the user waits for instead.
-- **Audit lane:** read the diff against trunk, distrusting the PR body: callers, data and configuration safety, races.
+- **Audit lane:** read the diff against trunk, distrusting the PR body: callers, data and configuration safety, races, and the repository's review rules (`rules.toml` rows at level `review`).
 
 Aggregate the lanes into one verdict; a lane's note about a defect is a finding, and a verdict without a passing live lane is `verifier-blocked` at best. In a public repository, run `agentic jev pr-risk <pr>` on the round's head before publishing: a hold makes the PR the user's: still record and publish its verdict so the user can merge it, but never tell the owner it is clean; it stops at merge-ready and goes under "Needs you" with the score. You did not write the code, so you record the verdict with `AGENTIC_AGENT_ID` set to your own ID, which the ledger records: `agentic verify record <pr> --verdict <verdict> --evidence <path or URL>`, then `agentic verify publish <pr>`. Send every proven finding to the owner in one fix-forward, with a failing test for each behavior defect where one can show it. The new head gets a fresh round; lane results carry over only where `shipping.md` step 3's patch-ID rule holds.
 

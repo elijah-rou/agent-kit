@@ -42,7 +42,7 @@ Local adaptations use narrow automatic triggers, remove Cursor tools, model rout
 MCP assumptions, cross-skill invocation, and publication behavior, and preserve evidence
 and source boundaries. The upstream MIT license is preserved in `PSTACK-LICENSE`.
 
-The `code-design`, `git-workflow`, `github-rulesets`, `technology-selection`, `source-grounded-research`, and `verification` skills are original to this repository.
+The `code-design`, `git-workflow`, `github-rulesets`, `technology-selection`, `source-grounded-research`, and `verification` skills are original to this repository. `git-workflow`'s `references/pr-review.md` condenses the reviewer prompt and rubric of pstack's `interrogate` (MIT, `PSTACK-LICENSE`) into one cross-model reviewer, adds a precedent lens and the repository's review rules, and drops the multi-model panel and Cursor tooling.
 
 The `feature-shaping` skill is original to this repository. Its risk-scaled design workflow
 is informed by HumanLayer's
@@ -110,6 +110,8 @@ A resync advances a row's commit; [`RESYNC.md`](RESYNC.md) records what each res
 | `skills/verification/references/explain-the-number.md` | `pstack/skills/principle-explain-the-number/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/diagnosing-bugs/references/attack-the-premise.md` | `pstack/skills/principle-attack-the-premise/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/correct` | `pstack/skills/correct` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/git-workflow/references/pr-review.md` | `pstack/skills/interrogate/references/reviewer-prompt.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/git-workflow/references/pr-review.md` | `pstack/skills/interrogate/references/rubric.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/create-verification` | `pstack/skills/create-verification-skill` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/create-verification/references/web.md` | `cursor-team-kit/skills/control-ui/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/create-verification/references/cli-tui.md` | `cursor-team-kit/skills/control-cli/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |

@@ -32,10 +32,12 @@ The `unslop`, `technical-writing`, `how`, `why`, `blast-radius`,
 `11713c683fe4add4fd403ea880580abbc9e0875f`; [`RESYNC.md`](RESYNC.md) records what the
 resync took and rejected.
 
-Five pstack principle skills, adapted at `9f451cf875ad1239912762f67741e8e5ba6ac0f1` and resynced to `11713c683fe4add4fd403ea880580abbc9e0875f`, are kept close to the upstream text as
-reference files inside the skill each one belongs to, rather than as skills: `verification` holds
-`test-behavior-not-implementation` and `explain-the-number`, `code-design` holds `laziness-protocol` and
-`subtract-before-you-add`, and `diagnosing-bugs` holds `attack-the-premise`. pstack reaches its principles
+Six pstack principle skills are kept close to the upstream text as reference files inside the skill each
+one belongs to, rather than as skills. Five were adapted at `9f451cf875ad1239912762f67741e8e5ba6ac0f1` and
+resynced to `11713c683fe4add4fd403ea880580abbc9e0875f`; `build-the-lever` was adapted at
+`11713c683fe4add4fd403ea880580abbc9e0875f`, with delegate skills replaced by a shared brief. `verification` holds
+`test-behavior-not-implementation` and `explain-the-number`, `code-design` holds `laziness-protocol`,
+`subtract-before-you-add`, and `build-the-lever`, and `diagnosing-bugs` holds `attack-the-premise`. pstack reaches its principles
 through `poteto-mode`, a mode skill with no equivalent here, so each parent skill says when to read its file.
 
 Local adaptations use narrow automatic triggers, remove Cursor tools, model routing,
@@ -107,6 +109,7 @@ A resync advances a row's commit; [`RESYNC.md`](RESYNC.md) records what each res
 | `skills/verification/references/test-behavior-not-implementation.md` | `pstack/skills/principle-test-behavior-not-implementation/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/code-design/references/laziness-protocol.md` | `pstack/skills/principle-laziness-protocol/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/code-design/references/subtract-before-you-add.md` | `pstack/skills/principle-subtract-before-you-add/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/code-design/references/build-the-lever.md` | `pstack/skills/principle-build-the-lever/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/verification/references/explain-the-number.md` | `pstack/skills/principle-explain-the-number/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/diagnosing-bugs/references/attack-the-premise.md` | `pstack/skills/principle-attack-the-premise/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/correct` | `pstack/skills/correct` | `11713c683fe4add4fd403ea880580abbc9e0875f` |

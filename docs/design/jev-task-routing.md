@@ -1,6 +1,6 @@
 # Jev task routing
 
-- **Status:** proposed 2026-10-12. Under review by the user; nothing is built.
+- **Status:** proposed 2026-10-12. Under review; open questions 1, 4, and 5 were decided on 2026-10-12 (see Open questions), and Pi's transport was changed to its classifier registry. Nothing is built.
 - **Reader:** the user reviewing the shape, then whoever implements it.
 - **Door:** this design changes ADR 0001 decision 5 ("Jev is advisory and only adds caution"), the rule for which task text leaves the machine, and a policy and decision-record format that both runtimes share. The question wording, thresholds, note text, and adapters around those are reversible.
 
@@ -17,7 +17,7 @@ The door dimension stays as it is.
 Two facts shape everything below.
 
 1. **Rigor is already the floor.** `claude/CLAUDE.md` and `pi/AGENTS.md` carry the full method and scale it. Routing to rigor therefore changes nothing, and neither does any failure. Only two notes leave the floor: lookup and loop.
-2. **Two Jev clients have already drifted.** `pi-t3-runtime/src/jev.ts` copied agent-kit's credential screen. The copy lacks the `apikey_` fix (PR #16) and has no public-repository rule.
+2. **One policy, two transports.** The Claude hook calls TypeSafe over HTTP. Pi calls Jev through its own classifier registry, where the user enables TypeSafe Jev and Pi owns the credential. The policy, questions, and egress rules are shared; only the request path differs.
 
 ## Usage
 
@@ -46,7 +46,7 @@ The Pi extension is rewritten in place. It also runs in Pi roots that T3 launche
 pi.on("before_agent_start", async (event, ctx) => {
   const { note } = await routeTask(
     { prompt: event.prompt, cwd: ctx.cwd, session: { runtime: "pi", id: ctx.sessionManager.getSessionId() }, child: isNativeChild(), explicit: takeSlashCommand() },
-    { classify: httpClassifier(apiKey), env: process.env, now: Date.now, signal: ctx.signal },
+    { classify: registryClassifier(ctx.modelRegistry), env: process.env, now: Date.now, signal: ctx.signal },
   );
   return note ? { message: { customType: "agent-kit/task-route", content: note, display: true } } : undefined;
 });
@@ -75,7 +75,7 @@ The whole flow runs once per prompt, in a single pass through these steps:
 
 ### What Jev is asked
 
-There is one request to `https://api.typesafe.ai/v1/systemone`, with state `{ task }`. The same HTTP transport serves both runtimes: Pi does not use its classifier registry. That gives one credential path and one wire format to calibrate.
+Each prompt gets one request with state `{ task }`. The Claude hook posts it to `https://api.typesafe.ai/v1/systemone` with the keychain or environment key. Pi sends it through its classifier registry (`ctx.modelRegistry.findOfType("classifier")` and `classify`), with the TypeSafe credential Pi holds. Both questions are `choice` questions, which both paths support. A Pi with no TypeSafe classifier registered takes the `classifier-unavailable` fallback rather than reading the keychain. Because two request paths can wrap the state differently, the eval runs the labeled set through both and requires matching answers before either note goes advisory.
 
 | Id | Type | Wording |
 | --- | --- | --- |
@@ -161,15 +161,15 @@ The main flow is three files deep: the adapter, then `route.ts`, then `egress.ts
 
 | Path | Owns | Change |
 | --- | --- | --- |
-| `agentic/tools/jev/egress.ts` | Everything that leaves the machine: screen, redaction, length bound, `isPublic`, `originSlug`, `apiKey`, and `httpClassifier`. Only it produces `Sendable`. | split from `jev.ts` |
+| `agentic/tools/jev/egress.ts` | Everything that leaves the machine: screen, redaction, length bound, `isPublic`, `originSlug`, `apiKey`, and `httpClassifier`. Only it produces `Sendable`, and both transports accept only `Sendable`. | split from `jev.ts` |
 | `agentic/tools/jev/route.ts` | Policy `task-route@1`: `QUESTIONS`, `POLICY`, `decide`, `applyModes`, `noteFor`, `routeTask`, `RouteRecord` | new |
 | `agentic/tools/jev/route-eval.ts` | `harvest`, `score`, and a report without text | new |
 | `agentic/tools/jev/pr-risk.ts` | the PR-risk question, threshold, and state | the rest of `jev.ts` |
 | `agentic/tools/jev/cli.ts` | `task-class --claude-hook` (unchanged command), `pr-risk`, `route-harvest`, `route-eval` | edited |
-| `pi/extensions/task-class.ts` | the Pi adapter above | rewritten in place |
+| `pi/extensions/task-class.ts` | the Pi adapter above, including `registryClassifier`, which parses Pi's `ClassifierAnswer` into the shared answer shape | rewritten in place |
 | `docs/adr/0002-task-routing.md` | amends ADR 0001 decision 5 | new |
 
-`taskClass`, `taskHint`, and `taskHintFor` are deleted in the same change that migrates their callers and tests. `pi-t3-runtime` needs no routing code. Its owner should import `egress.ts` before `profile-selection@1` leaves `off`, so the two runtimes share one screen and one public-repository rule.
+`taskClass`, `taskHint`, and `taskHintFor` are deleted in the same change that migrates their callers and tests. `pi-t3-runtime` is out of scope for now and needs no routing code.
 
 ### Children and Hermes
 
@@ -187,7 +187,9 @@ type Egress = { kind: "send"; text: Sendable } | { kind: "withhold"; reason: "no
 function egress(input: { prompt: string; cwd: string; child: boolean; explicit?: Explicit }, deps: { env: Env; deadlineAt: number; now: () => number }): Promise<Egress>;
 
 type ClassifyOutcome = { kind: "answered"; answers: Record<string, ChoiceAnswer>; model: string } | { kind: "failed"; reason: "classifier-unavailable" | "timeout" | "cancelled" | "error" | "malformed" };
-function httpClassifier(key: (env: Env, timeoutMs: number) => Promise<string | undefined>): (state: { task: Sendable }, questions: typeof QUESTIONS, signal: AbortSignal) => Promise<ClassifyOutcome>;
+type Classify = (state: { task: Sendable }, questions: typeof QUESTIONS, signal: AbortSignal) => Promise<ClassifyOutcome>;
+function httpClassifier(key: (env: Env, timeoutMs: number) => Promise<string | undefined>): Classify;   // Claude hook
+function registryClassifier(registry: PiModelRegistry): Classify;                                        // Pi; unavailable without a TypeSafe classifier
 
 type Answers = { door: { choice: DoorClass; confidence: number }; level: { choice: Level; confidence: number; probabilities: Record<Level, number> }; model: string };
 type DoorNote = { choice: DoorClass; confidence: number };
@@ -235,13 +237,12 @@ All three converged on the same core:
 - `AGENTIC_ROUTE=off` stops all disclosure, not just routing;
 - promotion bars fixed before the eval runs.
 
-**From the user:** the Jev HTTP API directly in both runtimes. Pi's classifier registry is not used.
+**From the user:** Pi calls Jev through its classifier registry, and the Claude hook calls the HTTP API directly. An earlier draft used HTTP in both.
 
 **Rejected:**
 - A's injected rigor method and shared loop method file: the floor already carries the method.
 - A's per-actor task slots: too much machinery for a per-prompt note.
 - C's plan to make `background-run` model-invocable: kept as an open question instead.
-- Pi's classifier registry: it would mean two transports to calibrate.
 
 ## Tradeoffs accepted
 
@@ -255,19 +256,19 @@ All three converged on the same core:
 - **A single four-way question (lookup, rigor, loop, door).** It loses the calibrated door question and can't express "a loop that is also a door".
 - **Jev choosing the skill directly.** It needs recalibration on every skill edit, and invites Jev into choosing manual or authority-bearing skills.
 - **Making `background-run` model-invocable, with no Jev for loops.** This works in private repositories and Codex with no egress, but it reverses the cost decision. It is the fallback if Jev's loop precision fails its bar.
-- **Sharing one engine extracted from `pi-t3-runtime`.** Another session owns that code. Sharing `egress.ts` alone gives one source of truth for the real invariant.
+- **Sharing one engine extracted from `pi-t3-runtime`.** That repository is out of scope for now, and sharing `egress.ts` gives one source of truth for the real invariant.
 
 ## Open questions
 
 These are for the user. Each has a recommendation and the default taken if there's no answer.
 
-1. **Amend ADR 0001 decision 5 to allow the lookup and loop notes?** Recommendation: yes, scoped to calibrated notes. Default: build in shadow only, with no amendment until a note earns advisory.
+1. **Amend ADR 0001 decision 5 to allow the lookup and loop notes?** Decided: yes, scoped to calibrated notes. ADR 0002 records it in slice 2.
 2. **Private repositories.**
    - Options: (a) never sent, as today; (b) send their prompts too; (c) (a) plus the handoff word list for loops, which sends nothing.
    - Recommendation: (c). Default: (a).
 3. **`background-run`:** keep it manual and reached through the loop note, or make it model-invocable? Recommendation: keep it manual. Default: keep it manual.
-4. **The acting bars** above. Recommendation: as written. Default: as written.
-5. **Labeling time:** about an hour for 150 to 200 harvested prompts, after about two weeks of shadow records. Default: harvest after two weeks and ask then.
+4. **The acting bars** above. Decided: as written.
+5. **Labeling time:** about an hour for 150 to 200 harvested prompts, after about two weeks of shadow records. Decided: yes.
 
 ## First implementation step
 

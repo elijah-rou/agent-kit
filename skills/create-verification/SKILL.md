@@ -1,6 +1,6 @@
 ---
 name: create-verification
-description: Generate and prove a repository-local verification skill at `.agents/skills/verify-<app>/` that launches the app, health-checks it, drives it the way a user does, captures evidence that survives cleanup, and carries a seeded feature map. Covers web, CLI and TUI, systems, and game projects. Use when the user invokes create-verification or asks for a scripted way to verify this repository's app. Not for a one-off check of a single change.
+description: Generate and prove a repository-local verification skill at `.agents/skills/verify-<app>/` whose control CLI launches the app, health-checks it, drives it the way a user does, captures evidence that survives cleanup, and carries a seeded feature map. Covers web, CLI and TUI, systems, and game projects. Use when the user invokes create-verification or asks for a scripted way to verify this repository's app. Not for a one-off check of a single change.
 disable-model-invocation: true
 ---
 
@@ -27,7 +27,7 @@ Then read the recipe for the domain:
 | Systems: libraries, services, storage, concurrency | `references/systems.md` |
 | Games and real-time simulations | `references/games.md` |
 
-Edit scope: everything you write lives in `.agents/skills/verify-<app>/`, including harness scripts and evidence hooks. Change product code only when the checkout actually fails to build or start, and then only the smallest fix, reported to the user; a working base is never modified to make verification easier. A missing asset irrelevant to the surface may be created as marked verification scaffolding and removed in cleanup.
+Edit scope: everything you write lives in `.agents/skills/verify-<app>/`, including harness scripts and evidence hooks, except the discovery symlinks step 2 describes. Change product code only when the checkout actually fails to build or start, and then only the smallest fix, reported to the user; a working base is never modified to make verification easier. A missing asset irrelevant to the surface may be created as marked verification scaffolding and removed in cleanup.
 
 Completion criterion: each of the five questions has an answer backed by a path or command, and a recipe is chosen.
 
@@ -40,15 +40,17 @@ Write `.agents/skills/verify-<app>/SKILL.md` with frontmatter `name: verify-<app
 - **Drive:** the harness recipe with this repository's real selectors and commands. Prefer stable handles (accessible names, data attributes, prompt strings, routes, input scripts) over coordinates, timing, and tab order.
 - **Evidence:** what to capture and where. Name one evidence directory per run, outside everything cleanup removes and ignored by git. State the proof standards: exercise the real user path, not internal setters or test-only endpoints; capture the action and the resulting state; verify side effects (files, rows, messages, installed state) as well as what is visible; use mocks only where a production boundary already isolates the external system; when using a dry-run mode, observe what it actually skips (files, network, git refs) instead of trusting its name.
 - **Cleanup:** stop only what this run started, by recorded PID, session name, or container ID, never by process name. Remove instances and scratch state, never evidence.
-- **Helpers:** every shipped script is executable and its invocation appears in the skill body.
+- **Control CLI:** one executable entry point under the skill's `scripts/`, so every agent drives the app the same way instead of writing its own scripts each session. It has subcommands for launch, doctor, and cleanup, one drive target per mapped feature (added in step 3 as each feature is seeded), and `all`, which runs launch, doctor, and every feature, then cleans up even after a failure, ends with a line counting passes, failures, and skips, and exits 0 only if no feature failed. Every input is a flag or argument; it never prompts. Each subcommand's `--help` shows real examples. Each drive ends with one line a script can check: `PASS <feature>`, `FAIL <feature>: <check>`, or `SKIP <feature>: <missing prerequisite>` when a credential, entitlement, hardware, or external state the feature needs is absent. Errors say what to run instead. A step that can change state this run did not create requires an explicit flag. Launch, Doctor, Drive, and Cleanup show its invocations; raw commands appear only as diagnosis aids. Any other shipped helper is executable and its invocation appears in the skill body.
 
-Completion criterion: every section names real commands and paths from this repository.
+Make the skill discoverable to every agent runtime the user works with in this repository. A runtime that reads project skills only from its own directory, not from `.agents/skills/`, gets a relative symlink from that directory to `.agents/skills/verify-<app>`.
+
+Completion criterion: every section names real commands and paths from this repository, the control CLI's `--help` runs, and each symlink resolves to the skill's `SKILL.md`.
 
 ## 3. Seed the feature map
 
-Create `.agents/skills/verify-<app>/features/README.md` plus one file for each of the top three to five user-facing features, found from routes, commands, menus, or docs. Follow `references/feature-map-example/`: the README holds baseline preconditions, driving conventions, and proof and skip rules; each feature file has an H1, one paragraph, and exactly four H2 sections in this order: `Sub-features`, `How to get to it (user POV)`, `Driving it with <harness>`, `Gotchas`. The map is the repository's verification source: a proof that drives one convenient entry point is incomplete when the map lists others.
+Create `.agents/skills/verify-<app>/features/README.md` plus one file for each of the top three to five user-facing features, found from routes, commands, menus, or docs. Follow `references/feature-map-example/`: the README holds baseline preconditions, driving conventions, and proof and skip rules; each feature file has an H1, one paragraph, and exactly four H2 sections in this order: `Sub-features`, `How to get to it (user POV)`, `Driving it with <harness>`, `Gotchas`. The map is the repository's verification source: a proof that drives one convenient entry point is incomplete when the map lists others. As you write each feature file, add its drive target to the control CLI, with a `--help` example, and name that target in the file's driving section, right after `Preconditions:`.
 
-Check the map: every feature file is listed in `features/README.md`, every listed file exists, and each feature file has exactly the four sections above.
+Check the map: every feature file is listed in `features/README.md`, every listed file exists, each feature file has exactly the four sections above, and the control CLI has exactly one drive target per feature file.
 
 Completion criterion: the map passes that check.
 
@@ -58,16 +60,17 @@ Follow the generated skill's own text, literally:
 
 1. Launch and wait for the readiness signal.
 2. Run Doctor.
-3. Drive one mapped feature through one of its listed entry points.
+3. Drive one mapped feature through one of its listed entry points, with the control CLI.
 4. Capture evidence to the named evidence directory.
 5. Run Cleanup.
 6. Confirm the evidence still exists and is non-empty at its named location.
 7. Confirm nothing this run started remains: no session, process, container, or bound port.
+8. Run the control CLI's `all` once; confirm it reports every feature, no feature fails, each skip names its missing prerequisite, and nothing it started remains.
 
 When a step fails, fix the generated skill, run its Cleanup, and start again from step 1. A skill never executed end to end is a draft, not a deliverable.
 
-Completion criterion: steps 6 and 7 were observed on the final version of the skill.
+Completion criterion: steps 6, 7, and 8 were observed on the final version of the skill.
 
 ## Reply
 
-Lead with anything the user must decide or provide (credentials, entitlements, hardware). Then the skill path, the features mapped, the proof run (feature driven, evidence path, and the listing that shows it survived cleanup), the map check, and known gaps. Point to `maintain-verification` for keeping the map honest as the app changes.
+Lead with anything the user must decide or provide (credentials, entitlements, hardware). Then the skill path, the features mapped, the proof run (feature driven, evidence path, and the listing that shows it survived cleanup), the map check, every skipped feature with its missing prerequisite, and known gaps. Point to `maintain-verification` for keeping the map honest as the app changes.

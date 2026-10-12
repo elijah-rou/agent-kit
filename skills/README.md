@@ -44,7 +44,7 @@ Local adaptations use narrow automatic triggers, remove Cursor tools, model rout
 MCP assumptions, cross-skill invocation, and publication behavior, and preserve evidence
 and source boundaries. The upstream MIT license is preserved in `PSTACK-LICENSE`.
 
-The `code-design`, `git-workflow`, `github-rulesets`, `technology-selection`, `source-grounded-research`, and `verification` skills are original to this repository. `git-workflow`'s `references/pr-review.md` condenses the reviewer prompt and rubric of pstack's `interrogate` (MIT, `PSTACK-LICENSE`) into one cross-model reviewer, adds a precedent lens and the repository's review rules, and drops the multi-model panel and Cursor tooling.
+The `code-design`, `git-workflow`, `github-rulesets`, `technology-selection`, `source-grounded-research`, and `verification` skills are original to this repository. `git-workflow`'s `references/pr-review.md` condenses the reviewer prompt and rubric of pstack's `interrogate` (MIT, `PSTACK-LICENSE`) into one fresh reviewer, adds a precedent lens and the repository's review rules, and drops the multi-model panel and Cursor tooling.
 
 The `feature-shaping` skill is original to this repository. Its risk-scaled design workflow
 is informed by HumanLayer's

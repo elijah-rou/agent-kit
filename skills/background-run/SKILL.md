@@ -63,7 +63,7 @@ The instructions' always-pause list holds in every mode: destructive actions, de
 
 ## 5. Finish
 
-When the predicate holds, verify the whole result on the real product, not only the harness. Audit the log against this run's transcript and get the cross-model Attention review as the `show-me-your-work` skill describes. At a genuine dead end, stop and write up why, rather than reinterpreting the goal.
+When the predicate holds, verify the whole result on the real product, not only the harness. Audit the log against this run's transcript and get the Attention review as the `show-me-your-work` skill describes. At a genuine dead end, stop and write up why, rather than reinterpreting the goal.
 
 ## Reply
 

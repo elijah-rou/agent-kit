@@ -1,8 +1,33 @@
 # Model roles: which model each kind of child task gets
 
-- **Status:** proposed 2026-10-12, awaiting the user's review. Nothing here is built.
+- **Status:** the initial version (Claude only, below) is built on 2026-10-12. The rest of this document is the full design, kept for when a second provider returns.
 - **Reader:** the user, then whoever builds it.
 - **Method:** `design-checkpoint`. Candidates came from GPT-6.1 Sol (B) and Claude Fable 5.1 (C). Candidate A (Claude Opus 5.5) hit a session limit and left a partial sketch, which was read. The rubric is at the end.
+
+## Initial version: Claude only
+
+The user is retiring the Codex subscription and asked for an initial version built for Claude Code alone, using only Haiku 5.5 and Opus 5.5 (no Fable or Sonnet), to refine later. With one provider, every role is a native Claude Code agent, so most of the full design is not needed yet.
+
+| Role (agent name) | Use for | Model | Effort | Tools |
+| --- | --- | --- | --- | --- |
+| `Explore` | read-only lookups; replaces Claude Code's built-in `Explore`, which otherwise runs on the main model | `claude-haiku-5-5` | `medium` | no `Agent`, `Edit`, `Write`, `NotebookEdit` |
+| `quick` | bulk or bounded work that writes | `claude-haiku-5-5` | `medium` | no `Agent` |
+| `build` | implementation and diagnosis | `claude-opus-5-5` | `high` | no `Agent` |
+| `review` | independent review by a child that did not write the change | `claude-opus-5-5` | `xhigh` | no `Agent`, `Edit`, `Write`, `NotebookEdit` |
+
+What is built:
+
+- `claude/agents/{explore,quick,build,review}.md`, in Claude Code's own agent format, hold the opinion (model and effort in the frontmatter) and each role's charter (the body). Bootstrap links them into `~/.claude/agents/` the same way it links `CLAUDE.md`, so there is no renderer.
+- `claude/CLAUDE.md` names the four roles and tells the parent to launch by role, pass no model or effort, and not delegate what it can finish in a handful of tool calls. The rules no longer ask for a reviewer on an alternate model; the skills name the `review` role instead of a different model family.
+- `scripts/check-skills.ts` fails when a role file names a model other than Haiku 5.5 or Opus 5.5, sets an unknown effort, or allows `Agent`; when the roles named in `claude/CLAUDE.md` and the role files disagree; and when `claude/CLAUDE.md` or any skill names a model ID.
+
+What is deferred, with the reason:
+
+- **The overlay, the renderer, the role table, `SessionStart` hooks and T3 targets.** They exist to cross providers and harnesses. With one provider, the agent files are the whole mechanism.
+- **Codex and Pi.** `codex/AGENTS.md` and `pi/AGENTS.md` are unchanged, including the Codex model table and their alternate-model reviewer wording.
+- **Open questions 2 and 6** (cross-harness `quick` and `explore`, and usage-limit fallback) do not arise with one provider. Questions 1 and 4 took their defaults. Question 3 keeps design-checkpoint's candidate-diversity preference, which only applies "where available".
+
+Verified on 2026-10-12 with Claude Code 2.1.296 in a scratch project: the four files, copied and also as symlinks, appear in the session's agent list, with `Explore` replacing the built-in. A headless run launched `Explore` on `claude-haiku-5-5` and `review` on `claude-opus-5-5`. Whether `effort` took effect is not visible in the output.
 
 ## The door
 

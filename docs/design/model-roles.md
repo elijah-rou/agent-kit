@@ -161,12 +161,12 @@ The CLI is `agentic roles show|render|check`, registered in `agentic/bin/agentic
 
 | File | Claude Code (`~/.claude`) | Codex (`~/.codex`) |
 | --- | --- | --- |
-| native agent, one per role whose provider runs in this harness | `agents/<role>.md`: `model: <full id>`, `effort:`, `disallowedTools: Edit, Write, NotebookEdit` when read-only, charter as body | `agents/<role>.toml`: `name`, `description`, `model`, `model_reasoning_effort`, charter as `developer_instructions` |
+| native agent, one per role whose provider runs in this harness | `agents/<role>.md`: `model: <full id>`, `effort:`, `disallowedTools: Agent`, plus `Edit, Write, NotebookEdit` when read-only, charter as body | `agents/<role>.toml`: `name`, `description`, `model`, `model_reasoning_effort`, charter as `developer_instructions`; no `sandbox_mode` (see tradeoffs) |
 | the table | `roles.md` | `roles.md` |
 | session-start payload | (none; the hook prints `roles.md`) | `roles-session-start.json`: `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":<roles.md>}}` |
 | machine-readable | `roles.json` (`Resolved[]` plus launches) | same |
 
-Each native agent's description names its model and effort and says "launch by name; do not pass a model".
+Each native agent's description is the role's short `use` line and nothing else. Claude Code picks a subagent by its description, and all descriptions share one context budget, so model and effort stay in the frontmatter, `/agents` and the role table. Every Claude role disallows `Agent`, because Claude Code subagents can otherwise nest three levels deep and agent-kit's children do not launch children.
 
 The table for this machine with no overlay, as Claude Code sees it:
 
@@ -200,7 +200,7 @@ Both harnesses load it with a `SessionStart` hook, and bootstrap installs the ho
 
 One paragraph replaces the Codex table at `codex/AGENTS.md:37-48` and the model sentence at `claude/CLAUDE.md:36`:
 
-> Launch children by role, never by picking a model: `quick` for bounded or bulk work, `build` for implementation and the review done while building, `review` for independent review (a child that did not write the change, starts from a brief, changes nothing, and reports only blocking findings). The role table in context binds each role to a model and effort on this machine and says whether it is a native agent here or a T3 target. Launch natively when you can, otherwise through the T3 target with the role's charter at the top of the brief, and pass no model or effort of your own. If a role has neither, report it as unavailable with the missing route; do not launch another role or model in its place, and do not relaunch elsewhere after a launch was accepted. Every review record names the model that ran.
+> Launch children by role, never by picking a model: `quick` for bounded or bulk work you could not finish in a handful of tool calls yourself, `build` for implementation and the review done while building, `review` for independent review (a child that did not write the change, starts from a brief, changes nothing, and reports only blocking findings). The role table in context binds each role to a model and effort on this machine and says whether it is a native agent here or a T3 target. Launch natively when you can, otherwise through the T3 target with the role's charter at the top of the brief, and pass no model or effort of your own. If a role has neither, report it as unavailable with the missing route; do not launch another role or model in its place, and do not relaunch elsewhere after a launch was accepted. Every review record names the model that ran.
 
 The paragraph names no harness, so `check-skills.ts`'s runtime-neutral check still passes for `claude/CLAUDE.md`.
 
@@ -259,6 +259,27 @@ bootstrap/
 - No generated instruction files.
 - Nothing for Pi yet. The catalog has Pi's spelling slot, and the Pi render arrives with the Pi project. That project also retires bootstrap's `pi/agents` model choices and its `opencode/*` routes.
 
+## Vendor and pi-subagents guidance
+
+Checked 2026-10-12 against the Claude Code docs (code.claude.com/docs/en/sub-agents, best-practices), the Codex docs (learn.chatgpt.com/docs/agent-configuration/subagents, config reference), and the user's pi-subagents fork (`docs/agents.md`, `docs/models.md`, `skills/pi-subagents/references/prompting-and-roles.md`, from a local worktree that may be newer than bootstrap's pin).
+
+- **One file per agent, model in the file.** All three use one definition per agent: Markdown with frontmatter (Claude, Pi) or TOML (Codex), carrying model, effort, tools and a system prompt. Claude says "design focused subagents" and "limit tool access". Codex says "the best custom agents are narrow and opinionated". This design follows that shape.
+- **Built-in roles can be overridden by name.**
+  - Claude ships `Explore`, `Plan` and `general-purpose`.
+  - Codex ships `default`, `worker` and `explorer`.
+  - pi-subagents ships `scout`, `researcher`, `worker`, `reviewer`, `oracle` and `delegate`, and advises overriding built-ins before copying agent files.
+
+  Open question 5 covers Claude's `Explore`. Codex's built-ins cannot take Claude models, so they stay as they are.
+- **Who wins on model choice differs.**
+  - Codex: the agent file's model and effort beat spawn values.
+  - Claude: a per-launch `model` beats the frontmatter.
+  - Pi: a per-run override beats the frontmatter.
+
+  So only in Codex does the role binding hold against a parent that passes its own model. Elsewhere the instruction does the holding, and the review record shows the model that ran.
+- **Different models for review.** Neither vendor asks for a different model family. Claude's best practices ask for a fresh context: "the agent doing the work isn't the one grading it". This matches the reviewer definition used here.
+- **Model per task.** Claude: Haiku for fast, simple work. Codex: `gpt-6.1-sol` for "demanding agents", and `gpt-6-luna` for "fast, narrowly scoped agents handling clear, repeatable, or high-volume work", which supports option (b) of open question 2. The pi-subagents skill: workers and scouts on a fast tier, serious reviews on the strong tier at high thinking, and "explicit parent/user model policy wins".
+- **When not to delegate.** Anthropic's Opus 5 prompting guide: "Do not delegate work you can finish yourself in a handful of tool calls." The role paragraph should carry this for `quick`.
+
 ## Synthesis decision
 
 **Base: candidate C** (roles as the unit, rendered into each harness). It is the only candidate where the role name is also the native agent name in every harness. That makes the common launch one call, needs no lookup, and keeps the instruction files as symlinks.
@@ -308,7 +329,7 @@ No separate judge ran. The skill makes one optional, and the scores above are mi
 ## Tradeoffs accepted
 
 - We accept that cross-provider roles need T3 in exchange for having no runtime router. Outside T3, a Claude parent cannot run `review` and a Codex parent cannot run `quick` or `build`. Both report the role as unavailable.
-- We accept read-only enforcement by tool restriction rather than by sandbox, in exchange for reviewers that can still run the product and write evidence. Claude loses `Edit`, `Write` and `NotebookEdit`. Codex stays at the user's sandbox. A sandboxed `verify` role is the later split.
+- We accept read-only enforcement by tool restriction rather than by sandbox, in exchange for reviewers that can still run the product and write evidence. Claude loses `Edit`, `Write` and `NotebookEdit`. Codex stays at the user's sandbox: `sandbox_mode = "read-only"` in an agent file would not be a boundary anyway, because Codex reapplies the parent turn's live runtime overrides (such as full access) when it spawns a child. A sandboxed `verify` role is the later split.
 - We accept that rendered files are copies in exchange for symlinked instructions: a role change goes live only after `install.sh link`.
 - We accept Codex's `[agents]` default (`gpt-6-astra` at `low`) for untyped spawns, because `config.toml` belongs to the user after the first copy.
 - We accept that a parent can still pass `model` to Claude's Agent tool and override a role, in exchange for not building an enforcement hook now. The instruction forbids it, and the review record names the model that ran.
@@ -327,7 +348,7 @@ No separate judge ran. The skill makes one optional, and the scores above are mi
    - (a) `quick` medium, `build` high, `review` xhigh.
    - (b) low, high, high, which A and B proposed.
 
-   I recommend (a). Medium is Haiku 5.5's default in T3's catalog, so `quick` claims no tuning that nobody has measured. High is one step above Opus 5.5's default of medium, because implementation is the work that most needs it. Xhigh matches both reviewer configs the user already wrote (bootstrap `pi/settings.json` and pi-t3-runtime's reviewer profile). If review effort is left unstated, T3 runs `gpt-6.1-sol` at its catalog default of `low`. Default: (a), revisited once routing records show cost and quality.
+   I recommend (a). Medium is Haiku 5.5's default in T3's catalog, so `quick` claims no tuning that nobody has measured. High is one step above Opus 5.5's default of medium, because implementation is the work that most needs it. Xhigh matches both reviewer configs the user already wrote (bootstrap `pi/settings.json` and pi-t3-runtime's reviewer profile). If review effort is left unstated, T3 runs `gpt-6.1-sol` at its catalog default of `low`. Against this, the Codex docs suggest `high` for "reviewer or security-focused agents", and their example reviewer runs `gpt-6.1-sol` at `medium`. Default: (a), revisited once routing records show cost and quality.
 
 2. **Cross-harness `quick`.** From Codex, `quick` on Haiku means a T3 child thread per lookup, and it is unavailable outside T3. Options:
    - (a) Strict: T3 or unavailable.
@@ -343,6 +364,18 @@ No separate judge ran. The skill makes one optional, and the scores above are mi
    I recommend (b): candidate diversity is what the step is for, and it is cheap at two or three launches. Default: (b).
 
 4. **Role names.** `quick`, `build`, `review`. Alternatives: `bulk`/`implementation`/`review` (B), or `quick`/`implement`/`review` (A). I recommend the short verbs, because they are one word, read as agent types, and do not collide with skill names. Default: `quick`, `build`, `review`.
+
+5. **Claude's built-in `Explore`.** Claude Code routes lookups to its built-in `Explore` agent on its own, and `Explore` runs on the main conversation's model, which is Opus here. The Claude docs say to override it by defining a user agent named `Explore` with `model: haiku`. Options:
+   - (a) Leave `Explore` alone.
+   - (b) Render a read-only `Explore` override with the `quick` binding.
+
+   `quick` itself cannot replace `Explore`, because `quick` may edit and `Explore` is read-only. I recommend (b): it moves Claude's own lookups to Haiku without any instruction change. Default: (a) until answered.
+
+6. **Usage limits.** Two of the three design candidates for this document died on a Claude session limit. pi-subagents handles this with `fallbackModels`, which applies only to quota, auth, timeout and unavailable-model errors, is reported in the output, and is recorded in `status.json`. Options:
+   - (a) Stop and report, as written above.
+   - (b) A role may declare one `onLimit` binding, which the parent uses only after a provider-limit error and names in its report.
+
+   I recommend (b): it is declared and reported, so it is not a silent substitution, and limits are the failure seen in practice. Default: (a) until answered.
 
 ## Risks to verify while building
 

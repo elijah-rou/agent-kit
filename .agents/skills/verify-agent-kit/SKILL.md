@@ -43,12 +43,12 @@ scripts/verify-kit drive RUN_ID <feature> [--pr N] [--merged-pr N] [--repo owner
 
 Features: `task-route`, `merge-gate`, `pr-state`, `skill-catalog`, `claude-surface`. Each drive ends with `PASS <feature>`, `FAIL <feature>: <check>`, or `SKIP <feature>: <missing prerequisites>`; a SKIP still ran and checked every step whose prerequisites held. The feature files list every entry point and what each step proves.
 
-Which features a change needs. A path matches the first row that names it; anything no row names falls to the last row.
+Which features a change needs. A path matches the first row that names it; anything no row names falls to the last row. In every row, code reached only from `agentic verify publish` or `agentic rulesets apply` (their branches in the `cli.ts` files, and helpers only they call, such as `verified` in `rulesets.ts`) writes GitHub, and no drive observes it: a diff to it also needs a test that fails on the parent and passes on the head.
 
 | Changed paths | Drive |
 | --- | --- |
 | test files (`*.test.ts`, `claude/tests/`, `pi/tests/`) | not mapped: read them as code (last row) |
-| `agentic/tools/verify/cli.ts`, `agentic/tools/rulesets/cli.ts` | `merge-gate`, which drives record, status, and plan. Code reached only from `publish` or `apply` (their branches in these files, and helpers such as `verified` in `rulesets.ts`) writes GitHub and no drive observes it: a diff to it also needs a test that fails on the parent and passes on the head |
+| `agentic/tools/verify/cli.ts`, `agentic/tools/rulesets/cli.ts` | `merge-gate`, which drives record, status, and plan |
 | `agentic/tools/jev/cli.ts`, `route.ts`, `route-task.ts`, `egress.ts` | `task-route` and `merge-gate` (pr-risk shares the CLI and egress) |
 | `agentic/tools/jev/pr-risk.ts` | `merge-gate` |
 | the rest of `agentic/tools/verify/` and `agentic/tools/rulesets/`, `agentic/vendor/orch/` | `merge-gate` (its contract step checks the verdicts, their statuses, how the ledger decides, and the ruleset's rules and settings) |
@@ -69,8 +69,8 @@ The verdict follows from what ran:
 - `live-ui-verified`: every changed path is covered by a drive row, each needed drive PASSes on the head with trunk's kit (and the head's kit for new steps), none of them SKIPs, and the changed behavior appears in a drive step's evidence.
 - `unit-test-verified`: changed code no drive covers has a test that exercises the changed lines, fails on the parent or on a revert of the change, and passes on the head; name the test and both runs in the evidence. A green `bun test` or CI run alone is not this.
 - `type-check-only`: the change is only instruction text (the rows marked instruction text above). This skill cannot observe an agent's behavior under new text without model usage, so such a pull request does not clear the merge gate; the user lands it. `skill-catalog` must still PASS, and the verifier reads the text against the pull request's stated intent and reports what it found.
-- `verifier-blocked`: a needed drive SKIPs or cannot run, or changed code has neither a drive nor such a test.
-- `verifier-failed`: a needed drive or test FAILs.
+- `verifier-blocked`: a needed drive SKIPs or cannot run; changed code has neither a drive nor such a test; or trunk's kit fails only checks that the pull request deliberately changes in both the product and the kit, and the head's kit passes them. The user lands it.
+- `verifier-failed`: a needed drive or test FAILs for any other reason.
 
 ## Evidence
 

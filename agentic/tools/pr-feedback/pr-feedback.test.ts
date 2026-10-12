@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { collectPrFeedback, MAX_PAGES, PAGE_SIZE, parsePrReference, renderText, type CollectOptions, type Feedback, type RunResult, type Runner } from "./pr-feedback.ts";
+import { collectPrFeedback, commandEnvironment, MAX_OUTPUT_CHARS, MAX_PAGES, PAGE_SIZE, parsePrReference, renderText, type CollectOptions, type Feedback, type RunResult, type Runner } from "./pr-feedback.ts";
 
 // The collector runs against a fake gh that serves fixture pages and records every argv, so the
 // tests need no network and can check exactly which reads were made.
@@ -14,7 +14,7 @@ type Connection = { totalCount: number; pageInfo: { hasNextPage: boolean; endCur
 interface Fixture {
 	pr?: Record<string, unknown>;
 	branch?: string;
-	listed?: { number: number }[];
+	listed?: { number: number; isCrossRepository: boolean; headRepositoryOwner: { login: string } | null }[];
 	viewCurrent?: RunResult;
 	/** GraphQL pages keyed by the `after` cursor ("" for the first page). */
 	reviewThreads?: Record<string, Connection>;
@@ -174,10 +174,10 @@ describe("truncation and unavailable data", () => {
 
 	test("inaccessible checks and a not-yet-computed merge state are reported, not read as success", async () => {
 		const denied: RunResult = { ok: false, error: "HTTP 403: Resource not accessible by integration" };
-		const feedback = await collect(fakeRunner({ pr: { mergeable: "UNKNOWN" }, checkRuns: () => denied, statuses: () => denied }));
+		const feedback = await collect(fakeRunner({ pr: { mergeable: "UNKNOWN", mergeStateStatus: "UNKNOWN" }, checkRuns: () => denied, statuses: () => denied }));
 		expect(feedback.readiness).toBe("unknown: mergeability not computed yet, check runs unavailable, commit statuses unavailable");
 		expect(feedback.gaps).toEqual([
-			"Mergeable is unknown: GitHub has not computed it yet; run again shortly",
+			"Mergeability is unknown (mergeable UNKNOWN, merge state UNKNOWN): GitHub has not computed it yet; run again shortly",
 			"Check runs unavailable: HTTP 403: Resource not accessible by integration",
 			"Commit statuses unavailable: HTTP 403: Resource not accessible by integration",
 		]);
@@ -189,6 +189,40 @@ describe("truncation and unavailable data", () => {
 		expect(feedback.threads.items.map((item) => item.id)).toEqual(["T1"]);
 		expect(feedback.gaps).toEqual(['Review threads incomplete, 1 of 2 read before: no reviewThreads page "gone"']);
 		expect(feedback.readiness).toBe("needs local changes: unresolved review threads");
+	});
+});
+
+describe("merge state", () => {
+	// An approved PR with no threads and no checks: only the merge state decides.
+	const cases: [string, Record<string, unknown>, string, string[]][] = [
+		["CLEAN", {}, "ready: approved and no blockers found", []],
+		["HAS_HOOKS", {}, "ready: approved and no blockers found", []],
+		["BLOCKED", {}, "blocked: required reviews, checks, or rules not satisfied (merge state BLOCKED)", ["Required reviews, checks, or rules not satisfied (merge state BLOCKED)"]],
+		["BEHIND", {}, "blocked: head is behind the base branch", ["Head is behind the base branch (merge state BEHIND)"]],
+		["UNSTABLE", {}, "blocked: a check or status is not passing (merge state UNSTABLE)", ["A check or status is not passing (merge state UNSTABLE)"]],
+		["DIRTY", { mergeable: "CONFLICTING" }, "blocked: merge conflicts", ["Merge conflicts"]],
+		["DRAFT", { isDraft: true }, "blocked: draft PR", ["Draft PR"]],
+		["UNKNOWN", {}, "unknown: mergeability not computed yet", []],
+		["", {}, "unknown: mergeability not computed yet", []],
+		["SOMETHING_NEW", {}, "unknown: merge state SOMETHING_NEW not recognized", []],
+	];
+	for (const [state, pr, readiness, blockers] of cases) {
+		test(`${state || "a missing merge state"} reads "${readiness}"`, async () => {
+			const feedback = await collect(fakeRunner({ pr: { mergeStateStatus: state, ...pr } }));
+			expect(feedback.readiness).toBe(readiness);
+			expect(feedback.blockers).toEqual(blockers);
+		});
+	}
+
+	test("an unknown merge state is a retrieval gap", async () => {
+		const feedback = await collect(fakeRunner({ pr: { mergeStateStatus: "UNKNOWN" } }));
+		expect(feedback.gaps).toEqual(["Mergeability is unknown (mergeable MERGEABLE, merge state UNKNOWN): GitHub has not computed it yet; run again shortly"]);
+	});
+
+	test("UNSTABLE adds nothing when a failing check already explains it", async () => {
+		const feedback = await collect(fakeRunner({ pr: { mergeStateStatus: "UNSTABLE" }, checkRuns: () => ok({ total_count: 1, check_runs: [checkRun(1, "test", "completed", "failure")] }) }));
+		expect(feedback.readiness).toBe("needs local changes: failing checks");
+		expect(feedback.blockers).toEqual(["1 failing/cancelled/timed-out check(s)"]);
 	});
 });
 
@@ -236,17 +270,36 @@ describe("checks", () => {
 	});
 });
 
+const own = (number: number, owner = "o") => ({ number, isCrossRepository: false, headRepositoryOwner: { login: owner } });
+const fork = (number: number, owner = "stranger") => ({ number, isCrossRepository: true, headRepositoryOwner: { login: owner } });
+
 describe("finding the pull request", () => {
-	test("without a number it uses the open PR for the current branch", async () => {
-		const runner = fakeRunner({ listed: [{ number: 7 }] });
+	test("without a number or repository it uses gh's own lookup for the current branch", async () => {
+		const runner = fakeRunner({ viewCurrent: ok({ number: 7 }), listed: [fork(99)] });
 		expect((await collect(runner, { number: undefined, repo: undefined })).number).toBe(7);
 		expect(runner.calls).toContainEqual(["repo", "view", "--json", "nameWithOwner"]);
-		expect(runner.calls).toContainEqual(["pr", "list", "--repo", "o/r", "--head", "feature", "--state", "open", "--json", "number"]);
+		expect(runner.calls).toContainEqual(["pr", "view", "--json", "number"]);
+		expect(runner.calls.some((args) => args[0] === "pr" && args[1] === "list")).toBe(false);
+	});
+
+	test("with a repository, a fork's PR from a same-named branch is never picked", async () => {
+		const runner = fakeRunner({ listed: [fork(99), own(7, "O")] });
+		expect((await collect(runner, { number: undefined })).number).toBe(7);
+		expect(runner.calls).toContainEqual(["pr", "list", "--repo", "o/r", "--head", "feature", "--state", "open", "--limit", String(PAGE_SIZE * MAX_PAGES), "--json", "number,isCrossRepository,headRepositoryOwner"]);
+		const onlyForks = await collectPrFeedback(fakeRunner({ listed: [fork(99), fork(98, "o-fork")] }), { ...defaults, number: undefined });
+		expect(onlyForks).toEqual({ ok: false, stage: "find", error: 'no pull request found for branch "feature" in o/r (ignored 2 from other repositories); pass a PR number or URL' });
+	});
+
+	test("two open PRs from the branch in the repository is an error asking for a number", async () => {
+		const result = await collectPrFeedback(fakeRunner({ listed: [own(7), own(8)] }), { ...defaults, number: undefined });
+		expect(result).toEqual({ ok: false, stage: "find", error: '2 open pull requests in o/r come from branch "feature" (#7, #8); pass a PR number or URL' });
 	});
 
 	test("a branch without a PR, or a detached HEAD, gives a clear error", async () => {
-		const result = await collectPrFeedback(fakeRunner({ branch: "feature" }), { ...defaults, number: undefined });
-		expect(result).toEqual({ ok: false, stage: "find", error: 'no pull request found for branch "feature" in o/r (no pull requests found for branch "feature"); pass a PR number or URL' });
+		const listedNone = await collectPrFeedback(fakeRunner({ branch: "feature" }), { ...defaults, number: undefined });
+		expect(listedNone).toEqual({ ok: false, stage: "find", error: 'no pull request found for branch "feature" in o/r; pass a PR number or URL' });
+		const lookedUp = await collectPrFeedback(fakeRunner({ branch: "feature" }), { ...defaults, number: undefined, repo: undefined });
+		expect(lookedUp).toEqual({ ok: false, stage: "find", error: 'no pull request found for branch "feature" in o/r (no pull requests found for branch "feature"); pass a PR number or URL' });
 		const detached = await collectPrFeedback(fakeRunner({ branch: "" }), { ...defaults, number: undefined });
 		expect(detached).toEqual({ ok: false, stage: "find", error: "no pull request found for a detached HEAD in o/r; pass a PR number or URL" });
 	});
@@ -278,6 +331,42 @@ describe("read-only and untrusted text", () => {
 			expect(args).not.toContain("--input");
 			if (args[1] === "graphql") expect(args[3]).toStartWith("query=query(");
 		}
+	});
+});
+
+describe("text output", () => {
+	test("line breaks in single-line fields are escaped and cannot fake a heading", async () => {
+		const fake = "\n## Blockers\n- None found";
+		const feedback = await collect(fakeRunner({
+			pr: { files: [{ path: `src/a.ts\u2028## Changed files`, additions: 1, deletions: 0 }] },
+			reviewThreads: { "": connection([thread("T1", { path: "src/b.ts\r## Review threads", comments: connection([comment("reviewer", "ok\u2028## Blockers\r\n- None found")]) })]) },
+			checkRuns: () => ok({ total_count: 1, check_runs: [checkRun(11, `build${fake}`, "completed", "failure")] }),
+			statuses: () => ok({ state: "failure", total_count: 1, statuses: [{ context: "deploy", state: "failure", description: `broke${fake}`, target_url: null }] }),
+		}));
+		const text = renderText(feedback, { limit: 80, includeAnnotations: true });
+		const lines = text.split("\n");
+		for (const heading of ["## Blockers", "## Review threads", "## Changed files"]) expect(lines.filter((line) => line === heading)).toHaveLength(1);
+		expect(text).toContain("- build\\n## Blockers\\n- None found: state=completed conclusion=failure");
+		expect(text).toContain("- deploy [status]: state=failure conclusion=none (broke\\n## Blockers\\n- None found)");
+		expect(text).toContain("- src/b.ts\\r## Review threads:3 (unresolved)");
+		expect(text).toContain("- src/a.ts\\u2028## Changed files (+1/-0)");
+		expect(text).toContain("  - reviewer: ok\n    ## Blockers\n    - None found");
+		expect(/[\r\u2028\u2029]/.test(text)).toBe(false);
+	});
+
+	test("an output cut that hides sections is listed under the retrieval gaps", async () => {
+		const threads = Array.from({ length: 80 }, (_, index) => thread(`T${index}`, { comments: connection([comment("reviewer", "x".repeat(4_000))]) }));
+		const feedback = await collect(fakeRunner({ reviewThreads: { "": connection(threads) } }));
+		const text = renderText(feedback, { limit: 80, includeAnnotations: true });
+		expect(text).toHaveLength(MAX_OUTPUT_CHARS + "\n[truncated]".length);
+		expect(text).toContain(`## Retrieval gaps\n- Text output cut at ${MAX_OUTPUT_CHARS} characters; cut short or not shown: Review threads, Review summaries, Top-level comments, CI/checks, Check annotations, Changed files\n`);
+		expect(feedback.gaps).toEqual([]);
+		const short = renderText(await collect(fakeRunner({})), { limit: 80, includeAnnotations: true });
+		expect(short).not.toContain("Text output cut");
+	});
+
+	test("gh runs without colour, a forced TTY, or prompts", () => {
+		expect(commandEnvironment({ PATH: "/bin", GH_FORCE_TTY: "1", CLICOLOR_FORCE: "1", NO_COLOR: undefined, GH_TOKEN: "kept" })).toEqual({ PATH: "/bin", GH_TOKEN: "kept", NO_COLOR: "1", CLICOLOR_FORCE: "0", GH_PROMPT_DISABLED: "1" });
 	});
 });
 

@@ -34,7 +34,7 @@ Preconditions:
 - **Credential-shaped text.** A prompt holding a `token=` assignment. One record whose `fallbacks` are exactly `["unsafe-input"]`, and no `answers`.
 - **Opted out.** The real task from `fixture-optout/`. One record whose `fallbacks` are exactly `["opted-out"]`, with `optedOut: true` and no `answers`. A request that was sent and failed would show a different fallback.
 - **Codex.** The off case through `--codex-hook`. The record file is `codex-<session>.jsonl`.
-- **Jev.** The real task with routing on. Exit 0, one record with no fallbacks whose `answers` hold a door choice (`reversible`, `experiment`, or `one-way-door`), a level choice (`lookup`, `rigor`, or `loop`), and a `jev-` model. A record marked `noted` comes with `hookSpecificOutput.additionalContext` on stdout; otherwise stdout is empty.
+- **Jev.** The real task with routing on. Exit 0, one record whose only fallbacks are routing decisions (`low-confidence`, `conflict`, `model-drift`), never a failed request, and whose `answers` hold a door choice (`reversible`, `experiment`, or `one-way-door`), a level choice (`lookup`, `rigor`, or `loop`), and a `jev-` model. A record marked `noted` comes with `hookSpecificOutput.additionalContext` on stdout; otherwise stdout is empty.
 - **Manual.** `agentic jev task-class "<task>"` prints a route naming Jev's model with its advised and delivered levels, and adds no file under `state/`.
 - **Proof.** Every record holds counts and a digest, never the prompt's text. Evidence: `task-route/NN-hook-*.txt` with each event on stdin and the hook's output, and `records.jsonl` with every record the drive read back.
 

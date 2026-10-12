@@ -16,7 +16,8 @@ const CLI = ".agents/skills/verify-agent-kit/scripts/verify-kit";
 const RUNS_ROOT = join(tmpdir(), "verify-agent-kit");
 const EVIDENCE_ROOT = join(process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "verify-agent-kit", "evidence");
 const RUN_ID = /^ak-\d{8}-\d{6}-\d+$/;
-const MARKER = "verify-kit run";
+// Versioned so a kit from before the kit-binding check refuses runs this kit launched.
+const MARKER = "verify-kit run v2";
 const STEP_TIMEOUT_MS = 180_000;
 const FEATURES = ["task-route", "merge-gate", "pr-state", "skill-catalog", "claude-surface"] as const;
 type Feature = (typeof FEATURES)[number];
@@ -283,6 +284,12 @@ function parseJson(text: string): unknown {
 	}
 }
 
+/** JSON with object keys sorted, so key order never decides an equality check. */
+function canonical(value: unknown): string {
+	const sort = (item: unknown): unknown => Array.isArray(item) ? item.map(sort) : item !== null && typeof item === "object" ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, sort((item as Record<string, unknown>)[key])])) : item;
+	return JSON.stringify(sort(value));
+}
+
 function sameList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {
 	return actual !== undefined && actual.length === expected.length && actual.every((value, index) => value === expected[index]);
 }
@@ -507,9 +514,11 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 			states: Object.fromEntries(verify.VERDICTS.map((v) => [v, verify.statusFor(v, patch, "local-evidence").state])),
 			baseline: rulesets.desiredRuleset("baseline", ["ci"]).rules,
 			gate: rulesets.desiredRuleset("merge-gate", ["ci"]).rules,
-			settings: (({ name, target, enforcement, conditions, bypass_actors }) => ({ name, target, enforcement, conditions, bypass_actors }))(rulesets.desiredRuleset("merge-gate", ["ci"])),
-			settingsSame: rulesets.settingsDiff({ enforcement: "active", bypass_actors: [], conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: [] } } }, rulesets.desiredRuleset("merge-gate", ["ci"])),
+			settings: Object.fromEntries(["baseline", "merge-gate"].map((tier) => [tier, (({ name, target, enforcement, conditions, bypass_actors }) => ({ name, target, enforcement, conditions, bypass_actors }))(rulesets.desiredRuleset(tier, ["ci"]))])),
+			settingsSame: rulesets.settingsDiff(${JSON.stringify(BACKSTOP_SETTINGS)}, rulesets.desiredRuleset("merge-gate", ["ci"])),
 			settingsLoose: rulesets.settingsDiff({ enforcement: "evaluate", bypass_actors: [{ actor_id: 1, actor_type: "OrganizationAdmin" }], conditions: { ref_name: { include: ["refs/heads/other"], exclude: [] } } }, rulesets.desiredRuleset("merge-gate", ["ci"])),
+			settingsDisabled: rulesets.settingsDiff({ ...${JSON.stringify(BACKSTOP_SETTINGS)}, enforcement: "disabled" }, rulesets.desiredRuleset("merge-gate", ["ci"])),
+			settingsExcluded: rulesets.settingsDiff({ ...${JSON.stringify(BACKSTOP_SETTINGS)}, conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: ["refs/heads/main"] } } }, rulesets.desiredRuleset("merge-gate", ["ci"])),
 			latestWins: verify.currentVerdict([{ pr: 1, sha: "a", verdict: "live-ui-verified" }, { pr: 1, sha: "a", verdict: "verifier-failed" }], 1, "a").state,
 			laterPass: verify.currentVerdict([{ pr: 1, sha: "a", verdict: "verifier-failed" }, { pr: 1, sha: "a", verdict: "unit-test-verified" }], 1, "a").state,
 			oldHead: verify.currentVerdict([{ pr: 1, sha: "b", verdict: "live-ui-verified" }], 1, "a").state,
@@ -520,7 +529,7 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 	const terms = parseJson(contract.stdout) as {
 		statusContext?: string; verdictContext?: string; verdicts?: string[]; passes?: Record<string, boolean>; states?: Record<string, string>;
 		baseline?: { type: string }[]; gate?: { type: string; parameters?: { required_status_checks?: { context: string }[] } }[];
-		settings?: Record<string, unknown>; settingsSame?: string[]; settingsLoose?: string[];
+		settings?: Record<string, unknown>; settingsSame?: string[]; settingsLoose?: string[]; settingsDisabled?: string[]; settingsExcluded?: string[];
 		latestWins?: string; laterPass?: string; oldHead?: string; noRows?: string; rowForHead?: string; unknown?: boolean[];
 	} | undefined;
 	const verdicts = ["live-ui-verified", "unit-test-verified", "type-check-only", "verifier-blocked", "verifier-failed"];
@@ -532,8 +541,13 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 	rec.check(sameList(terms?.baseline?.map((rule) => rule.type), BASELINE_RULES), `the baseline tier is exactly ${BASELINE_RULES.join(", ")}`);
 	const gateChecks = terms?.gate?.find((rule) => rule.type === "required_status_checks")?.parameters?.required_status_checks?.map((check) => check.context) ?? [];
 	rec.check(sameList(terms?.gate?.map((rule) => rule.type), GATE_RULES) && gateChecks.includes("agentic/verdict") && gateChecks.includes("ci"), "the merge-gate tier adds a pull request rule and required checks holding agentic/verdict and the passing CI checks");
-	rec.check(JSON.stringify(terms?.settings) === JSON.stringify(BACKSTOP_SETTINGS), `the ruleset is ${JSON.stringify(BACKSTOP_SETTINGS)} (got ${JSON.stringify(terms?.settings)})`);
-	rec.check(sameList(terms?.settingsSame, []) && sameList(terms?.settingsLoose, ["enforcement", "bypass_actors", "conditions"]), "the plan reports evaluate mode, a bypass actor, and another branch as settings to change, and nothing for the desired settings");
+	for (const tier of ["baseline", "merge-gate"]) {
+		const got = (terms?.settings as Record<string, unknown> | undefined)?.[tier];
+		rec.check(canonical(got) === canonical(BACKSTOP_SETTINGS), `the ${tier} ruleset is ${canonical(BACKSTOP_SETTINGS)} (got ${canonical(got)})`);
+	}
+	const reports = (got: string[] | undefined, wanted: string[]) => got !== undefined && wanted.every((setting) => got.includes(setting));
+	rec.check(sameList(terms?.settingsSame, []), `the plan reports nothing for the desired settings (got ${JSON.stringify(terms?.settingsSame)})`);
+	rec.check(reports(terms?.settingsLoose, ["enforcement", "bypass_actors", "conditions"]) && reports(terms?.settingsDisabled, ["enforcement"]) && reports(terms?.settingsExcluded, ["conditions"]), "the plan reports evaluate or disabled enforcement, a bypass actor, another branch, and an excluded branch as settings to change");
 	rec.check(terms?.latestWins === "fail" && terms.laterPass === "pass" && terms.oldHead === "void" && terms.noRows === "none" && terms.rowForHead === "second", "the latest verdict for the head decides, a verdict for an old head is void, and publish posts the latest row for the head");
 	rec.check(sameList(terms?.unknown?.map(String), ["false", "false"]), "a verdict outside the list is neither recognized nor passing");
 

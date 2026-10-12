@@ -77,22 +77,12 @@ export const POLICY: Policy = {
 	version: 1,
 	deadlineMs: 3000,
 	notes: {
-		// agentic evals/jev-risk, second run: 90 hand-labeled tasks asked twice each. 56 of 60 one-way-door
-		// calls hinted (2 of 30 tasks missed), and 16 of 120 other calls hinted.
-		door: {
-			mode: "advisory",
-			calibration: {
-				threshold: 0.8,
-				questionsDigest: "556d4c822c98335d",
-				model: "jev-1.13.0",
-				samples: 180,
-				positives: 60,
-				precision: 0.78,
-				recall: 0.93,
-				date: "2026-10-07",
-				source: "elijah-rou/agentic evals/jev-risk",
-			},
-		},
+		// Advisory from 2026-10-07 to 2026-10-12, calibrated on agentic evals/jev-risk (90 hand-labeled
+		// standalone tasks asked twice each; threshold 0.8, question digest 556d4c822c98335d, jev-1.13.0,
+		// precision 0.78, recall 0.93; 16 of 120 non-door calls hinted). On live prompts, mostly short
+		// follow-ups Jev sees without their conversation, it fired on nearly every reversible prompt, so it
+		// is recorded but not delivered until route-eval recalibrates it on labeled live records.
+		door: { mode: "shadow", threshold: 0.8 },
 		lookup: { mode: "shadow", threshold: 0.9 },
 		loop: { mode: "shadow", threshold: 0.9 },
 	},

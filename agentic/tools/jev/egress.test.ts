@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkoutRoot, httpClassifier, isPublic, isTask, MAX_TASK_CHARS, OPT_OUT_FILE, repoOf, screen, sendable, type FetchLike } from "./egress.ts";
+import { checkoutRoot, httpClassifier, isPublic, isTask, MAX_TASK_CHARS, OPT_OUT_FILE, promptOrigin, repoOf, screen, sendable, type FetchLike } from "./egress.ts";
 import { QUESTIONS, type Sendable } from "./route.ts";
 import { seededCache } from "./testing.ts";
 
@@ -54,6 +54,16 @@ describe("the task screen", () => {
 		expect(screen("Migrate the ledger store to SQLite now", { origin: "user", optedOut: true })).toEqual({ kind: "withhold", reason: "opted-out" });
 		expect(screen("Migrate the ledger store to SQLite now", { origin: "child", optedOut: false })).toEqual({ kind: "withhold", reason: "child" });
 		expect(screen("Migrate the ledger store to SQLite now", { origin: "extension", optedOut: false })).toEqual({ kind: "withhold", reason: "extension" });
+		expect(screen("Migrate the ledger store to SQLite now", { origin: "system", optedOut: false })).toEqual({ kind: "withhold", reason: "system" });
+	});
+
+	test("turns the runtime starts are system prompts; a user mentioning them is not", () => {
+		expect(promptOrigin("<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>")).toBe("system");
+		expect(promptOrigin("\n  <task-notification>\n<task-id>b1</task-id>")).toBe("system");
+		expect(promptOrigin("Delegated task node:delegated-task:command%3Amcp%3Ax reached a terminal state. Use task_status with taskId x.")).toBe("system");
+		expect(promptOrigin("Why did the <task-notification> for the build arrive twice?")).toBe("user");
+		expect(promptOrigin("Delegated task review: please check the reviewer's findings")).toBe("user");
+		expect(promptOrigin("Migrate the ledger store to SQLite now")).toBe("user");
 	});
 
 	test("a prompt at the length limit is still sent", () => {

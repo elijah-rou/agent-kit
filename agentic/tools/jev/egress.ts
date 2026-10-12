@@ -112,9 +112,19 @@ export async function originSlug(cwd: string, timeoutMs = 2000): Promise<string 
 	return remote ? /^(?:https:\/\/|ssh:\/\/git@|git@)github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(remote)?.[1] : undefined;
 }
 
-/** Who wrote the text: the user, a child session's parent (a brief), or another extension. */
-export type Origin = "user" | "child" | "extension";
-export type Withheld = "child" | "extension" | "opted-out" | "not-a-task" | "unsafe-input";
+/** Who wrote the text: the user, a child session's parent (a brief), another extension, or the runtime itself. */
+export type Origin = "user" | "child" | "extension" | "system";
+export type Withheld = "child" | "extension" | "system" | "opted-out" | "not-a-task" | "unsafe-input";
+
+// Turns the runtime starts on its own arrive in prompt hooks as if typed: Claude Code's background-task
+// notifications, and T3 Code's wake-up when a delegated child finishes.
+const SYSTEM_PROMPTS = [/^<task-notification>/, /^Delegated task \S+ reached a terminal state\./];
+
+/** The origin of a prompt hook's text: "system" for a turn the runtime started, otherwise the user. */
+export function promptOrigin(prompt: string): "user" | "system" {
+	const text = prompt.trimStart();
+	return SYSTEM_PROMPTS.some((pattern) => pattern.test(text)) ? "system" : "user";
+}
 export type Screened = { kind: "send"; text: Sendable } | { kind: "withhold"; reason: Withheld };
 
 /** Whether a prompt may be sent, and the redacted text if so. The only place a Sendable is made. */

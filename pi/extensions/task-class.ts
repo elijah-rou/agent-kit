@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext, InputEvent } from "@earendil-works
 import { fileURLToPath } from "node:url";
 import { repoOf } from "../../agentic/tools/jev/egress.ts";
 import { appendRecord, routeTask } from "../../agentic/tools/jev/route-task.ts";
-import { parseAnswers, POLICY, QUESTIONS, type Classify } from "../../agentic/tools/jev/route.ts";
+import { parseAnswers, POLICY, QUESTIONS, type Classify, type Policy } from "../../agentic/tools/jev/route.ts";
 
 const SKILLS_DIR = fileURLToPath(new URL("../../skills", import.meta.url));
 const NOTE_TYPE = "agent-kit/task-route";
@@ -25,11 +25,11 @@ export function registryClassifier(registry: ExtensionContext["modelRegistry"]):
 }
 
 /** Routes and records one input as the user typed it; the note, if any. A failure only means no note. */
-async function routeInput(event: InputEvent, ctx: ExtensionContext): Promise<string | undefined> {
+async function routeInput(event: InputEvent, ctx: ExtensionContext, policy: Policy): Promise<string | undefined> {
 	try {
 		const origin = isNativeChild() ? "child" : event.source === "extension" ? "extension" : "user";
 		const input = { prompt: event.text, cwd: ctx.cwd, runtime: "pi" as const, sessionId: ctx.sessionManager.getSessionId(), origin, queued: event.streamingBehavior !== undefined } as const;
-		const deps = { policy: POLICY, classify: registryClassifier(ctx.modelRegistry), repo: repoOf, env: process.env, now: Date.now, skillsDir: SKILLS_DIR, ...(ctx.signal ? { signal: ctx.signal } : {}) };
+		const deps = { policy, classify: registryClassifier(ctx.modelRegistry), repo: repoOf, env: process.env, now: Date.now, skillsDir: SKILLS_DIR, ...(ctx.signal ? { signal: ctx.signal } : {}) };
 		const { note, record } = await routeTask(input, deps);
 		try {
 			appendRecord(record, process.env);
@@ -52,23 +52,28 @@ async function routeInput(event: InputEvent, ctx: ExtensionContext): Promise<str
 // queued while the agent works is recorded without a note: a queued message would be drained ahead
 // of its prompt. A note is a visible custom message, so the system prompt stays byte-stable for
 // the provider cache. This assumes no earlier extension transforms input; the only installed input
-// handler (pi-unveil) never does.
-export default function (pi: ExtensionAPI) {
-	let latest: { text: string; note: string | undefined } | undefined;
-	let inputs = 0;
+// handler (pi-unveil) never does. Pi loads the shipped policy; tests pass one with advisory notes,
+// since the shipped policy may deliver none.
+export function taskRoute(policy: Policy): (pi: ExtensionAPI) => void {
+	return (pi) => {
+		let latest: { text: string; note: string | undefined } | undefined;
+		let inputs = 0;
 
-	pi.on("input", async (event, ctx) => {
-		const input = ++inputs;
-		latest = undefined;
-		const note = await routeInput(event, ctx);
-		if (input === inputs) latest = { text: event.text, note };
-		return { action: "continue" };
-	});
+		pi.on("input", async (event, ctx) => {
+			const input = ++inputs;
+			latest = undefined;
+			const note = await routeInput(event, ctx, policy);
+			if (input === inputs) latest = { text: event.text, note };
+			return { action: "continue" };
+		});
 
-	pi.on("before_agent_start", (event) => {
-		const routed = latest;
-		latest = undefined;
-		if (routed?.note === undefined || routed.text !== event.prompt) return undefined;
-		return { message: { customType: NOTE_TYPE, content: routed.note, display: true } };
-	});
+		pi.on("before_agent_start", (event) => {
+			const routed = latest;
+			latest = undefined;
+			if (routed?.note === undefined || routed.text !== event.prompt) return undefined;
+			return { message: { customType: NOTE_TYPE, content: routed.note, display: true } };
+		});
+	};
 }
+
+export default taskRoute(POLICY);

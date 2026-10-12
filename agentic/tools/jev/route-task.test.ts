@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Repo } from "./egress.ts";
+import { promptOrigin, type Repo } from "./egress.ts";
 import { appendRecord, commandLabel, FIELD_MAX, ledgerFile, machineName, promptDigest, RECORD_MAX_BYTES, routeTask, type RouteDeps, type RouteInput, type RouteRecord } from "./route-task.ts";
 import { digestQuestion, doorNote, MODEL_NAME_MAX, POLICY, QUESTIONS, type Answers, type Calibration, type Classify, type Level, type Policy } from "./route.ts";
 
@@ -35,12 +35,32 @@ function harness(options: { answer?: Answers; classify?: Classify; repo?: Repo; 
 const input = (prompt: string, fields: Partial<RouteInput> = {}): RouteInput => ({ prompt, cwd: "/repo", runtime: "claude", sessionId: "s1", origin: "user", queued: false, ...fields });
 
 const calibrated: Calibration = { threshold: 0.9, questionsDigest: digestQuestion(QUESTIONS.level), model: "jev-1.13.0", samples: 200, positives: 20, precision: 0.95, recall: 0.8, date: "2026-10-30", source: "test" };
-const ADVISORY: Policy = { ...POLICY, notes: { ...POLICY.notes, lookup: { mode: "advisory", calibration: calibrated }, loop: { mode: "advisory", calibration: calibrated } } };
+const doorCalibrated: Calibration = { ...calibrated, threshold: 0.8, questionsDigest: digestQuestion(QUESTIONS.door) };
+const DOOR: Policy = { ...POLICY, notes: { ...POLICY.notes, door: { mode: "advisory", calibration: doorCalibrated } } };
+const ADVISORY: Policy = { ...DOOR, notes: { ...DOOR.notes, lookup: { mode: "advisory", calibration: calibrated }, loop: { mode: "advisory", calibration: calibrated } } };
 const oneWay = { choice: "one-way-door", confidence: 0.99 } as const;
 
 describe("routeTask", () => {
-	test("a one-way door gets the door note, while lookup and loop are only recorded", async () => {
-		const door = await routeTask(input(MIGRATE), harness({ answer: answers("rigor", 0.99, "one-way-door", 0.99) }).deps);
+	test("the shipped policy records every answer and delivers no note", async () => {
+		const { deps, calls } = harness({ answer: answers("rigor", 0.99, "one-way-door", 0.99) });
+		const shipped = await routeTask(input(MIGRATE), deps);
+		expect(calls.classify.length).toBe(1);
+		expect(shipped.note).toBeUndefined();
+		expect(shipped.record).toMatchObject({ advised: { level: "rigor", door: oneWay }, delivered: { level: "rigor" }, noted: false, fallbacks: [] });
+	});
+
+	test("a turn the runtime started is recorded as system and never sent", async () => {
+		for (const prompt of ["<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>", "Delegated task node:delegated-task:x reached a terminal state. Use task_status with taskId x."]) {
+			const { deps, calls } = harness({ answer: answers("rigor", 0.99, "one-way-door", 0.99), policy: ADVISORY });
+			const routed = await routeTask(input(prompt, { origin: promptOrigin(prompt) }), deps);
+			expect(calls.classify).toEqual([]);
+			expect(routed.note).toBeUndefined();
+			expect(routed.record).toMatchObject({ delivered: { level: "rigor" }, noted: false, fallbacks: ["system"] });
+		}
+	});
+
+	test("an advisory one-way door gets the door note, while lookup and loop are only recorded", async () => {
+		const door = await routeTask(input(MIGRATE), harness({ answer: answers("rigor", 0.99, "one-way-door", 0.99), policy: DOOR }).deps);
 		expect(door.note).toBe(doorNote(oneWay));
 		expect(door.record).toMatchObject({ advised: { level: "rigor", door: oneWay }, delivered: { level: "rigor", door: oneWay }, noted: true, fallbacks: [] });
 		const lookup = await routeTask(input("Where does the config loader read XDG paths from?"), harness({ answer: answers("lookup", 0.97) }).deps);

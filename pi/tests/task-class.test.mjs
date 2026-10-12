@@ -3,17 +3,23 @@ import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import register from "../extensions/task-class.ts";
+import register, { taskRoute } from "../extensions/task-class.ts";
+import { digestQuestion, POLICY, QUESTIONS } from "../../agentic/tools/jev/route.ts";
 
 const DOOR = {
   type: "choice", choice: "one-way-door", confidence: 0.99,
   probabilities: { reversible: 0, experiment: 0.01, "one-way-door": 0.99 },
 };
 const RIGOR = { type: "choice", choice: "rigor", confidence: 0.98, probabilities: { lookup: 0.01, rigor: 0.98, loop: 0.01 } };
+// The shipped policy delivers no note, so delivery is tested with an advisory door note.
+const DOOR_ADVISORY = {
+  ...POLICY,
+  notes: { ...POLICY.notes, door: { mode: "advisory", calibration: { threshold: 0.8, questionsDigest: digestQuestion(QUESTIONS.door), model: "jev-1.13.0", samples: 180, positives: 60, precision: 0.78, recall: 0.93, date: "2026-10-07", source: "test" } } },
+};
 
 // Drives the extension the way Pi does: input with the typed text, then the turn's start.
 // The extension reads the ledger location and the child flag from the process environment.
-function fixture({ classifier = {}, child = false, gate = undefined } = {}) {
+function fixture({ classifier = {}, child = false, gate = undefined, policy = DOOR_ADVISORY } = {}) {
   const state = mkdtempSync(join(tmpdir(), "pi-route-state-"));
   const cwd = mkdtempSync(join(tmpdir(), "pi-route-cwd-"));
   const requests = [];
@@ -27,7 +33,7 @@ function fixture({ classifier = {}, child = false, gate = undefined } = {}) {
     },
   };
   const handlers = new Map();
-  register({ on: (name, handler) => handlers.set(name, handler), sendMessage: (message, options) => sent.push({ message, options }) });
+  (policy === POLICY ? register : taskRoute(policy))({ on: (name, handler) => handlers.set(name, handler), sendMessage: (message, options) => sent.push({ message, options }) });
   const ctx = { cwd, modelRegistry: registry, sessionManager: { getSessionId: () => "pi-session" } };
   const withEnv = async (work) => {
     const saved = { XDG_STATE_HOME: process.env.XDG_STATE_HOME, PI_SUBAGENT_CHILD: process.env.PI_SUBAGENT_CHILD, AGENTIC_ROUTE: process.env.AGENTIC_ROUTE };
@@ -64,6 +70,14 @@ test("a typed prompt's note arrives at its turn as a visible message, and the pr
   const [record] = records();
   assert.equal(record.file, "pi-pi-session.jsonl");
   assert.deepEqual([record.runtime, record.repo, record.noted, record.answers.model], ["pi", "none", true, "jev-latest"]);
+});
+
+test("the shipped policy records the door answer and delivers no note", async () => {
+  const { input, start, records } = fixture({ policy: POLICY });
+  await input(MIGRATE);
+  assert.equal(await start(MIGRATE), undefined);
+  const [record] = records();
+  assert.deepEqual([record.advised.door?.choice, record.delivered, record.noted], ["one-way-door", { level: "rigor" }, false]);
 });
 
 test("a prompt queued while the agent works is recorded without a note, so nothing is drained ahead of it", async () => {

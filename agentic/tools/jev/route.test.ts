@@ -37,14 +37,16 @@ describe("decide", () => {
 });
 
 const calibrated = (threshold: number): Calibration => ({ threshold, questionsDigest: digestQuestion(QUESTIONS.level), model: "jev-1.13.0", samples: 200, positives: 20, precision: 0.95, recall: 0.8, date: "2026-10-30", source: "test" });
-const ADVISORY: Policy = { ...POLICY, notes: { ...POLICY.notes, lookup: { mode: "advisory", calibration: calibrated(0.9) }, loop: { mode: "advisory", calibration: calibrated(0.9) } } };
+const doorCalibrated: Calibration = { ...calibrated(0.8), questionsDigest: digestQuestion(QUESTIONS.door) };
+const ADVISORY: Policy = { ...POLICY, notes: { door: { mode: "advisory", calibration: doorCalibrated }, lookup: { mode: "advisory", calibration: calibrated(0.9) }, loop: { mode: "advisory", calibration: calibrated(0.9) } } };
 const door = { choice: "one-way-door", confidence: 0.99 } as const;
 
 describe("applyModes", () => {
-	test("delivers only advisory notes: lookup and loop start in shadow, the door note acts", () => {
+	test("delivers only advisory notes: the shipped policy holds every note in shadow", () => {
 		expect(applyModes({ level: "lookup" }, POLICY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
-		expect(applyModes({ level: "loop", door }, POLICY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor", door } });
-		expect(applyModes({ level: "rigor", door }, POLICY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor", door } });
+		expect(applyModes({ level: "loop", door }, POLICY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
+		expect(applyModes({ level: "rigor", door }, POLICY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
+		expect(applyModes({ level: "rigor", door }, ADVISORY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor", door } });
 		expect(applyModes({ level: "lookup" }, ADVISORY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "lookup" } });
 		expect(applyModes({ level: "loop", door }, ADVISORY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "loop", door } });
 	});

@@ -6,12 +6,12 @@
 // request never supplies its own verifier.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { basename, join, resolve } from "node:path";
 
 const KIT_DIR = resolve(import.meta.dir, "..");
-const KIT_CHECKOUT = resolve(KIT_DIR, "../../..");
+const KIT_CHECKOUT = realpathSync(resolve(KIT_DIR, "../../.."));
 const CLI = ".agents/skills/verify-agent-kit/scripts/verify-kit";
 const RUNS_ROOT = join(tmpdir(), "verify-agent-kit");
 const EVIDENCE_ROOT = join(process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "verify-agent-kit", "evidence");
@@ -269,9 +269,11 @@ function sameList(actual: readonly string[] | undefined, expected: readonly stri
 
 function launch(args: string[]): string {
 	const checkoutArg = option(args, "--checkout");
-	const checkout = checkoutArg === undefined ? KIT_CHECKOUT : resolve(checkoutArg);
-	if (!existsSync(join(checkout, "agentic/bin/agentic"))) throw new Usage(`${checkout} is not an agent-kit checkout (no agentic/bin/agentic); pass --checkout with one`);
-	if (git(["rev-parse", "--show-toplevel"], checkout) !== checkout) throw new Usage(`${checkout} is not the top of its git checkout; pass its root to --checkout`);
+	const requested = checkoutArg === undefined ? KIT_CHECKOUT : resolve(checkoutArg);
+	if (!existsSync(join(requested, "agentic/bin/agentic"))) throw new Usage(`${requested} is not an agent-kit checkout (no agentic/bin/agentic); pass --checkout with one`);
+	// Compare real paths: on macOS /tmp is a link to /private/tmp, and git reports the resolved top.
+	const checkout = realpathSync(requested);
+	if (realpathSync(git(["rev-parse", "--show-toplevel"], checkout)) !== checkout) throw new Usage(`${checkout} is not the top of its git checkout; pass its root to --checkout`);
 	if (args.includes("--install")) {
 		const install = sh(["bun", "install", "--frozen-lockfile"], { cwd: checkout });
 		if (install.status !== 0) throw new Error(`bun install --frozen-lockfile failed in ${checkout}: ${install.stderr.trim()}`);

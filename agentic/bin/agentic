@@ -6,6 +6,7 @@
  *   upstream-drift   report upstream changes since each adapted skill's recorded commit (tools/upstream-drift)
  *   verify           record or check a fresh verifier's verdict for a pull request (tools/verify)
  *   jev              advisory Jev calls: PR risk for the ship mode, task routing for prompt hooks (tools/jev)
+ *   pr-feedback      read-only: a pull request's review threads, checks, and readiness (tools/pr-feedback)
  *   orch             program store and verdict ledger, vendored from pstack (vendor/orch)
  *   watch-pr         pull request and stack watcher, vendored from pstack (vendor/watch-pr)
  */
@@ -16,6 +17,7 @@ const TOOLS: Record<string, string> = {
 	"upstream-drift": "tools/upstream-drift/cli.ts",
 	verify: "tools/verify/cli.ts",
 	jev: "tools/jev/cli.ts",
+	"pr-feedback": "tools/pr-feedback/cli.ts",
 	orch: "vendor/orch/orch.ts",
 	"watch-pr": "vendor/watch-pr/watch-pr",
 };

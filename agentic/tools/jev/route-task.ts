@@ -18,6 +18,8 @@ export type RouteInput = {
 	sessionId: string;
 	/** Only the user's own words are classified; a child's brief or another extension's text is recorded but never sent. */
 	origin: Origin;
+	/** Typed while the agent works: a note could not reach this prompt's own turn, so it is classified and recorded only. */
+	queued: boolean;
 };
 export type RouteDeps = {
 	policy: Policy;
@@ -31,7 +33,7 @@ export type RouteDeps = {
 	signal?: AbortSignal;
 };
 
-export type Fallback = Withheld | ClassifyFailure | "off" | "explicit-choice" | "conflict" | "low-confidence" | "model-drift" | "skill-missing";
+export type Fallback = Withheld | ClassifyFailure | "off" | "explicit-choice" | "queued" | "conflict" | "low-confidence" | "model-drift" | "skill-missing";
 
 export type RouteRecord = {
 	v: 1;
@@ -59,6 +61,11 @@ export type RouteRecord = {
 /** Every variable-length field is cut to these lengths, so a record of any accepted input fits RECORD_MAX_BYTES. */
 export const FIELD_MAX = { machine: 63, session: 128, repo: 140, explicit: 64 } as const;
 
+/** Keeps a record's strings to characters JSON writes as one byte each, cut to max. */
+function recordText(text: string, max: number): string {
+	return text.replace(/[^A-Za-z0-9._:/-]/g, "_").slice(0, max);
+}
+
 /** A typed command for the record: an agent-kit skill's name, or "other", so a record never carries typed text. */
 export function commandLabel(command: string, skillsDir: string): string {
 	const name = command.startsWith("skill:") ? command.slice("skill:".length) : command;
@@ -72,7 +79,7 @@ export function promptDigest(prompt: string): string {
 
 /** The short, lowercased host name, such as bananamac: the machine the agent runs on. */
 export function machineName(): string {
-	const name = (hostname().split(".")[0] ?? "").toLowerCase().slice(0, FIELD_MAX.machine);
+	const name = recordText((hostname().split(".")[0] ?? "").toLowerCase(), FIELD_MAX.machine);
 	return name.length > 0 ? name : "unknown";
 }
 
@@ -90,10 +97,10 @@ export async function routeTask(input: RouteInput, deps: RouteDeps): Promise<{ n
 		machine: machineName(),
 		runtime: input.runtime,
 		launcher: deps.env.T3CODE_CLI_PATH ? "t3" : "direct",
-		session: input.sessionId.slice(0, FIELD_MAX.session),
-		repo: repo.slug.slice(0, FIELD_MAX.repo),
+		session: recordText(input.sessionId, FIELD_MAX.session),
+		repo: recordText(repo.slug, FIELD_MAX.repo),
 		optedOut: repo.optedOut,
-		...(explicit ? { explicit: commandLabel(explicit.command, deps.skillsDir).slice(0, FIELD_MAX.explicit) } : {}),
+		...(explicit ? { explicit: recordText(commandLabel(explicit.command, deps.skillsDir), FIELD_MAX.explicit) } : {}),
 		mode,
 		words: input.prompt.trim().split(/\s+/).filter(Boolean).length,
 		chars: input.prompt.length,
@@ -117,6 +124,7 @@ export async function routeTask(input: RouteInput, deps: RouteDeps): Promise<{ n
 	const decision = decide(answers, policy);
 	const fallbacks: Fallback[] = decision.fallback ? [decision.fallback] : [];
 	if (explicit) return { record: record({ answers, advised: decision.advised, delivered: rigor, fallbacks: [...fallbacks, "explicit-choice"] }) };
+	if (input.queued) return { record: record({ answers, advised: decision.advised, delivered: rigor, fallbacks: [...fallbacks, "queued"] }) };
 
 	const delivery = applyModes(decision.advised, policy, mode, answers.model);
 	if (delivery.fallback) fallbacks.push(delivery.fallback);

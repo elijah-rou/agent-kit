@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import register, { NOTE_TTL_MS } from "../extensions/task-class.ts";
+import register from "../extensions/task-class.ts";
 
 const DOOR = {
   type: "choice", choice: "one-way-door", confidence: 0.99,
@@ -37,7 +37,7 @@ function fixture({ classifier = {}, child = false } = {}) {
     }
   };
   const input = (text, fields = {}) => withEnv(() => handlers.get("input")({ type: "input", text, source: "interactive", ...fields }, ctx));
-  const start = (prompt = "EXPANDED") => withEnv(() => handlers.get("before_agent_start")({ prompt, systemPrompt: "BASE" }, ctx));
+  const start = (prompt) => withEnv(() => handlers.get("before_agent_start")({ prompt, systemPrompt: "BASE" }, ctx));
   const records = () => {
     const root = join(state, "agentic", "task-route");
     return readdirSync(root).flatMap((machine) => readdirSync(join(root, machine)).flatMap((file) => readFileSync(join(root, machine, file), "utf8").trimEnd().split("\n").map((line) => ({ file, ...JSON.parse(line) }))));
@@ -50,44 +50,43 @@ const MIGRATE = "Migrate the ledger store to SQLite and convert old rows";
 test("a typed prompt's note arrives at its turn as a visible message, and the prompt is recorded", async () => {
   const { input, start, requests, records } = fixture();
   assert.deepEqual(await input(MIGRATE), { action: "continue" });
-  const result = await start();
+  const result = await start(MIGRATE);
   assert.equal(result.systemPrompt, undefined);
   assert.equal(result.message.customType, "agent-kit/task-route");
   assert.equal(result.message.display, true);
   assert.match(result.message.content, /^Task-class hint, advisory: Jev classifies it as a one-way door \(confidence 0\.99\)\./);
-  assert.equal(await start(), undefined, "a note is delivered once");
+  assert.equal(await start(MIGRATE), undefined, "a note is delivered once");
   assert.deepEqual(requests.map((r) => [r.state, Object.keys(r.questions)]), [[{ task: MIGRATE }, ["door", "level"]]]);
   const [record] = records();
   assert.equal(record.file, "pi-pi-session.jsonl");
   assert.deepEqual([record.runtime, record.repo, record.noted, record.answers.model], ["pi", "none", true, "jev-latest"]);
 });
 
-test("a prompt queued while the agent works is recorded, and its note is queued the same way", async () => {
+test("a prompt queued while the agent works is recorded without a note, so nothing is drained ahead of it", async () => {
   const { input, start, sent, records } = fixture();
   await input(MIGRATE, { streamingBehavior: "steer" });
-  assert.deepEqual(sent.map((s) => [s.message.customType, s.options]), [["agent-kit/task-route", { deliverAs: "steer" }]]);
-  assert.equal(await start(), undefined, "the queued note is not delivered again");
-  assert.equal(records().length, 1);
+  assert.equal(sent.length, 0);
+  assert.equal(await start(MIGRATE), undefined);
+  assert.deepEqual(records().map((r) => [r.fallbacks, r.noted]), [[["queued"], false]]);
 });
 
-test("a note older than its time to live is not delivered to a later turn", async () => {
+test("a note reaches only the turn of the prompt that produced it", async () => {
   const { input, start } = fixture();
+  const other = "Rename the export command's flags and update the docs";
   await input(MIGRATE);
-  const now = Date.now;
-  Date.now = () => now() + NOTE_TTL_MS + 1;
-  try {
-    assert.equal(await start(), undefined);
-  } finally {
-    Date.now = now;
-  }
+  await input(other);
+  assert.equal(await start("an unrelated turn started by another extension"), undefined);
+  assert.match((await start(other)).message.content, /one-way door/);
+  assert.match((await start(MIGRATE)).message.content, /one-way door/);
+  assert.equal(await start(MIGRATE), undefined);
 });
 
 test("a typed command, skill or template, is the user's choice: only its arguments are classified, and nothing is delivered", async () => {
   const { input, start, requests, records } = fixture();
   await input("/skill:background-run keep fixing the flaky tests until CI is green");
-  assert.equal(await start(), undefined);
+  assert.equal(await start("EXPANDED SKILL"), undefined);
   await input("/worktree start the parser rewrite in a fresh tree");
-  assert.equal(await start(), undefined);
+  assert.equal(await start("EXPANDED TEMPLATE"), undefined);
   assert.deepEqual(requests.map((r) => r.state), [{ task: "keep fixing the flaky tests until CI is green" }, { task: "start the parser rewrite in a fresh tree" }]);
   assert.deepEqual(records().map((r) => [r.explicit, r.fallbacks]), [["background-run", ["explicit-choice"]], ["other", ["explicit-choice"]]]);
 });
@@ -100,7 +99,7 @@ test("without a TypeSafe classifier, from a child session, or from another exten
   ];
   for (const [{ input, start, requests, records }, fields, reason] of cases) {
     await input(MIGRATE, fields);
-    assert.equal(await start(), undefined);
+    assert.equal(await start(MIGRATE), undefined);
     assert.equal(requests.length, 0, reason);
     assert.deepEqual(records().map((r) => r.fallbacks), [[reason]]);
   }

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { isPublic, isTask, sendable } from "./egress.ts";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { checkoutRoot, httpClassifier, isPublic, isTask, MAX_TASK_CHARS, OPT_OUT_FILE, repoOf, screen, sendable, type FetchLike } from "./egress.ts";
+import { QUESTIONS, type Sendable } from "./route.ts";
 import { seededCache } from "./testing.ts";
 
 describe("what leaves the machine", () => {
@@ -32,5 +36,93 @@ describe("what leaves the machine", () => {
 		const fresh = seededCache("o/r", { visibility: "PUBLIC", at: Date.now() });
 		expect(await isPublic("o/r", { env: fresh, timeoutMs: 0 })).toBe(true);
 		expect(await isPublic("o/r", { env: fresh, fresh: true, timeoutMs: 0 })).toBe(false);
+	});
+});
+
+describe("the task screen", () => {
+	const anywhere = { child: false, optedOut: false };
+
+	test("sends a task-sized prompt, redacted, and withholds everything else with its reason", () => {
+		expect(screen(`  Migrate the ledger store to SQLite under ${"/" + "Users/someone"}/app  `, anywhere)).toEqual({ kind: "send", text: "Migrate the ledger store to SQLite under ~/app" as Sendable });
+		expect(screen("yes, continue", anywhere)).toEqual({ kind: "withhold", reason: "not-a-task" });
+		expect(screen(`Fix the build from this log: ${"x".repeat(MAX_TASK_CHARS)}`, anywhere)).toEqual({ kind: "withhold", reason: "unsafe-input" });
+		expect(screen(`rotate the deploy token ${"ghp_" + "c".repeat(30)} today please`, anywhere)).toEqual({ kind: "withhold", reason: "unsafe-input" });
+		expect(screen("Migrate the ledger store to SQLite now", { child: false, optedOut: true })).toEqual({ kind: "withhold", reason: "opted-out" });
+		expect(screen("Migrate the ledger store to SQLite now", { child: true, optedOut: false })).toEqual({ kind: "withhold", reason: "child" });
+	});
+
+	test("a prompt at the length limit is still sent", () => {
+		const prompt = `Fix the build ${"y".repeat(MAX_TASK_CHARS - 20)} a b c`;
+		expect(prompt.length).toBeLessThanOrEqual(MAX_TASK_CHARS);
+		expect(screen(prompt, anywhere).kind).toBe("send");
+	});
+});
+
+describe("the repository a prompt was typed in", () => {
+	function checkout(optOut: boolean): { root: string; nested: string } {
+		const root = mkdtempSync(join(tmpdir(), "jev-repo-"));
+		mkdirSync(join(root, ".git"));
+		const nested = join(root, "src", "deep");
+		mkdirSync(nested, { recursive: true });
+		if (optOut) {
+			mkdirSync(join(root, ".agents"));
+			writeFileSync(join(root, OPT_OUT_FILE), "");
+		}
+		return { root, nested };
+	}
+
+	test("the opt-out file at the checkout root covers every directory below it", async () => {
+		const opted = checkout(true);
+		expect(checkoutRoot(opted.nested)).toBe(opted.root);
+		expect(await repoOf(opted.nested, 1000)).toEqual({ slug: "other", optedOut: true });
+		const open = checkout(false);
+		expect(await repoOf(open.nested, 1000)).toEqual({ slug: "other", optedOut: false });
+	});
+
+	test("a directory outside any checkout is sent as repository none", async () => {
+		const outside = mkdtempSync(join(tmpdir(), "jev-outside-"));
+		expect(checkoutRoot(outside)).toBeUndefined();
+		expect(await repoOf(outside, 1000)).toEqual({ slug: "none", optedOut: false });
+	});
+});
+
+describe("Jev over HTTP", () => {
+	const state = { task: "Migrate the ledger store to SQLite" as Sendable };
+	const answer = {
+		door: { type: "choice", choice: "one-way-door", confidence: 0.99, probabilities: { reversible: 0, experiment: 0.01, "one-way-door": 0.99 } },
+		level: { type: "choice", choice: "rigor", confidence: 0.98, probabilities: { lookup: 0.01, rigor: 0.98, loop: 0.01 } },
+	};
+	const live = () => new AbortController().signal;
+
+	test("sends both questions in one request with the task as state", async () => {
+		let sent: { url: string; body: unknown; auth: string | null } | undefined;
+		const fetch: FetchLike = async (url, init) => {
+			sent = { url, body: JSON.parse(String(init.body)), auth: new Headers(init.headers).get("Authorization") };
+			return new Response(JSON.stringify({ model: "jev-1.13.0", answers: answer }));
+		};
+		const outcome = await httpClassifier(async () => "test-key", fetch)(state, live());
+		expect(sent).toEqual({ url: "https://api.typesafe.ai/v1/systemone", body: { model: "jev-latest", state: { task: "Migrate the ledger store to SQLite" }, questions: JSON.parse(JSON.stringify(QUESTIONS)) }, auth: "Bearer test-key" });
+		expect(outcome).toMatchObject({ kind: "answered", answers: { door: { choice: "one-way-door" }, level: { choice: "rigor" }, model: "jev-1.13.0" } });
+	});
+
+	test("no key, an HTTP error, a malformed body, a timeout, or a cancel is a failure, never a throw", async () => {
+		let calls = 0;
+		const counted: FetchLike = async () => (calls++, new Response("{}"));
+		expect(await httpClassifier(async () => undefined, counted)(state, live())).toEqual({ kind: "failed", reason: "classifier-unavailable" });
+		expect(calls).toBe(0);
+		expect(await httpClassifier(async () => "k", async () => new Response("{}", { status: 429 }))(state, live())).toEqual({ kind: "failed", reason: "error" });
+		expect(await httpClassifier(async () => "k", async () => new Response(JSON.stringify({ model: "jev-1.13.0", answers: { door: answer.door } })))(state, live())).toEqual({ kind: "failed", reason: "malformed" });
+		expect(await httpClassifier(async () => "k", async () => new Response("not json"))(state, live())).toEqual({ kind: "failed", reason: "error" });
+		const hanging: FetchLike = (_url, init) =>
+			new Promise((_, reject) => {
+				// Like fetch: an already-aborted signal rejects at once.
+				if (init.signal?.aborted) reject(init.signal.reason);
+				init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+			});
+		expect(await httpClassifier(async () => "k", hanging)(state, AbortSignal.timeout(20))).toEqual({ kind: "failed", reason: "timeout" });
+		const controller = new AbortController();
+		const pending = httpClassifier(async () => "k", hanging)(state, controller.signal);
+		controller.abort();
+		expect(await pending).toEqual({ kind: "failed", reason: "cancelled" });
 	});
 });

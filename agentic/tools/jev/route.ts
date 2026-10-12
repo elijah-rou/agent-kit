@@ -34,7 +34,16 @@ export const QUESTIONS = {
 export type QuestionId = keyof typeof QUESTIONS;
 
 export type ChoiceAnswer<C extends string> = { choice: C; confidence: number };
-export type Answers = { door: ChoiceAnswer<DoorClass>; level: ChoiceAnswer<Level>; model: string };
+/** An answer as Jev gives it; records keep the probabilities so thresholds can be replayed. */
+export type ScoredAnswer<C extends string> = ChoiceAnswer<C> & { probabilities: Record<C, number> };
+export type Answers = { door: ScoredAnswer<DoorClass>; level: ScoredAnswer<Level>; model: string };
+
+/** The task text, screened and redacted. Only egress.ts mints it. */
+export type Sendable = string & { readonly sendable: unique symbol };
+export type ClassifyFailure = "classifier-unavailable" | "timeout" | "cancelled" | "error" | "malformed";
+export type ClassifyOutcome = { kind: "answered"; answers: Answers } | { kind: "failed"; reason: ClassifyFailure };
+/** One request asking QUESTIONS about the state. Never rejects: every failure is an outcome. */
+export type Classify = (state: { task: Sendable }, signal: AbortSignal) => Promise<ClassifyOutcome>;
 
 export type DoorNote = ChoiceAnswer<DoorClass>;
 /** A lookup carries no door: "a lookup that might be a one-way door" is not a route. */
@@ -202,4 +211,32 @@ function canonical(value: unknown): unknown {
 /** 16 hex digits identifying a question's exact type and wording, independent of key order. */
 export function digestQuestion(question: { type: string; instructions: string; criteria: Readonly<Record<string, string>> }): string {
 	return createHash("sha256").update(JSON.stringify(canonical(question))).digest("hex").slice(0, 16);
+}
+
+const isProbability = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1;
+
+function scored<C extends string>(raw: unknown, choices: readonly C[]): ScoredAnswer<C> | undefined {
+	if (typeof raw !== "object" || raw === null) return undefined;
+	const { type, choice, confidence, probabilities } = raw as Record<string, unknown>;
+	if (type !== "choice" || !choices.includes(choice as C) || !isProbability(confidence)) return undefined;
+	if (typeof probabilities !== "object" || probabilities === null) return undefined;
+	const table = probabilities as Record<string, unknown>;
+	if (!choices.every((option) => isProbability(table[option]))) return undefined;
+	return { choice: choice as C, confidence, probabilities: Object.fromEntries(choices.map((option) => [option, table[option]])) as Record<C, number> };
+}
+
+/** Both transports' answers, validated: the HTTP body and Pi's ClassifierResult share this shape. */
+export function parseAnswers(model: unknown, answers: unknown): Answers | undefined {
+	if (typeof model !== "string" || model.length === 0 || typeof answers !== "object" || answers === null) return undefined;
+	const raw = answers as Record<string, unknown>;
+	const door = scored(raw.door, Object.keys(TASK_CRITERIA) as DoorClass[]);
+	const level = scored(raw.level, Object.keys(LEVEL_CRITERIA) as Level[]);
+	return door && level ? { door, level, model } : undefined;
+}
+
+/** A leading slash command (`/name`, `/skill:name`) or skill mention (`$skill-name`) is the user's own choice of mode. */
+export function explicitCommand(prompt: string): { command: string; rest: string } | undefined {
+	const match = /^\s*(?:\/([A-Za-z][\w:.-]*)|\$([a-z][a-z0-9-]*))(?:\s+([\s\S]*))?$/.exec(prompt);
+	if (!match) return undefined;
+	return { command: match[1] ?? match[2], rest: (match[3] ?? "").trim() };
 }

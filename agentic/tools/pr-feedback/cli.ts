@@ -7,7 +7,9 @@ Read-only. Collects a pull request's actionable feedback: state, draft, mergeabi
 decision; review threads, review summaries, and top-level comments, with bot authors marked; check
 runs and commit statuses on the exact head SHA, with annotations of failed check runs. Prints the
 readiness, the blockers, and every retrieval gap (truncation, inaccessible checks, unknown fields).
-Without a PR, it uses the pull request for the current branch.
+Without a PR, it asks gh for the current branch's pull request, matched through the branch's own
+remote; with --repo, it takes the one open pull request from a branch of that name in that
+repository. A pull request from someone else's fork is never picked.
 
   --repo owner/name    the repository (default: the URL's, or gh's repository for this checkout)
   --include-resolved   also show resolved review threads

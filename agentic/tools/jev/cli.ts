@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { apiKey, httpClassifier, isPublic, originSlug, OPT_OUT_FILE, repoOf, sendable } from "./egress.ts";
+import { apiKey, httpClassifier, isPublic, originSlug, OPT_OUT_FILE, promptOrigin, repoOf, sendable } from "./egress.ts";
 import { HOLD_ABOVE, prDecision, prRisk, prState } from "./pr-risk.ts";
 import { appendRecord, routeTask, type RouteDeps, type Runtime } from "./route-task.ts";
 import { POLICY } from "./route.ts";
@@ -36,7 +36,8 @@ function routeDeps(env: Record<string, string | undefined>): RouteDeps {
 async function promptHook(runtime: Runtime): Promise<void> {
 	const event: unknown = JSON.parse(await Bun.stdin.text());
 	const field = (name: string) => (typeof event === "object" && event !== null && typeof (event as Record<string, unknown>)[name] === "string" ? ((event as Record<string, unknown>)[name] as string) : undefined);
-	const input = { prompt: field("prompt") ?? "", cwd: field("cwd") ?? process.cwd(), runtime, sessionId: field("session_id") ?? "unknown", origin: "user" as const, queued: false };
+	const prompt = field("prompt") ?? "";
+	const input = { prompt, cwd: field("cwd") ?? process.cwd(), runtime, sessionId: field("session_id") ?? "unknown", origin: promptOrigin(prompt), queued: false };
 	const { note, record } = await routeTask(input, routeDeps(process.env));
 	if (note) console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: note } }));
 	appendRecord(record, process.env);

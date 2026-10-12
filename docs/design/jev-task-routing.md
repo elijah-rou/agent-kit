@@ -1,8 +1,8 @@
 # Jev task routing
 
-- **Status:** proposed 2026-10-12. All open questions except 6 were decided on 2026-10-12, Pi's transport was changed to its classifier registry, and every prompt in every runtime is now recorded (see Tracking across everything). Nothing is built.
+- **Status:** proposed 2026-10-12. All open questions were decided on 2026-10-12, Pi's transport was changed to its classifier registry, and every prompt in every runtime on every machine is now recorded (see Tracking across everything). Nothing is built.
 - **Reader:** the user reviewing the shape, then whoever implements it.
-- **Door:** this design changes ADR 0001 decision 5 ("Jev is advisory and only adds caution"), the rule for which task text leaves the machine, and a policy and decision-record format that both runtimes share. The question wording, thresholds, note text, and adapters around those are reversible.
+- **Door:** this design changes ADR 0001 decision 5 ("Jev is advisory and only adds caution"), the rule for which task text leaves the machine, and a policy that every runtime shares. The question wording, thresholds, note text, and adapters around those are reversible. So is the record format: the ledger is a temporary evaluation instrument, not a contract, and a format change may drop old records.
 
 ## Problem
 
@@ -145,9 +145,9 @@ Every failure delivers nothing beyond what the door rule allows, writes one reco
 
 - **Modes per note.** `door` is advisory (today's behavior). `lookup` and `loop` start in shadow, which records what they would have done.
 - **A note can't act without evidence.** Advisory mode requires a `Calibration`. It holds the threshold, the model, sample and positive counts, precision, recall, the date, and a digest of the exact question wording. A test fails when the wording changes and the digest no longer matches, which turns `jev.ts`'s comment "changing either wording means recalibrating" into a check. Flipping a note to advisory is a reviewed commit that adds its `Calibration`.
-- **Records hold answers, not text.** Each session appends to `$XDG_STATE_HOME/agentic/task-route/<runtime>-<session>.jsonl`, one line of under 1 KiB per prompt. A line holds the raw answers (choice, confidence, probabilities, model), the advised and delivered routes, modes, fallback, latency, word and character counts, and a 16-hex digest of the prompt. It never holds task text. Each file has one writer, and the reader merges files and dedupes. Because `decide` is pure, a new threshold can be replayed over stored answers without new requests.
+- **Records hold answers, not text.** Each session appends to `$XDG_STATE_HOME/agentic/task-route/<machine>/<runtime>-<session>.jsonl`, one line of under 1 KiB per prompt. A line holds the raw answers (choice, confidence, probabilities, model), the advised and delivered routes, modes, fallback, latency, word and character counts, and a 16-hex digest of the prompt. It never holds task text. Each file has one writer, and the reader merges files and dedupes. Because `decide` is pure, a new threshold can be replayed over stored answers without new requests.
 - **Labels come from the user's own history.**
-  - `route-harvest` joins records to local Claude, Codex, and Pi transcripts by digest. It writes candidates to an ignored local file and skips opted-out repositories. Text stays on the machine where it was typed.
+  - `route-harvest` joins records to local Claude, Codex, and Pi transcripts by digest. It writes candidates to an ignored local file and skips opted-out repositories. Text stays on the machine whose agent received it. The user's labels are stored by digest, without text, in that machine's ledger directory, so they travel with its records.
   - Sessions where the user typed `/background-run` supply loop positives.
   - The user labels 150 to 200 prompts, about an hour.
   - The 2026-10-07 calibration samples were never committed, so this rebuilds them.
@@ -176,7 +176,7 @@ The two-week review of `background-run` (open question 3) only means something i
 
 - `runtime`: `claude`, `codex`, or `pi`;
 - `launcher`: `t3` or `direct`;
-- `machine`: a random ID created once per machine;
+- `machine`: the short host name of the machine the agent runs on, such as `bananamac`;
 - `repo`: `owner/name`, or `none` outside a repository;
 - `optedOut`;
 - `explicit`: the command name, when one was typed.
@@ -196,6 +196,13 @@ They still never hold task text.
 - Coverage under 100% for a runtime means a broken writer, not missing data, and the report says which.
 - Codex documents its transcript format as unstable, so its transcript reader is covered by a fixture test.
 
+**Machines.** Agents run on two machines, so each machine holds only part of the data. Today that is `bananamac`. Later, `bananaarch` is added: an always-on Linux machine that will run most of the work with this same setup. `bananamac` will drive T3 threads on it over Tailscale and still run threads of its own. A record names the machine the agent runs on, so a T3 thread typed on `bananamac` but running on `bananaarch` counts as `bananaarch`.
+
+- Coverage needs transcripts, which hold text, so each machine checks its own. `route-report` writes that machine's result, as counts without text, to `coverage.json` in its own ledger directory.
+- `agentic jev route-sync <host>` copies this machine's ledger directory, including `coverage.json` and its labels, to the same path on `<host>` over SSH. Only the machine's own directory is copied, and it has one writer, so a copy never conflicts. Nothing goes to a third party.
+- `bananaarch` is always on, so it is the collection point. `route-report` there covers every machine directory it holds and names each copied machine with its last sync time, so stale data shows as stale instead of disappearing.
+- Setting up `bananaarch` needs the TypeSafe key on Linux. `apiKey` reads only `TYPESAFE_API_KEY` and the macOS keychain, so a Linux store is chosen when that machine is set up. Pi there uses its own registry credential.
+
 ### Module map
 
 The main flow is three files deep: the adapter, then `route.ts`, then `egress.ts`.
@@ -206,7 +213,7 @@ The main flow is three files deep: the adapter, then `route.ts`, then `egress.ts
 | `agentic/tools/jev/route.ts` | Policy `task-route@1`: `QUESTIONS`, `POLICY`, `decide`, `applyModes`, `noteFor`, `routeTask`, `RouteRecord` | new |
 | `agentic/tools/jev/route-eval.ts` | `harvest`, `score`, and a report without text | new |
 | `agentic/tools/jev/pr-risk.ts` | the PR-risk question, threshold, and state | the rest of `jev.ts` |
-| `agentic/tools/jev/cli.ts` | `task-class --claude-hook` (unchanged command), `task-class --codex-hook`, `pr-risk`, `route-harvest`, `route-eval`, `route-report` | edited |
+| `agentic/tools/jev/cli.ts` | `task-class --claude-hook` (unchanged command), `task-class --codex-hook`, `pr-risk`, `route-harvest`, `route-eval`, `route-report`, `route-sync` | edited |
 | `pi/extensions/task-class.ts` | the Pi adapter above, including `registryClassifier`, which parses Pi's `ClassifierAnswer` into the shared answer shape | rewritten in place |
 | `docs/adr/0002-task-routing.md` | amends ADR 0001 decision 5 | new |
 
@@ -308,10 +315,8 @@ These are for the user. Each has a recommendation and the default taken if there
 3. **`background-run`:** keep it manual and reached through the loop note, or make it model-invocable? Decided: keep it manual. It is revisited after two weeks with `route-report`, which only works because every runtime records (see Tracking across everything).
 4. **The acting bars** above. Decided: as written.
 5. **Labeling time:** about an hour for 150 to 200 harvested prompts, after about two weeks of shadow records. Decided: yes.
-6. **Machines.** Records hold no text, so ledgers from several machines can combine.
-   - Options: (a) a report per machine; (b) a `route-sync` command that copies each machine's ledger directory into a private repository the user owns.
-   - Recommendation: (b) if agents run on more than one machine. Default: (a). Machine IDs are in the format from the start, so (b) can be added later without changing it.
+6. **Machines.** Decided: agents will run on both `bananamac` and `bananaarch`. Each machine checks its own coverage, and `route-sync` copies its directory to `bananaarch` over SSH, not to a repository (see Machines under Tracking across everything).
 
 ## First implementation step
 
-Slice 1 is offline and changes no live behavior. Split `jev.ts` into `egress.ts` and `pr-risk.ts`, moving the tests unchanged. Then write `route.ts`'s pure core with tests for the decision table, the runtime-neutral note text, and "advisory requires a matching digest". Slice 2 switches both adapters to `routeTask`, with `lookup` and `loop` in shadow, after re-verifying the door bar on the combined request.
+Slice 1 is offline and changes no live behavior. Split `jev.ts` into `egress.ts` and `pr-risk.ts`, moving the tests unchanged. Then write `route.ts`'s pure core with tests for the decision table, the runtime-neutral note text, and "advisory requires a matching digest". Slice 2 switches the Claude, Codex, and Pi adapters to `routeTask` and starts the ledger, with `lookup` and `loop` in shadow, after re-verifying the door bar on the combined request. Slice 3 adds `route-report` and `route-sync`. `route-harvest` and `route-eval` follow once two weeks of records exist.

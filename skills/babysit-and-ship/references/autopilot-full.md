@@ -10,10 +10,10 @@ You own the verdicts, never the PRs. One owner carries each PR from build to mer
 
 ## 2. Spawn one owner per PR
 
-Each owner is a child launched with the `autopilot-owner` role, the only child role the harness's guards let publish. Brief it with the item, its worktree and `agent/<topic>` branch off current trunk, and this lifecycle:
+Each owner is a child launched with the `autopilot-owner` role, the only child role allowed to publish. Brief it with the item, its worktree and `agent/<topic>` branch off current trunk, and this lifecycle:
 
 1. Build the change in thin verified units, pushing the branch after each one. Open the PR ready for review (not draft) after the first push, with the body from `pr-body.md`, so the URL and checks form a trail early. Its adversarial review comes from the coordinator's verification rounds (section 3), not from a reviewer you spawn.
-2. Keep its own decision log (`show-me-your-work`), uncommitted, and return it with its reports.
+2. Keep its own decision log (`show-me-your-work`), uncommitted, and return it with its reports. The owner launches no children, so the coordinator's Attention review covers this log.
 3. Prove the change on the real artifact with the repository's verification skill, before reporting it code-ready.
 4. Rebase onto current trunk once before the code-ready report. After that, rebase again only at merge prep, on a conflict with trunk, or on a CI failure caused by a trunk change. Publish a rebase only to its own branch: first check that `git ls-remote origin <branch>` still shows the head it last pushed (if not, someone else wrote to the branch; stop and report), then push with `git push --force-with-lease=<branch>:<that head>`.
 5. Report code-ready with the head SHA. Then babysit to green (sections 2 to 4 of `babysit-and-ship`, with `agentic watch-pr --pr <n>`), and report merge-ready with the head SHA. Where those sections say to report a rebase and stop, or that babysitting never merges, this lifecycle overrides them for the owner's own PR.

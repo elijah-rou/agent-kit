@@ -1,22 +1,46 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
-import { apiKey, isPublic, originSlug, sendable } from "./egress.ts";
-import { taskHintFor } from "./jev.ts";
+import { join } from "node:path";
+import { apiKey, httpClassifier, isPublic, originSlug, OPT_OUT_FILE, repoOf, sendable } from "./egress.ts";
 import { HOLD_ABOVE, prDecision, prRisk, prState } from "./pr-risk.ts";
+import { appendRecord, routeTask, type RouteDeps, type Runtime } from "./route-task.ts";
+import { POLICY } from "./route.ts";
 
 const USAGE = `Usage: jev <pr-risk | task-class> ...
 
-Advisory Jev calls, calibrated in the agentic evals (only public repositories are classified).
+Advisory Jev calls, calibrated in the agentic evals. The key comes from TYPESAFE_API_KEY or, on
+macOS, the keychain item "typesafe-jev".
 
   pr-risk <pr> [--repo owner/repo]
       For the ship mode, before landing a PR: exit 0 when P(one-way door) <= ${HOLD_ABOVE}; any other
       exit means the PR waits for the user (a higher score, Jev unavailable or without a key, a
       repository that is not public, or a diff with credential-shaped text, which is never sent).
-      The key comes from TYPESAFE_API_KEY or, on macOS, the keychain item "typesafe-jev".
-  task-class [--claude-hook] [task text]
-      Prints a one-way-door hint for the task, or nothing. With --claude-hook, reads Claude Code's
-      UserPromptSubmit event from stdin and answers with additionalContext; it never blocks.
+  task-class --claude-hook | --codex-hook
+      Routes the prompt in the runtime's UserPromptSubmit event on stdin (policy task-route, see
+      route.ts), appends one record to $XDG_STATE_HOME/agentic/task-route/, and answers with
+      additionalContext when a note applies. It never blocks the prompt.
+  task-class <task text>
+      Prints the route for a task typed in the current directory, without recording it.
+
+A repository that commits ${OPT_OUT_FILE} never sends its prompts. AGENTIC_ROUTE=shadow keeps every
+note back for a session, and AGENTIC_ROUTE=off also stops every request.
 `;
+
+const BACKGROUND_RUN_SKILL = join(import.meta.dir, "..", "..", "..", "skills", "background-run", "SKILL.md");
+
+function routeDeps(env: Record<string, string | undefined>): RouteDeps {
+	return { policy: POLICY, classify: httpClassifier(() => apiKey(env, 1000)), repo: repoOf, env, now: Date.now, backgroundRunSkill: BACKGROUND_RUN_SKILL };
+}
+
+/** A UserPromptSubmit hook: Claude Code and Codex send the same prompt, cwd, and session_id fields. */
+async function promptHook(runtime: Runtime): Promise<void> {
+	const event: unknown = JSON.parse(await Bun.stdin.text());
+	const field = (name: string) => (typeof event === "object" && event !== null && typeof (event as Record<string, unknown>)[name] === "string" ? ((event as Record<string, unknown>)[name] as string) : undefined);
+	const input = { prompt: field("prompt") ?? "", cwd: field("cwd") ?? process.cwd(), runtime, sessionId: field("session_id") ?? "unknown", child: false };
+	const { note, record } = await routeTask(input, routeDeps(process.env));
+	if (note) console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: note } }));
+	appendRecord(record, process.env);
+}
 
 function run(command: string, args: string[], input?: string): string {
 	const result = spawnSync(command, args, { input, encoding: "utf8", timeout: 30_000, maxBuffer: 50_000_000 });
@@ -29,19 +53,20 @@ async function main(args: string[]): Promise<number> {
 	if (command === "--help" || command === "-h") return console.log(USAGE), 0;
 
 	if (command === "task-class") {
-		if (rest.includes("--claude-hook")) {
+		const hook = rest[0] === "--claude-hook" ? "claude" : rest[0] === "--codex-hook" ? "codex" : undefined;
+		if (hook) {
 			try {
-				const event = JSON.parse(await Bun.stdin.text()) as { prompt?: string; cwd?: string };
-				const hint = await taskHintFor(event.prompt ?? "", event.cwd ?? process.cwd());
-				if (hint) console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: hint } }));
+				await promptHook(hook);
 			} catch {
-				// A hint is optional; a failure must never block the prompt.
+				// Routing is optional; a failure must never block the prompt. A missing record shows in route-report.
 			}
 			return 0;
 		}
 		const text = rest.join(" ").trim();
 		if (!text) return console.error(USAGE), 2;
-		console.log((await taskHintFor(text, process.cwd())) ?? "no hint");
+		const { note, record } = await routeTask({ prompt: text, cwd: process.cwd(), runtime: "cli", sessionId: "manual", child: false }, routeDeps(process.env));
+		console.log(JSON.stringify({ repo: record.repo, advised: record.advised, delivered: record.delivered, fallbacks: record.fallbacks, model: record.answers?.model }));
+		console.log(note ?? "no note");
 		return 0;
 	}
 

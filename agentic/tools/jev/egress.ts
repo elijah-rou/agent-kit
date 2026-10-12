@@ -1,17 +1,23 @@
-// Everything that reaches TypeSafe passes through here: the credential screen, home-path redaction,
-// the repository-visibility check, the key lookup, and the one HTTP call. Any failure answers
-// "unavailable" or "not public", so every caller takes its cautious path.
+// Everything that reaches TypeSafe passes through here: the task screen (size, credential shapes,
+// opt-outs), home-path redaction, the repository-visibility check for PR diffs, the key lookup, and
+// the HTTP calls. Any failure answers "unavailable", "withhold", or "not public", so every caller
+// takes its cautious path.
 
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { parseAnswers, QUESTIONS, type Classify, type ClassifyFailure, type Sendable } from "./route.ts";
 
 export const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 export const JEV_MODEL = "jev-latest";
 
 /** Prompts shorter than this ("yes", "continue") are follow-ups, not tasks. */
 export const MIN_TASK_WORDS = 6;
+/** Longer prompts are withheld: pasted logs and files hide secrets the screen does not know. */
+export const MAX_TASK_CHARS = 4000;
+/** A committed file at this path in a repository keeps its prompts on the machine. */
+export const OPT_OUT_FILE = ".agents/jev-opt-out";
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 export type Unavailable = { kind: "unavailable"; detail: string };
@@ -104,4 +110,68 @@ export async function isPublic(slug: string, options: { env?: NodeJS.ProcessEnv;
 export async function originSlug(cwd: string, timeoutMs = 2000): Promise<string | undefined> {
 	const remote = await output("git", ["-C", cwd, "remote", "get-url", "origin"], timeoutMs);
 	return remote ? /^(?:https:\/\/|ssh:\/\/git@|git@)github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(remote)?.[1] : undefined;
+}
+
+export type Withheld = "child" | "opted-out" | "not-a-task" | "unsafe-input";
+export type Screened = { kind: "send"; text: Sendable } | { kind: "withhold"; reason: Withheld };
+
+/** Whether a prompt may be sent, and the redacted text if so. The only place a Sendable is made. */
+export function screen(prompt: string, where: { child: boolean; optedOut: boolean }): Screened {
+	if (where.child) return { kind: "withhold", reason: "child" };
+	if (where.optedOut) return { kind: "withhold", reason: "opted-out" };
+	if (!isTask(prompt)) return { kind: "withhold", reason: "not-a-task" };
+	if (prompt.length > MAX_TASK_CHARS) return { kind: "withhold", reason: "unsafe-input" };
+	const text = sendable(prompt.trim());
+	if (text === undefined) return { kind: "withhold", reason: "unsafe-input" };
+	return { kind: "send", text: text as Sendable };
+}
+
+export type Repo = { slug: string; optedOut: boolean };
+
+/** The nearest directory at or above dir that holds a `.git` entry, found without spawning git. */
+export function checkoutRoot(dir: string): string | undefined {
+	let current = resolve(dir);
+	for (let depth = 0; depth < 256; depth++) {
+		if (existsSync(join(current, ".git"))) return current;
+		const parent = dirname(current);
+		if (parent === current) return undefined;
+		current = parent;
+	}
+	throw new Error(`checkoutRoot: no filesystem root above ${dir}`);
+}
+
+/** The repository a prompt was typed in: owner/name for a GitHub origin, "other" for any other checkout, "none" outside one. */
+export async function repoOf(cwd: string, timeoutMs: number): Promise<Repo> {
+	const root = checkoutRoot(cwd);
+	if (root === undefined) return { slug: "none", optedOut: false };
+	const optedOut = existsSync(join(root, OPT_OUT_FILE));
+	return { slug: (await originSlug(root, timeoutMs)) ?? "other", optedOut };
+}
+
+function failure(error: unknown, signal: AbortSignal): ClassifyFailure {
+	const reason: unknown = signal.aborted ? signal.reason : error;
+	if (reason instanceof Error && reason.name === "TimeoutError") return "timeout";
+	return signal.aborted ? "cancelled" : "error";
+}
+
+/** Jev over HTTP, with the key from key(). Both questions go in one request. */
+export function httpClassifier(key: () => Promise<string | undefined>, fetchImpl: FetchLike = fetch): Classify {
+	return async (state, signal) => {
+		const token = await key();
+		if (!token) return { kind: "failed", reason: "classifier-unavailable" };
+		try {
+			const response = await fetchImpl(JEV_ENDPOINT, {
+				method: "POST",
+				headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+				body: JSON.stringify({ model: JEV_MODEL, state, questions: QUESTIONS }),
+				signal,
+			});
+			if (!response.ok) return { kind: "failed", reason: "error" };
+			const body: unknown = await response.json();
+			const answers = isRecord(body) ? parseAnswers(body.model, body.answers) : undefined;
+			return answers ? { kind: "answered", answers } : { kind: "failed", reason: "malformed" };
+		} catch (error) {
+			return { kind: "failed", reason: failure(error, signal) };
+		}
+	};
 }

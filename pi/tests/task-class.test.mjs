@@ -70,14 +70,17 @@ test("a prompt queued while the agent works is recorded without a note, so nothi
   assert.deepEqual(records().map((r) => [r.fallbacks, r.noted]), [[["queued"], false]]);
 });
 
-test("a note reaches only the turn of the prompt that produced it", async () => {
+test("a note reaches only its own prompt's turn, and any later input replaces it", async () => {
   const { input, start } = fixture();
+  await input(MIGRATE);
+  assert.equal(await start("an unrelated turn started by another extension"), undefined);
+  assert.equal(await start(MIGRATE), undefined, "the waiting note was taken by the turn that started");
+  await input(MIGRATE);
+  await input("/worktree start the parser rewrite in a fresh tree");
+  assert.equal(await start(MIGRATE), undefined, "a command's input replaced the note, so a turn whose expansion matches gets nothing");
   const other = "Rename the export command's flags and update the docs";
   await input(MIGRATE);
   await input(other);
-  assert.equal(await start("an unrelated turn started by another extension"), undefined);
-  assert.match((await start(other)).message.content, /one-way door/);
-  assert.match((await start(MIGRATE)).message.content, /one-way door/);
   assert.equal(await start(MIGRATE), undefined);
 });
 

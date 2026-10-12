@@ -6,8 +6,6 @@ import { parseAnswers, POLICY, QUESTIONS, type Classify } from "../../agentic/to
 
 const SKILLS_DIR = fileURLToPath(new URL("../../skills", import.meta.url));
 const NOTE_TYPE = "agent-kit/task-route";
-/** Notes waiting for their prompt's turn; an input handled before reaching the agent leaves one behind. */
-const PENDING_MAX = 16;
 
 function isNativeChild(): boolean {
 	return process.env.PI_SUBAGENT_CHILD === "1" || process.env.PI_SUBAGENT_CHILD === "true";
@@ -46,32 +44,28 @@ async function routeInput(event: InputEvent, ctx: ExtensionContext): Promise<str
 
 // Routes each input with agent-kit's task-route policy (agentic/tools/jev/route.ts) and records it.
 // Input arrives before Pi expands skill commands and prompt templates, so only the typed text is
-// classified, and a typed command counts as the user's choice. A note waits for the turn whose
-// prompt is that same text (Pi expands only slash commands, which get no note), so it reaches its
-// own prompt's turn and no other. Input queued while the agent works is recorded without a note: a
-// queued message would be drained ahead of its prompt. A note is a visible custom message, so the
-// system prompt stays byte-stable for the provider cache. This assumes no earlier extension
-// transforms input; the only installed input handler (pi-unveil) never does.
+// classified, and a typed command counts as the user's choice. Every input, command or not,
+// replaces the one waiting note, and the next turn takes it only when its prompt is that same text
+// (Pi expands only slash commands, which get no note). So a note reaches its own prompt's turn or
+// none: a stale one is always overwritten, and a race drops a note rather than moving it. Input
+// queued while the agent works is recorded without a note: a queued message would be drained ahead
+// of its prompt. A note is a visible custom message, so the system prompt stays byte-stable for
+// the provider cache. This assumes no earlier extension transforms input; the only installed input
+// handler (pi-unveil) never does.
 export default function (pi: ExtensionAPI) {
-	const pending = new Map<string, string>();
+	let latest: { text: string; note: string | undefined } | undefined;
 
 	pi.on("input", async (event, ctx) => {
+		latest = undefined;
 		const note = await routeInput(event, ctx);
-		if (note !== undefined) {
-			pending.delete(event.text);
-			pending.set(event.text, note);
-			for (const oldest of pending.keys()) {
-				if (pending.size <= PENDING_MAX) break;
-				pending.delete(oldest);
-			}
-		}
+		latest = { text: event.text, note };
 		return { action: "continue" };
 	});
 
 	pi.on("before_agent_start", (event) => {
-		const note = pending.get(event.prompt);
-		if (note === undefined) return undefined;
-		pending.delete(event.prompt);
-		return { message: { customType: NOTE_TYPE, content: note, display: true } };
+		const routed = latest;
+		latest = undefined;
+		if (routed?.note === undefined || routed.text !== event.prompt) return undefined;
+		return { message: { customType: NOTE_TYPE, content: routed.note, display: true } };
 	});
 }

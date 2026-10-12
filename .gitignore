@@ -1,4 +1,3 @@
 node_modules/
 .claude-plugin/types/
 .DS_Store
-.agents/skills/verify-agent-kit/evidence/

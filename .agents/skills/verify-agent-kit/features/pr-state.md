@@ -26,10 +26,10 @@ Preconditions:
 
 - **Usage.** `agentic pr-feedback --no-such-flag` exits 2.
 - **Text.** `agentic pr-feedback <merged> --repo <repo>` exits 0; its first line is `# PR #<merged>:`, and it shows `PR is MERGED`, `## Blockers`, and `## Retrieval gaps`.
-- **JSON.** `... --json` exits 0 with `number`, `state: "MERGED"`, and a `readiness` starting with `closed`.
+- **JSON.** `... --json` exits 0 with `number`, `state: "MERGED"`, and the `headSha` GitHub's own API reports for the pull request.
 - **Watch table.** `agentic watch-pr --owner <owner> --repo <name> --pr <merged> --status-only --pretty` exits 0 with a row for `#<merged>` marked merged.
-- **Watch JSON.** The same without `--pretty` prints a `STATUS` object whose first row's state is `MERGED`.
-- **Open pull request.** `agentic pr-feedback <open>` exits 0 without `PR is MERGED`, and `watch-pr --status-only` reports its state `OPEN`.
+- **Watch JSON.** The same without `--pretty` prints a `STATUS` object whose first row is `MERGED` at GitHub's head SHA.
+- **Open pull request.** `agentic pr-feedback <open> --json` and `watch-pr --status-only` both report it `OPEN` at the head SHA GitHub's API reports.
 - **Proof.** Evidence: `pr-state/NN-*.txt` with each command's full output.
 
 ## Gotchas

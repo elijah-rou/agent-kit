@@ -75,7 +75,7 @@ The whole flow runs once per prompt, in a single pass through these steps:
 
 ### What Jev is asked
 
-Each prompt gets one request with state `{ task }`. The Claude hook posts it to `https://api.typesafe.ai/v1/systemone` with the keychain or environment key. Pi sends it through its classifier registry (`ctx.modelRegistry.findOfType("classifier")` and `classify`), with the TypeSafe credential Pi holds. Both questions are `choice` questions, which both paths support. A Pi with no TypeSafe classifier registered takes the `classifier-unavailable` fallback rather than reading the keychain. Because two request paths can wrap the state differently, the eval runs the labeled set through both and requires matching answers before either note goes advisory.
+Each prompt gets one request whose state is the prompt text itself, the shape the door question was calibrated on (see the door recheck below). The Claude hook posts it to `https://api.typesafe.ai/v1/systemone` with the keychain or environment key. Pi sends it through its classifier registry (`ctx.modelRegistry.findOfType("classifier")` and `classify`), with the TypeSafe credential Pi holds. Both questions are `choice` questions, which both paths support. A Pi with no TypeSafe classifier registered takes the `classifier-unavailable` fallback rather than reading the keychain. Because two request paths can wrap the state differently, the eval runs the labeled set through both and requires matching answers before either note goes advisory.
 
 | Id | Type | Wording |
 | --- | --- | --- |
@@ -88,6 +88,16 @@ Each prompt gets one request with state `{ task }`. The Claude hook posts it to 
 - A yes/no ("noul") `quick` question, candidate B's alternative, scored clear lookups at only 0.28 to 0.67.
 - A noul `handoff` question separated loops (0.95 to 0.97) from rigor (0.57 to 0.71).
 - Two or three questions in one request took 340 to 420 ms.
+
+**Door recheck.** On 2026-10-12 the 90 labeled 2026-10-07 tasks were each asked twice with both questions in one request, against `jev-1.13.0`:
+
+| State | One-way-door calls hinted | Tasks missed | Other calls hinted | Bar |
+| --- | --- | --- | --- | --- |
+| 2026-10-07 baseline, door question alone, string | 56 of 60 | T046, T089 | 16 of 120 | – |
+| both questions, string | 56 of 60 | T046, T089 | 15 of 120 | passes |
+| both questions, `{ task }` object | 56 of 60 | T046, T089 | 17 of 120 | fails by one call |
+
+So the state stays a plain string. With the provisional 0.9 threshold, no one-way-door task was advised lookup and none of the 90 was advised loop. Two trivial edits were advised lookup: a `.gitignore` line and a README clarification. The closest miss was T046, the MIT license, which the door question also misses: its lookup confidence was 0.82, so a lookup threshold below that would route it to lookup. Two questions took 377 ms at p50 and 508 ms at p95.
 - The HTTP API accepts `choice` and `noul` but rejects `bool`, and every response names its model.
 
 ### Decision
@@ -235,7 +245,7 @@ type Egress = { kind: "send"; text: Sendable } | { kind: "withhold"; reason: "no
 function egress(input: { prompt: string; cwd: string; child: boolean; explicit?: Explicit }, deps: { env: Env; deadlineAt: number; now: () => number }): Promise<Egress>;
 
 type ClassifyOutcome = { kind: "answered"; answers: Record<string, ChoiceAnswer>; model: string } | { kind: "failed"; reason: "classifier-unavailable" | "timeout" | "cancelled" | "error" | "malformed" };
-type Classify = (state: { task: Sendable }, questions: typeof QUESTIONS, signal: AbortSignal) => Promise<ClassifyOutcome>;
+type Classify = (state: Sendable, questions: typeof QUESTIONS, signal: AbortSignal) => Promise<ClassifyOutcome>;
 function httpClassifier(key: (env: Env, timeoutMs: number) => Promise<string | undefined>): Classify;   // Claude hook
 function registryClassifier(registry: PiModelRegistry): Classify;                                        // Pi; unavailable without a TypeSafe classifier
 
@@ -321,4 +331,4 @@ These are for the user. Each has a recommendation and the default taken if there
 
 ## First implementation step
 
-Slice 1 is offline and changes no live behavior. Split `jev.ts` into `egress.ts` and `pr-risk.ts`, moving the tests unchanged. Then write `route.ts`'s pure core with tests for the decision table, the runtime-neutral note text, and "advisory requires a matching digest". Slice 2 switches the Claude, Codex, and Pi adapters to `routeTask` and starts the ledger, with `lookup` and `loop` in shadow, after re-verifying the door bar on the combined request. Slice 3 adds `route-report` and `route-sync`. `route-harvest` and `route-eval` follow once two weeks of records exist.
+Slice 1 is offline and changes no live behavior. Split `jev.ts` into `egress.ts` and `pr-risk.ts`, moving the tests unchanged. Then write `route.ts`'s pure core with tests for the decision table, the runtime-neutral note text, and "advisory requires a matching digest". Slice 2 switches the Claude, Codex, and Pi adapters to `routeTask` and starts the ledger, with `lookup` and `loop` in shadow. The door bar on the combined request was rechecked on 2026-10-12 and passes with a string state. Slice 3 adds `route-report` and `route-sync`. `route-harvest` and `route-eval` follow once two weeks of records exist.

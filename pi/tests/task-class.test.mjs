@@ -13,14 +13,18 @@ const RIGOR = { type: "choice", choice: "rigor", confidence: 0.98, probabilities
 
 // Drives the extension the way Pi does: input with the typed text, then the turn's start.
 // The extension reads the ledger location and the child flag from the process environment.
-function fixture({ classifier = {}, child = false } = {}) {
+function fixture({ classifier = {}, child = false, gate = undefined } = {}) {
   const state = mkdtempSync(join(tmpdir(), "pi-route-state-"));
   const cwd = mkdtempSync(join(tmpdir(), "pi-route-cwd-"));
   const requests = [];
   const sent = [];
   const registry = {
     findOfType: (type, provider, model) => (type === "classifier" && provider === "typesafe" && model === "jev-latest" && classifier !== null ? { id: model, ...classifier } : undefined),
-    classify: async (_model, context) => (requests.push(context), { model: "jev-latest", answers: { door: DOOR, level: RIGOR }, stopReason: "stop" }),
+    classify: async (_model, context) => {
+      requests.push(context);
+      if (gate) await gate;
+      return { model: "jev-latest", answers: { door: DOOR, level: RIGOR }, stopReason: "stop" };
+    },
   };
   const handlers = new Map();
   register({ on: (name, handler) => handlers.set(name, handler), sendMessage: (message, options) => sent.push({ message, options }) });
@@ -82,6 +86,16 @@ test("a note reaches only its own prompt's turn, and any later input replaces it
   await input(MIGRATE);
   await input(other);
   assert.equal(await start(MIGRATE), undefined);
+});
+
+test("an older input that finishes routing after a newer one cannot hand its note to the newer one's turn", async () => {
+  let release;
+  const { input, start } = fixture({ gate: new Promise((resolve) => (release = resolve)) });
+  const slow = input(MIGRATE);
+  await input("/worktree");
+  release();
+  await slow;
+  assert.equal(await start(MIGRATE), undefined, "the typed command's turn, expanding to the older text, gets no note");
 });
 
 test("a typed command, skill or template, is the user's choice: only its arguments are classified, and nothing is delivered", async () => {

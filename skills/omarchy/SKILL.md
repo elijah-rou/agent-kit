@@ -1,7 +1,6 @@
 ---
 name: omarchy
-description: >-
-  Customize an installed Omarchy desktop: Hyprland, the shell/bar, terminal appearance, themes, monitors, bindings, idle/lock behavior, reminders, or user-facing Omarchy commands. Use for ~/.config/hypr/, ~/.config/omarchy/, and Linux desktop terminal configuration. Excludes unrelated ~/.config applications, server/system administration unrelated to the desktop, and Omarchy source development.
+description: "Customize an installed Omarchy desktop: Hyprland, the shell/bar, terminal appearance, themes, monitors, bindings, idle/lock behavior, reminders, or user-facing Omarchy commands. Use for ~/.config/hypr/, ~/.config/omarchy/, and Linux desktop terminal configuration. Excludes unrelated ~/.config applications, server/system administration unrelated to the desktop, and Omarchy source development."
 ---
 
 # Omarchy desktop customization

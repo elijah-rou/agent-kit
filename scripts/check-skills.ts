@@ -23,8 +23,11 @@ const walk = (directory: string): string[] =>
     const path = join(directory, name);
     return lstatSync(path).isDirectory() ? [path, ...walk(path)] : [path];
   });
-const instructionPaths = INSTRUCTION_ROOTS.filter(root => existsSync(join(ROOT, root))).flatMap(root => walk(join(ROOT, root)).map(path => ({ root, path, name: relative(join(ROOT, root), path) })));
-const links = instructionPaths.filter(({ path }) => lstatSync(path).isSymbolicLink());
+const instructionPaths = INSTRUCTION_ROOTS.filter(root => existsSync(join(ROOT, root)) && !lstatSync(join(ROOT, root)).isSymbolicLink()).flatMap(root => walk(join(ROOT, root)).map(path => ({ root, path, name: relative(join(ROOT, root), path) })));
+const links = [
+  ...INSTRUCTION_ROOTS.map(root => join(ROOT, root)).filter(path => existsSync(path) && lstatSync(path).isSymbolicLink()).map(path => ({ path })),
+  ...instructionPaths.filter(({ path }) => lstatSync(path).isSymbolicLink()),
+];
 if (links.length > 0) {
   for (const { path } of links) console.error(`${relative(ROOT, path)}: a link inside an instruction folder hides what a runtime loads; replace it with the file or folder it points to`);
   process.exit(1);
@@ -141,14 +144,25 @@ for (const { root, name, path } of instructionFiles) {
   if (SKILL_ROOTS.includes(root) && SKILL_FILE.test(name) && name.split("/").length !== 2) fail(`${where}: a SKILL.md below a skill's top folder is loaded as its own skill; keep one SKILL.md per <root>/<name>/`);
   if (!/\.md$/i.test(name)) continue;
   const text = readFileSync(path, "utf8");
+  // YAML reads a lone carriage return or a Unicode line separator as a line break, so one would split a line the
+  // checks below read as one; instruction Markdown uses LF only.
+  if (/[\r\u0085\u2028\u2029]/.test(text)) fail(`${where}: use LF line endings only (no carriage returns or Unicode line separators), so a runtime reads the same lines this checker does`);
   if (INLINE_SHELL.test(text) || FENCED_SHELL.test(text)) fail(`${where}: inline shell (!\`...\` or a fence opened with !) runs before the model reads the file; put the command in a script and name the script, or to document the syntax, separate the ! from the backtick`);
   const opening = text.replace(/^\uFEFF/, "");
   if (/^---\s*\n/.test(opening) && !PLAIN_FRONTMATTER.test(text)) fail(`${where}: write frontmatter in the plain form (no byte-order mark, no trailing spaces after ---, LF line endings) so this checker reads every key`);
   const kind = SKILL_FILE.test(name) && SKILL_ROOTS.includes(root) ? "skill" : root === "claude/agents" ? "role" : root === "pi/prompts" ? "prompt" : undefined;
   if (kind === undefined) continue;
   const allowed = ALLOWED_KEYS[kind];
+  // Every frontmatter line must be one top-level key: value line, so a line reader and a YAML reader (which
+  // runtimes fall back between) see the same keys; indented, continued, or flow lines could hide one.
   const block = PLAIN_FRONTMATTER.exec(text)?.[1] ?? "";
-  for (const key of block.split("\n").filter(line => line && !/^\s/.test(line) && line.includes(":")).map(line => line.slice(0, line.indexOf(":")).trim())) {
+  const lines = block.split("\n");
+  const odd = lines.filter(line => !/^[A-Za-z][A-Za-z0-9_-]*:(?: .*)?$/.test(line));
+  if (odd.length > 0) {
+    fail(`${where}: every frontmatter line must be a single top-level key: value line (found ${JSON.stringify(odd[0])})`);
+    continue;
+  }
+  for (const key of lines.map(line => line.slice(0, line.indexOf(":")))) {
     if (!allowed.has(key)) fail(`${where}: frontmatter key "${key}" is not allowed (allowed: ${[...allowed].join(", ")}); keys that grant tools, hooks, or permissions belong in reviewed configuration, not instruction text`);
   }
 }

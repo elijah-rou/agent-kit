@@ -44,12 +44,16 @@ The Pi extension is rewritten in place. It also runs in Pi roots that T3 launche
 
 ```ts
 pi.on("input", async (event, ctx) => {
+  const input = ++inputs;
+  latest = undefined;
   const note = await routeInput(event, ctx);   // routeTask over event.text; queued when event.streamingBehavior is set; appends the record
-  if (note) pending.set(event.text, note);     // at most 16 waiting
+  if (input === inputs) latest = { text: event.text, note };   // only the newest input fills the one slot
   return { action: "continue" };
 });
-pi.on("before_agent_start", (event) => takePending(event.prompt));   // only the turn whose prompt is that same text
+pi.on("before_agent_start", (event) => take(latest, event.prompt));   // once, and only for a prompt that is exactly that text
 ```
+
+A note can only reach a turn whose prompt is exactly the text it was computed for. In a race between concurrent inputs it is dropped.
 
 The user runs measurement locally:
 

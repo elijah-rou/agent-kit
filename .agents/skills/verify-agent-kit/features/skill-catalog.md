@@ -4,7 +4,7 @@ agent-kit's skills, instructions, and subagent roles reach three runtimes throug
 
 ## Sub-features
 
-- `catalog-check` runs the repository's own skill checker over every skill, export list, and role.
+- `catalog-check` runs the repository's own skill checker over every skill, export list, and role, which also refuses inline shell and frontmatter keys that grant tools, hooks, or permissions.
 - `catalog-claude` resolves each `claude/skills.txt` entry to a loadable skill.
 - `catalog-codex` resolves each `codex/skills.txt` name to a loadable skill.
 - `catalog-pi` lists every skill the Pi package loads.
@@ -25,7 +25,7 @@ Preconditions:
 - Drive target: `scripts/verify-kit drive RUN_ID skill-catalog`.
 - Doctor passed. No network or credentials are needed.
 
-- **Checker.** `bun scripts/check-skills.ts` exits 0.
+- **Checker.** `bun scripts/check-skills.ts` exits 0. It fails on a frontmatter key outside its allowlist (for example `allowed-tools`, `hooks`, `permissionMode`) and on inline shell (an exclamation mark directly before a backtick) in skill, role, or prompt Markdown, so such a change cannot pass as instruction text.
 - **Exports.** Every entry of each list resolves to a `SKILL.md` whose `name` equals its directory. `exports.tsv` lists runtime, skill, path, whether the model may invoke it, and the description's length.
 - **Repository skills.** Every `.agents/skills/<name>/SKILL.md` is readable through `.claude/skills/<name>/SKILL.md` with identical content.
 - **Roles.** Every `claude/agents/*.md` has a name and a description and binds a `claude-` model. `roles.tsv` lists role, model, effort, tools, and disallowed tools.

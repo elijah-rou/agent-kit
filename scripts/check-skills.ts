@@ -103,6 +103,28 @@ for (const document of [join(ROOT, "claude/CLAUDE.md"), ...markdownFiles(join(RO
   if (MODEL_ID.test(readFileSync(document, "utf8"))) fail(`${relative(ROOT, document)}: names a model; bind models only in claude/agents/*.md`);
 }
 
+// Instruction text must not run commands or grant permissions: a runtime runs inline shell (!`command`) before
+// the model reads the file, and honors frontmatter such as allowed-tools, hooks, or permissionMode. Only these
+// keys pass, so such a change fails here instead of passing review as text.
+const ALLOWED_KEYS = {
+  skill: new Set(["name", "description", "disable-model-invocation"]),
+  role: new Set(["name", "description", "model", "effort", "tools", "disallowedTools"]),
+  prompt: new Set(["description", "argument-hint"]),
+};
+const frontmatterKeys = (path: string) =>
+  (/^---\n([\s\S]*?)\n---\n/.exec(readFileSync(path, "utf8"))?.[1] ?? "").split("\n").filter(line => line && !/^\s/.test(line) && line.includes(":")).map(line => line.slice(0, line.indexOf(":")).trim());
+const textFiles: (readonly [string, ReadonlySet<string> | undefined])[] = [
+  ...["skills", "claude/skills", ".agents/skills"].filter(root => existsSync(join(ROOT, root))).flatMap(skillDirectories).flatMap(directory => markdownFiles(directory).map(path => [path, path.endsWith("/SKILL.md") ? ALLOWED_KEYS.skill : undefined] as const)),
+  ...readdirSync(join(ROOT, "claude/agents")).filter(name => name.endsWith(".md")).map(name => [join(ROOT, "claude/agents", name), ALLOWED_KEYS.role] as const),
+  ...readdirSync(join(ROOT, "pi/prompts")).filter(name => name.endsWith(".md")).map(name => [join(ROOT, "pi/prompts", name), ALLOWED_KEYS.prompt] as const),
+];
+for (const [path, allowed] of textFiles) {
+  if (readFileSync(path, "utf8").includes("!`")) fail(`${relative(ROOT, path)}: inline shell (!\`...\`) runs before the model reads the file; put the command in a script and name the script in the text`);
+  for (const key of allowed ? frontmatterKeys(path) : []) {
+    if (!allowed!.has(key)) fail(`${relative(ROOT, path)}: frontmatter key "${key}" is not allowed (allowed: ${[...allowed!].join(", ")}); keys that grant tools, hooks, or permissions belong in reviewed configuration, not instruction text`);
+  }
+}
+
 if (failures.length > 0) {
   for (const failure of failures) console.error(failure);
   process.exit(1);

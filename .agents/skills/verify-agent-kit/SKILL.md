@@ -67,10 +67,10 @@ Compare parent and head with this kit (from trunk): launch one run with `--check
 The verdict follows from what ran:
 
 - `live-ui-verified`: every changed path is covered by a drive row, each needed drive PASSes on the head with trunk's kit (and the head's kit for new steps), none of them SKIPs, and the changed behavior appears in a drive step's evidence.
-- `unit-test-verified`: changed code no drive covers has a test that exercises the changed lines, fails on the parent or on a revert of the change, and passes on the head; name the test and both runs in the evidence. A green `bun test` or CI run alone is not this.
-- `type-check-only`: the change is only instruction text (the rows marked instruction text above). This skill cannot observe an agent's behavior under new text without model usage, so such a pull request does not clear the merge gate; the user lands it. `skill-catalog` must still PASS, and the verifier reads the text against the pull request's stated intent and reports what it found.
+- `unit-test-verified`, for code: changed code no drive covers has a test that exercises the changed lines, fails on the parent or on a revert of the change, and passes on the head; name the test and both runs in the evidence. A green `bun test` or CI run alone is not this.
+- `unit-test-verified`, for instruction text: the change is only instruction text (the rows marked instruction text above), `skill-catalog` PASSes on the head with trunk's kit, and the verifier's read of the changed text against the pull request's stated intent finds that it says what the pull request claims and contradicts no other instruction. This skill cannot observe an agent's behavior under new text without model usage, so the evidence says that behavior was not observed. A change only under `docs/`, `README.md`, or licenses needs only the read.
 - `verifier-blocked`: a needed drive SKIPs or cannot run; changed code has neither a drive nor such a test; or trunk's kit fails only checks that the pull request deliberately changes in both the product and the kit, the head's kit passes them, and nothing else fails; the evidence then names each such check (from trunk's `result.txt`, which lists every failed check) and the pull request's stated reason for changing it. The user lands it.
-- `verifier-failed`: a needed drive or test FAILs for any other reason.
+- `verifier-failed`: a needed drive or test FAILs for any other reason, or changed instruction text does not say what the pull request claims or contradicts another instruction.
 
 ## Evidence
 

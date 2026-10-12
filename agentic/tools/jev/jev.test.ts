@@ -1,33 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { HINT_DEADLINE_MS, HOLD_ABOVE, isPublic, isTask, prDecision, prRisk, prState, sendable, taskClass, taskHint, taskHintFor, type FetchLike } from "./jev.ts";
-
-const answering = (q: unknown, status = 200): FetchLike => async () => new Response(JSON.stringify({ answers: { q } }), { status });
-const options = (fetch: FetchLike) => ({ apiKey: "test-key", timeoutMs: 1000, fetch });
-
-describe("PR risk", () => {
-	test("only a score at or below the threshold clears a PR", () => {
-		expect(prDecision({ kind: "ok", probability: HOLD_ABOVE }).hold).toBe(false);
-		expect(prDecision({ kind: "ok", probability: 0.31 }).hold).toBe(true);
-		expect(prDecision({ kind: "unavailable", detail: "timeout" })).toEqual({ hold: true, reason: "Jev unavailable (timeout)" });
-	});
-
-	test("an HTTP error, a malformed answer, or no key holds the PR", async () => {
-		expect(prDecision(await prRisk("s", options(answering({}, 500)))).hold).toBe(true);
-		expect(prDecision(await prRisk("s", options(answering({ type: "noul", noul: 1.5 })))).hold).toBe(true);
-		expect(prDecision(await prRisk("s", { apiKey: undefined, timeoutMs: 1000 })).hold).toBe(true);
-		expect(await prRisk("s", options(answering({ type: "noul", noul: 0.12 })))).toEqual({ kind: "ok", probability: 0.12 });
-	});
-
-	test("the state uses the calibrated layout", () => {
-		expect(prState({ repo: "o/r", title: "T", body: "  line one\r\nline two\r\n", stat: "", diff: "" })).toContain("Body: line one\nline two\nFiles changed (0):");
-		const state = prState({ repo: "o/r", title: "T", body: "b".repeat(700), stat: " a | 1 +\n b | 2 +-\n 2 files changed\n", diff: "d".repeat(6001) });
-		expect(state).toMatch(/^Repository: o\/r\nSubject: T\nBody: b{600}\nFiles changed \(2\):\n a \| 1 \+\n b \| 2 \+-\n 2 files changed\nDiff \(truncated to 6000 characters\):\nd{6000}\n\[truncated\]$/);
-	});
-});
+import type { FetchLike } from "./egress.ts";
+import { taskClass, taskHint, taskHintFor } from "./jev.ts";
+import { POLICY } from "./route.ts";
+import { answering, options, seededCache } from "./testing.ts";
 
 describe("task class", () => {
 	test("hints only for a one-way door or an unsure answer", () => {
@@ -42,36 +21,6 @@ describe("task class", () => {
 		expect(taskHint(await taskClass("t", options(answering({}, 429))))).toBeUndefined();
 		expect(taskHint(await taskClass("t", options(answering({ type: "choice", choice: "other", confidence: 0.1 }))))).toBeUndefined();
 		expect(await taskClass("t", options(answering({ type: "choice", choice: "one-way-door", confidence: 0.6 })))).toEqual({ kind: "ok", choice: "one-way-door", confidence: 0.6 });
-	});
-
-	test("short follow-ups are not tasks", () => {
-		expect(isTask("yes, continue")).toBe(false);
-		expect(isTask("Change the launcher's languages subcommand to a flag")).toBe(true);
-	});
-});
-
-function seededCache(slug: string, entry: { visibility: string; at: number }): NodeJS.ProcessEnv {
-	const home = mkdtempSync(join(tmpdir(), "jev-cache-"));
-	mkdirSync(join(home, "agentic"), { recursive: true });
-	writeFileSync(join(home, "agentic", "repo-visibility.json"), JSON.stringify({ [slug]: entry }));
-	return { XDG_CACHE_HOME: home, TYPESAFE_API_KEY: "test-key" };
-}
-
-describe("what leaves the machine", () => {
-	test("credential-shaped text is never sent, and home directories are redacted", () => {
-		expect(sendable(`rotate the key ${"sk-" + "a".repeat(24)} in config`)).toBeUndefined();
-		expect(sendable(`use ${"ghp_" + "b".repeat(30)}`)).toBeUndefined();
-		expect(sendable("set password=hunter2hunter2 in the env file")).toBeUndefined();
-		const typesafe = "apikey_" + "0".repeat(34) + "_" + "c".repeat(64);
-		expect(sendable(`use the jev api directly, I have an api key: ${typesafe}`)).toBeUndefined();
-		expect(sendable(`here it is ${typesafe}`)).toBeUndefined();
-		expect(sendable(`configure Jev with _${typesafe}_ for this project`)).toBeUndefined();
-		expect(sendable("the api  key: abcd1234efgh5678 for staging")).toBeUndefined();
-		expect(sendable("my api key: abcdefgh12345678 for staging")).toBeUndefined();
-		expect(sendable("rename the token parser module and update its callers")).toBe("rename the token parser module and update its callers");
-		expect(sendable("document the apikey_ prefix rule and the api key rotation steps")).toBe("document the apikey_ prefix rule and the api key rotation steps");
-		const [mac, linux] = ["/" + "Users/someone", "/" + "home/dev"];
-		expect(sendable(`fix the build script in ${mac}/src/app and ${linux}/x`)).toBe("fix the build script in ~/src/app and ~/x");
 	});
 
 	test("a prompt with a credential gives no hint and makes no call", async () => {
@@ -92,16 +41,6 @@ describe("what leaves the machine", () => {
 		const hint = await taskHintFor("Store verdicts in a new SQLite database and migrate rows", repo, seededCache("o/r", { visibility: "PUBLIC", at: Date.now() }), watched);
 		expect(reached).toBe(true);
 		expect(hint).toBeUndefined();
-		expect(Date.now() - started).toBeLessThan(HINT_DEADLINE_MS + 500);
-	});
-
-	test("a future-dated or failed cache entry is not trusted as public", async () => {
-		const future = seededCache("o/r", { visibility: "PUBLIC", at: Date.now() + 10 * 86_400_000 });
-		expect(await isPublic("o/r", { env: future, timeoutMs: 0 })).toBe(false);
-		const failed = seededCache("o/r", { visibility: "UNKNOWN", at: Date.now() });
-		expect(await isPublic("o/r", { env: failed, timeoutMs: 0 })).toBe(false);
-		const fresh = seededCache("o/r", { visibility: "PUBLIC", at: Date.now() });
-		expect(await isPublic("o/r", { env: fresh, timeoutMs: 0 })).toBe(true);
-		expect(await isPublic("o/r", { env: fresh, fresh: true, timeoutMs: 0 })).toBe(false);
+		expect(Date.now() - started).toBeLessThan(POLICY.deadlineMs + 500);
 	});
 });

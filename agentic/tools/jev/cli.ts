@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
-import { apiKey, HOLD_ABOVE, isPublic, originSlug, prDecision, prRisk, prState, sendable, taskHintFor } from "./jev.ts";
+import { apiKey, isPublic, originSlug, sendable } from "./egress.ts";
+import { taskHintFor } from "./jev.ts";
+import { HOLD_ABOVE, prDecision, prRisk, prState } from "./pr-risk.ts";
 
 const USAGE = `Usage: jev <pr-risk | task-class> ...
 

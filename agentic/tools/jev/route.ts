@@ -68,16 +68,17 @@ export const POLICY: Policy = {
 	version: 1,
 	deadlineMs: 3000,
 	notes: {
-		// agentic evals/jev-risk/REPORT.md: 2 of 30 one-way doors missed, 16 of 120 others hinted.
+		// agentic evals/jev-risk, second run: 90 hand-labeled tasks asked twice each. 56 of 60 one-way-door
+		// calls hinted (2 of 30 tasks missed), and 16 of 120 other calls hinted.
 		door: {
 			mode: "advisory",
 			calibration: {
 				threshold: 0.8,
 				questionsDigest: "556d4c822c98335d",
 				model: "jev-1.13.0",
-				samples: 150,
-				positives: 30,
-				precision: 0.64,
+				samples: 180,
+				positives: 60,
+				precision: 0.78,
 				recall: 0.93,
 				date: "2026-10-07",
 				source: "elijah-rou/agentic evals/jev-risk",

@@ -47,6 +47,8 @@ describe("applyModes", () => {
 		expect(applyModes({ level: "loop", door }, POLICY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
 		expect(applyModes({ level: "rigor", door }, POLICY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
 		expect(applyModes({ level: "rigor", door }, ADVISORY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor", door } });
+		const doorOnly: Policy = { ...POLICY, notes: { ...POLICY.notes, door: ADVISORY.notes.door } };
+		expect(applyModes({ level: "loop", door }, doorOnly, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor", door } });
 		expect(applyModes({ level: "lookup" }, ADVISORY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "lookup" } });
 		expect(applyModes({ level: "loop", door }, ADVISORY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "loop", door } });
 	});

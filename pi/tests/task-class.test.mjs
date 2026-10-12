@@ -72,6 +72,15 @@ test("a typed prompt's note arrives at its turn as a visible message, and the pr
   assert.deepEqual([record.runtime, record.repo, record.noted, record.answers.model], ["pi", "none", true, "jev-latest"]);
 });
 
+test("a T3 wake-up arriving as input is recorded as system and never sent", async () => {
+  const { input, start, requests, records } = fixture();
+  const wakeUp = "Delegated task node:delegated-task:x reached a terminal state. Use task_status with taskId x to read the result.";
+  await input(wakeUp, { source: "rpc" });
+  assert.equal(await start(wakeUp), undefined);
+  assert.equal(requests.length, 0);
+  assert.deepEqual(records().map((r) => [r.fallbacks, r.noted]), [[["system"], false]]);
+});
+
 test("the shipped policy records the door answer and delivers no note", async () => {
   const { input, start, records } = fixture({ policy: POLICY });
   await input(MIGRATE);

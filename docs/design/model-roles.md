@@ -108,8 +108,8 @@ The rendered table ends with: `Machine overrides: build gpt-6.1-sol high (agent-
 
 Existing call sites map onto these four roles:
 
-- `review`: the pr-review reviewer, the ship and autopilot verifiers, show-me-your-work's attention reviewer, design-checkpoint's judge, and reflect's lenses.
-- `build`: design-checkpoint's candidates, reflect's synthesizer, and all implementation.
+- `review`: the pr-review reviewer, show-me-your-work's attention reviewer, design-checkpoint's judge, and reflect's lenses.
+- `build`: design-checkpoint's candidates, reflect's synthesizer, the ship and autopilot verifiers (they run the product and record a verdict), and all implementation.
 - `explore`: scouting and bounded lookups, including the ones Claude Code delegates to `Explore` on its own.
 - `quick`: bulk or mechanical edits and other bounded work that writes.
 

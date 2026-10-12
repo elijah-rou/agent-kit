@@ -23,7 +23,7 @@ Run owners in parallel when their PRs touch disjoint files; serialize only work 
 
 ## 3. Verify every round
 
-A round starts at an owner's code-ready head and at every later push that changes the patch. For each round, spawn fresh verifiers that did not write the code, preferably on a different model family, with these lanes:
+A round starts at an owner's code-ready head and at every later push that changes the patch. For each round, spawn fresh verifiers that did not write the code (the `review` role where the harness defines one), with these lanes:
 
 - **Live lane (required):** drive the load-bearing behavior on the real surface through the repository's verification skill. A verdict without it is not clean.
 - **Regression lane:** run the same scenario on current trunk. If trunk lacks the feature, say so and check the end state the user waits for instead.

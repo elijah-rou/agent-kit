@@ -13,7 +13,7 @@ In `autopilot-full`, an owner opens its pull request early by design and does no
 1. **Scope:** the diff against the base branch.
 2. **Intent:** one paragraph from the task, the commits, and the pull request body. The reviewer challenges the execution, not the intent.
 3. **Rules:** the repository's review rules, meaning `rules.toml` rows at level `review` and judgment rules in its agent instruction files. Write `none` when there are none.
-4. **Spawn** one read-only reviewer that did not write the change, on a different model family from the author where available, with the brief below filled in. When only the author's family is available, say so in the testing notes. Elevated risk adds a second reviewer with a different question, as the instructions require.
+4. **Spawn** one read-only reviewer that did not write the change (the `review` role where the harness defines one), with the brief below filled in. Elevated risk adds a second reviewer with a different question, as the instructions require.
 5. **Judge** each finding yourself: accept it, or dismiss it with a concrete reason. Fix accepted blocking findings in one pass, rerun the affected checks, and run a focused re-review of the fix.
 6. **Record** in the pull request's testing notes that the review ran, on which model, and any finding left open for the user.
 

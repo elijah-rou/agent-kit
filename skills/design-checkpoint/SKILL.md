@@ -41,7 +41,7 @@ Each candidate returns a package shaped by `references/rationale-template.md`: c
 
 1. Read every candidate end to end.
 2. Screen each against `references/design-red-flags.md`.
-3. Score each against the rubric, criterion by criterion. Optionally spawn one read-only judge on a different model family with the rubric and the candidates by label; disagreement with your scores means bias or an ambiguous rubric, so reread both before deciding.
+3. Score each against the rubric, criterion by criterion. Optionally spawn one fresh read-only judge (the `review` role where the harness defines one) with the rubric and the candidates by label; disagreement with your scores means bias or an ambiguous rubric, so reread both before deciding.
 4. Pick as base the candidate a future maintainer can extend without breaking its invariants. When two tie, prefer the smaller public surface that hides more.
 5. Graft the one or two strongest ideas from each other candidate into the base by hand, keeping one coherent model. Record what came from where and what was rejected.
 

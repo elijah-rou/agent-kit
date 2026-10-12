@@ -7,7 +7,7 @@ Read before spawning workers for an unattended program. If one agent can finish 
 - **One coordinator** per program. It frames the run, writes briefs, accepts results, and is the only agent that publishes.
 - **One owner per pull request.** It builds and babysits that PR. A takeover is explicit and recorded in the PR body.
 - **The root is the only writer of branch structure:** rebases, retargets, and stack order.
-- **Verifiers** are agents that did not write the code, preferably on a different model family. A worker may self-report; a verifier's verdict overrides it.
+- **Verifiers** are fresh agents that did not write the code (the `review` role where the harness defines one). A worker may self-report; a verifier's verdict overrides it.
 
 ## Children
 

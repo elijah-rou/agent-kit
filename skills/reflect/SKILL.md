@@ -16,15 +16,15 @@ Record the session ID and today's date; every learning carries them.
 
 ## 2. Review through three lenses, in parallel
 
-Spawn three read-only reviewer subagents at once, each with its prompt from `references/` filled in with the transcript path or digest:
+Spawn three read-only reviewer subagents at once (the `review` role where the harness defines one), each with its prompt from `references/` filled in with the transcript path or digest:
 
-| Lens | Prompt | Model |
-|---|---|---|
-| Judgment | `references/judgment-reviewer.md` | the strongest available |
-| Tooling | `references/tooling-reviewer.md` | a different family from the parent where available |
-| Divergent | `references/divergent-reviewer.md` | the strongest available |
+| Lens | Prompt |
+|---|---|
+| Judgment | `references/judgment-reviewer.md` |
+| Tooling | `references/tooling-reviewer.md` |
+| Divergent | `references/divergent-reviewer.md` |
 
-Use a subagent role or type limited to read-only tools. Reviewers never edit files, post, or commit. If subagents are unavailable, apply the three lenses yourself in sequence and say so.
+Without a review role, use a subagent type limited to read-only tools. Reviewers never edit files, post, or commit. If subagents are unavailable, apply the three lenses yourself in sequence and say so.
 
 Completion criterion: three numbered finding lists, or a recorded reason a lens returned nothing.
 

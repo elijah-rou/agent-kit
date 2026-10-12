@@ -40,16 +40,16 @@ const { note } = await routeTask(
 if (note) printAdditionalContext(note);
 ```
 
-The Pi extension is rewritten in place. It also runs in Pi roots that T3 launches:
+The Pi extension is rewritten in place. It also runs in Pi roots that T3 launches. It routes on Pi's `input` event, which carries the text as typed, before Pi expands skill commands and prompt templates, and which also fires for prompts queued while the agent works:
 
 ```ts
-pi.on("before_agent_start", async (event, ctx) => {
-  const { note } = await routeTask(
-    { prompt: event.prompt, cwd: ctx.cwd, session: { runtime: "pi", id: ctx.sessionManager.getSessionId() }, child: isNativeChild(), explicit: takeSlashCommand() },
-    { classify: registryClassifier(ctx.modelRegistry), env: process.env, now: Date.now, signal: ctx.signal },
-  );
-  return note ? { message: { customType: "agent-kit/task-route", content: note, display: true } } : undefined;
+pi.on("input", async (event, ctx) => {
+  const note = await routeInput(event, ctx);   // routeTask over event.text, origin "extension" for other extensions' input; appends the record
+  if (note && event.streamingBehavior) pi.sendMessage({ customType: "agent-kit/task-route", content: note, display: true }, { deliverAs: event.streamingBehavior });
+  else if (note) pending = { note, at: Date.now() };
+  return { action: "continue" };
 });
+pi.on("before_agent_start", () => takePending(NOTE_TTL_MS));   // the stored note, once, within 10 s
 ```
 
 The user runs measurement locally:
@@ -121,7 +121,7 @@ Notes are fixed templates. No Jev text reaches the model, only a route key and n
 | Runtime | Delivery | lookup | loop | rigor or any failure |
 | --- | --- | --- | --- | --- |
 | Claude Code | hook `additionalContext` | "Answer directly: no plan, subagents, or headings. If it turns out to need a change, treat it as a task." | "If the user's words hand the work off, read `background-run`'s SKILL.md at <path> and follow it. This invokes no landing mode." | nothing (the door note fires as today) |
-| Pi, and Pi roots under T3 | a custom message from `before_agent_start`, persisted and visible. Its pointer survives short follow-ups, and the system prompt stays byte-stable for the provider cache. | same | same | nothing |
+| Pi, and Pi roots under T3 | a custom message, persisted and visible: from `before_agent_start` for a typed prompt, or queued with a prompt typed while the agent works. Its pointer survives short follow-ups, and the system prompt stays byte-stable for the provider cache. | same | same | nothing |
 | Pi and T3 children | none: children work from their brief, whose `Route:` line the parent fills | – | – | – |
 | Codex | hook `additionalContext`, the same mechanism as Claude | same | same | nothing |
 
@@ -132,10 +132,10 @@ Jev never points at `babysit-and-ship`, `correct`, `reflect`, or the verificatio
 The only thing sent is the user's prompt for one turn, and only when all of these hold:
 
 - the prompt has at least 6 words and at most 4,000 characters (longer prompts are withheld, because pasted logs hide secrets);
-- it contains no credential shape, using the list as of PR #16;
+- it contains no credential shape: the list as of PR #16, plus Stripe live keys, npm and GitLab tokens, `Bearer` tokens, and URLs with embedded passwords;
 - a slash command is sent without its command name and gets a shadow answer only;
 - the session isn't a child;
-- the working directory's repository is not opted out. A repository opts out when the user commits an `.agents/jev-opt-out` file, and `AGENTIC_ROUTE=off` opts out a whole session. Prompts typed outside any repository are sent.
+- the working directory's repository is not opted out. A repository opts out when the user commits an `.agents/jev-opt-out` file, and `AGENTIC_ROUTE=off` opts out a whole session. Prompts typed outside any repository are sent. A submodule is its own repository: the opt-out file at its root governs it, not the superproject's.
 
 Home paths become `~`. Nothing else is sent: not the cwd, the repository name, earlier turns, files, or tool output. On 2026-10-12 the user widened ADR 0001's rule from public repositories to every repository not opted out, and ADR 0002 records that. The PR-risk check in ship still sends diffs from public repositories only. `egress.ts` is the only module that produces `Sendable`, and the transport accepts nothing else.
 
@@ -146,7 +146,8 @@ Every failure delivers nothing beyond what the door rule allows, writes one reco
 | Condition | Fallback | Request sent |
 | --- | --- | --- |
 | under 6 words, or a child session | `not-a-task`, `child` | no |
-| a slash command (`/name`), a skill mention (`$skill-name`), or Pi's expanded `/skill:name` block | `explicit-choice`: a shadow answer is recorded, and no note is delivered. Pi prompt templates expand before the extension sees them, so they count as ordinary prompts. | yes |
+| a typed slash command (`/name`, including Pi skill commands and prompt templates) or skill mention (`$skill-name`) | `explicit-choice`: only the command's arguments get a shadow answer, and no note is delivered | yes |
+| input from another Pi extension | `extension`: recorded, never sent | no |
 | an opted-out repository, a credential shape, or over 4,000 characters | `opted-out`, `unsafe-input` | no |
 | no key, the 3 s deadline passes, a cancel, or an HTTP or parse error | `classifier-unavailable`, `timeout`, `cancelled`, `error`, `malformed` | maybe |
 | a loop is advised but the skill file is missing | `skill-missing` (falls back to rigor) | yes |
@@ -156,7 +157,7 @@ Every failure delivers nothing beyond what the door rule allows, writes one reco
 
 - **Modes per note.** `door` is advisory (today's behavior). `lookup` and `loop` start in shadow, which records what they would have done.
 - **A note can't act without evidence.** Advisory mode requires a `Calibration`. It holds the threshold, the model, sample and positive counts, precision, recall, the date, and a digest of the exact question wording. A test fails when the wording changes and the digest no longer matches, which turns `jev.ts`'s comment "changing either wording means recalibrating" into a check. Flipping a note to advisory is a reviewed commit that adds its `Calibration`.
-- **Records hold answers, not text.** Each session appends to `$XDG_STATE_HOME/agentic/task-route/<machine>/<runtime>-<session>.jsonl`, one line of under 1 KiB per prompt. A line holds the raw answers (choice, confidence, probabilities, model), the advised and delivered routes, modes, fallback, latency, word and character counts, and a 16-hex digest of the prompt. It never holds task text. Each file has one writer, and the reader merges files and dedupes. Because `decide` is pure, a new threshold can be replayed over stored answers without new requests.
+- **Records hold answers, not text.** Each session appends to `$XDG_STATE_HOME/agentic/task-route/<machine>/<runtime>-<session>.jsonl`, one line of under 2 KiB per prompt; every variable-length field is bounded, and the worst case is tested. A line holds the raw answers (choice, confidence, probabilities, model), the advised and delivered routes, modes, fallback, latency, word and character counts, and a 16-hex digest of the prompt. It never holds task text. Each file has one writer, and the reader merges files and dedupes. Because `decide` is pure, a new threshold can be replayed over stored answers without new requests.
 - **Labels come from the user's own history.**
   - `route-harvest` joins records to local Claude, Codex, and Pi transcripts by digest. It writes candidates to an ignored local file and skips opted-out repositories. Text stays on the machine whose agent received it. The user's labels are stored by digest, without text, in that machine's ledger directory, so they travel with its records.
   - Sessions where the user typed `/background-run` supply loop positives.
@@ -191,7 +192,7 @@ The two-week review of `background-run` (open question 3) only means something i
 - `machine`: the short host name of the machine the agent runs on, such as `bananamac`;
 - `repo`: `owner/name`, or `none` outside a repository;
 - `optedOut`;
-- `explicit`: the command name, when one was typed.
+- `explicit`: the agent-kit skill a typed command named, or `other`, so typed text never reaches a record.
 
 They still never hold task text.
 
@@ -227,7 +228,7 @@ The main flow is three files deep: the adapter, then `route.ts`, then `egress.ts
 | `agentic/tools/jev/route-eval.ts` | `harvest`, `score`, and a report without text | new |
 | `agentic/tools/jev/pr-risk.ts` | the PR-risk question, threshold, and state | the rest of `jev.ts` |
 | `agentic/tools/jev/cli.ts` | `task-class --claude-hook` (unchanged command), `task-class --codex-hook`, `pr-risk`, `route-harvest`, `route-eval`, `route-report`, `route-sync` | edited |
-| `pi/extensions/task-class.ts` | the Pi adapter above, including `registryClassifier`, which parses Pi's `ClassifierAnswer` into the shared answer shape, and the reading of Pi's expanded `<skill>` block back into `/skill:name` | rewritten in place |
+| `pi/extensions/task-class.ts` | the Pi adapter above, including `registryClassifier`, which parses Pi's `ClassifierAnswer` into the shared answer shape, and routing on `input`, before Pi's expansion | rewritten in place |
 | `docs/adr/0002-task-routing.md` | amends ADR 0001 decision 5 | new |
 
 `taskClass`, `taskHint`, and `taskHintFor` are deleted in the same change that migrates their callers and tests. `pi-t3-runtime` is out of scope for now and needs no routing code.

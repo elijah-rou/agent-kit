@@ -6,8 +6,8 @@ import { parseAnswers, POLICY, QUESTIONS, type Classify } from "../../agentic/to
 
 const SKILLS_DIR = fileURLToPath(new URL("../../skills", import.meta.url));
 const NOTE_TYPE = "agent-kit/task-route";
-/** A note waits this long for its own prompt's turn; past it, the turn belongs to something else. */
-export const NOTE_TTL_MS = 10_000;
+/** Notes waiting for their prompt's turn; an input handled before reaching the agent leaves one behind. */
+const PENDING_MAX = 16;
 
 function isNativeChild(): boolean {
 	return process.env.PI_SUBAGENT_CHILD === "1" || process.env.PI_SUBAGENT_CHILD === "true";
@@ -30,7 +30,7 @@ export function registryClassifier(registry: ExtensionContext["modelRegistry"]):
 async function routeInput(event: InputEvent, ctx: ExtensionContext): Promise<string | undefined> {
 	try {
 		const origin = isNativeChild() ? "child" : event.source === "extension" ? "extension" : "user";
-		const input = { prompt: event.text, cwd: ctx.cwd, runtime: "pi" as const, sessionId: ctx.sessionManager.getSessionId(), origin } as const;
+		const input = { prompt: event.text, cwd: ctx.cwd, runtime: "pi" as const, sessionId: ctx.sessionManager.getSessionId(), origin, queued: event.streamingBehavior !== undefined } as const;
 		const deps = { policy: POLICY, classify: registryClassifier(ctx.modelRegistry), repo: repoOf, env: process.env, now: Date.now, skillsDir: SKILLS_DIR, ...(ctx.signal ? { signal: ctx.signal } : {}) };
 		const { note, record } = await routeTask(input, deps);
 		try {
@@ -46,26 +46,32 @@ async function routeInput(event: InputEvent, ctx: ExtensionContext): Promise<str
 
 // Routes each input with agent-kit's task-route policy (agentic/tools/jev/route.ts) and records it.
 // Input arrives before Pi expands skill commands and prompt templates, so only the typed text is
-// classified, and a typed command counts as the user's choice. Input queued while the agent works
-// gets its note queued the same way; otherwise the next turn's start delivers it. A note is a
-// visible custom message, so the system prompt stays byte-stable for the provider cache.
+// classified, and a typed command counts as the user's choice. A note waits for the turn whose
+// prompt is that same text (Pi expands only slash commands, which get no note), so it reaches its
+// own prompt's turn and no other. Input queued while the agent works is recorded without a note: a
+// queued message would be drained ahead of its prompt. A note is a visible custom message, so the
+// system prompt stays byte-stable for the provider cache. This assumes no earlier extension
+// transforms input; the only installed input handler (pi-unveil) never does.
 export default function (pi: ExtensionAPI) {
-	let pending: { note: string; at: number } | undefined;
+	const pending = new Map<string, string>();
 
 	pi.on("input", async (event, ctx) => {
-		pending = undefined;
 		const note = await routeInput(event, ctx);
 		if (note !== undefined) {
-			if (event.streamingBehavior) pi.sendMessage({ customType: NOTE_TYPE, content: note, display: true }, { deliverAs: event.streamingBehavior });
-			else pending = { note, at: Date.now() };
+			pending.delete(event.text);
+			pending.set(event.text, note);
+			for (const oldest of pending.keys()) {
+				if (pending.size <= PENDING_MAX) break;
+				pending.delete(oldest);
+			}
 		}
 		return { action: "continue" };
 	});
 
-	pi.on("before_agent_start", () => {
-		const routed = pending;
-		pending = undefined;
-		if (routed === undefined || Date.now() - routed.at > NOTE_TTL_MS) return undefined;
-		return { message: { customType: NOTE_TYPE, content: routed.note, display: true } };
+	pi.on("before_agent_start", (event) => {
+		const note = pending.get(event.prompt);
+		if (note === undefined) return undefined;
+		pending.delete(event.prompt);
+		return { message: { customType: NOTE_TYPE, content: note, display: true } };
 	});
 }

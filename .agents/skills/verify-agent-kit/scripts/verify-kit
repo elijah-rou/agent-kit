@@ -766,7 +766,8 @@ function drive(runId: string | undefined, feature: string | undefined, options: 
 	const line = outcome.state === "PASS" ? `PASS ${feature}` : `${outcome.state} ${feature}: ${outcome.detail}`;
 	// Record what this process observes now, beside what launch recorded, so a reader can compare them.
 	const observed = (path: string) => { try { return `${git(["rev-parse", "HEAD"], path)} tree ${treeDigest(path)}`; } catch (error) { return `unreadable (${(error as Error).message})`; } };
-	rec.note("result.txt", `${line}\n${run.dirty ? `${DIRTY}\n` : ""}checkout ${run.checkout}: launched at ${run.revision} tree ${run.tree}, driven at ${observed(run.checkout)}\nkit ${run.kit}: launched at ${run.kitRevision} tree ${run.kitTree}, driven at ${observed(run.kit)}\n`);
+	const failed = rec.failures.map((failure) => `failed: ${failure}\n`).join("");
+	rec.note("result.txt", `${line}\n${failed}${run.dirty ? `${DIRTY}\n` : ""}checkout ${run.checkout}: launched at ${run.revision} tree ${run.tree}, driven at ${observed(run.checkout)}\nkit ${run.kit}: launched at ${run.kitRevision} tree ${run.kitTree}, driven at ${observed(run.kit)}\n`);
 	if (run.dirty) console.log(DIRTY);
 	console.log(line);
 	return outcome;

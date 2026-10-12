@@ -26,17 +26,17 @@ A repository that commits ${OPT_OUT_FILE} never sends its prompts. AGENTIC_ROUTE
 note back for a session, and AGENTIC_ROUTE=off also stops every request.
 `;
 
-const BACKGROUND_RUN_SKILL = join(import.meta.dir, "..", "..", "..", "skills", "background-run", "SKILL.md");
+const SKILLS_DIR = join(import.meta.dir, "..", "..", "..", "skills");
 
 function routeDeps(env: Record<string, string | undefined>): RouteDeps {
-	return { policy: POLICY, classify: httpClassifier(() => apiKey(env, 1000)), repo: repoOf, env, now: Date.now, backgroundRunSkill: BACKGROUND_RUN_SKILL };
+	return { policy: POLICY, classify: httpClassifier(() => apiKey(env, 1000)), repo: repoOf, env, now: Date.now, skillsDir: SKILLS_DIR };
 }
 
 /** A UserPromptSubmit hook: Claude Code and Codex send the same prompt, cwd, and session_id fields. */
 async function promptHook(runtime: Runtime): Promise<void> {
 	const event: unknown = JSON.parse(await Bun.stdin.text());
 	const field = (name: string) => (typeof event === "object" && event !== null && typeof (event as Record<string, unknown>)[name] === "string" ? ((event as Record<string, unknown>)[name] as string) : undefined);
-	const input = { prompt: field("prompt") ?? "", cwd: field("cwd") ?? process.cwd(), runtime, sessionId: field("session_id") ?? "unknown", child: false };
+	const input = { prompt: field("prompt") ?? "", cwd: field("cwd") ?? process.cwd(), runtime, sessionId: field("session_id") ?? "unknown", origin: "user" as const };
 	const { note, record } = await routeTask(input, routeDeps(process.env));
 	if (note) console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: note } }));
 	appendRecord(record, process.env);
@@ -64,7 +64,7 @@ async function main(args: string[]): Promise<number> {
 		}
 		const text = rest.join(" ").trim();
 		if (!text) return console.error(USAGE), 2;
-		const { note, record } = await routeTask({ prompt: text, cwd: process.cwd(), runtime: "cli", sessionId: "manual", child: false }, routeDeps(process.env));
+		const { note, record } = await routeTask({ prompt: text, cwd: process.cwd(), runtime: "cli", sessionId: "manual", origin: "user" as const }, routeDeps(process.env));
 		console.log(JSON.stringify({ repo: record.repo, advised: record.advised, delivered: record.delivered, fallbacks: record.fallbacks, model: record.answers?.model }));
 		console.log(note ?? "no note");
 		return 0;

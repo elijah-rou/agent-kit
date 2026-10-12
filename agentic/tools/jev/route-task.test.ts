@@ -3,10 +3,11 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Repo } from "./egress.ts";
-import { appendRecord, ledgerFile, machineName, promptDigest, RECORD_MAX_BYTES, routeTask, type RouteDeps, type RouteInput, type RouteRecord } from "./route-task.ts";
-import { digestQuestion, doorNote, POLICY, QUESTIONS, type Answers, type Calibration, type Classify, type Level, type Policy } from "./route.ts";
+import { appendRecord, commandLabel, FIELD_MAX, ledgerFile, machineName, promptDigest, RECORD_MAX_BYTES, routeTask, type RouteDeps, type RouteInput, type RouteRecord } from "./route-task.ts";
+import { digestQuestion, doorNote, MODEL_NAME_MAX, POLICY, QUESTIONS, type Answers, type Calibration, type Classify, type Level, type Policy } from "./route.ts";
 
-const SKILL = join(import.meta.dir, "..", "..", "..", "skills", "background-run", "SKILL.md");
+const SKILLS = join(import.meta.dir, "..", "..", "..", "skills");
+const SKILL = join(SKILLS, "background-run", "SKILL.md");
 const MIGRATE = "Migrate the Zanzibar ledger store from JSON files to SQLite";
 
 const answers = (level: Level, levelConfidence: number, door: Answers["door"]["choice"] = "reversible", doorConfidence = 0.95, model = "jev-1.13.0"): Answers => ({
@@ -15,7 +16,7 @@ const answers = (level: Level, levelConfidence: number, door: Answers["door"]["c
 	model,
 });
 
-function harness(options: { answer?: Answers; classify?: Classify; repo?: Repo; env?: Record<string, string>; policy?: Policy; skill?: string } = {}) {
+function harness(options: { answer?: Answers; classify?: Classify; repo?: Repo; env?: Record<string, string>; policy?: Policy; skillsDir?: string } = {}) {
 	const calls = { classify: [] as string[], repo: 0 };
 	const classify: Classify = async (state) => {
 		calls.classify.push(state.task);
@@ -27,11 +28,11 @@ function harness(options: { answer?: Answers; classify?: Classify; repo?: Repo; 
 		repo: async () => (calls.repo++, options.repo ?? { slug: "o/r", optedOut: false }),
 		env: options.env ?? {},
 		now: Date.now,
-		backgroundRunSkill: options.skill ?? SKILL,
+		skillsDir: options.skillsDir ?? SKILLS,
 	};
 	return { deps, calls };
 }
-const input = (prompt: string, fields: Partial<RouteInput> = {}): RouteInput => ({ prompt, cwd: "/repo", runtime: "claude", sessionId: "s1", child: false, ...fields });
+const input = (prompt: string, fields: Partial<RouteInput> = {}): RouteInput => ({ prompt, cwd: "/repo", runtime: "claude", sessionId: "s1", origin: "user", ...fields });
 
 const calibrated: Calibration = { threshold: 0.9, questionsDigest: digestQuestion(QUESTIONS.level), model: "jev-1.13.0", samples: 200, positives: 20, precision: 0.95, recall: 0.8, date: "2026-10-30", source: "test" };
 const ADVISORY: Policy = { ...POLICY, notes: { ...POLICY.notes, lookup: { mode: "advisory", calibration: calibrated }, loop: { mode: "advisory", calibration: calibrated } } };
@@ -64,7 +65,8 @@ describe("routeTask", () => {
 			[input(`please rotate the deploy token ${"ghp_" + "c".repeat(30)} today`), undefined, "unsafe-input"],
 			[input(MIGRATE), { slug: "o/private", optedOut: true }, "opted-out"],
 			[input("yes, continue"), undefined, "not-a-task"],
-			[input(MIGRATE, { child: true }), undefined, "child"],
+			[input(MIGRATE, { origin: "child" }), undefined, "child"],
+			[input(MIGRATE, { origin: "extension" }), undefined, "extension"],
 		];
 		for (const [prompt, repo, reason] of cases) {
 			const { deps, calls } = harness({ answer: answers("rigor", 0.99, "one-way-door", 0.99), ...(repo ? { repo } : {}) });
@@ -94,6 +96,16 @@ describe("routeTask", () => {
 		expect(record).toMatchObject({ explicit: "background-run", advised: { level: "loop", door: oneWay }, delivered: { level: "rigor" }, fallbacks: ["explicit-choice"] });
 	});
 
+	test("a typed command is recorded only by an agent-kit skill's name, never as typed text", async () => {
+		expect(commandLabel("background-run", SKILLS)).toBe("background-run");
+		expect(commandLabel("skill:background-run", SKILLS)).toBe("background-run");
+		expect(commandLabel("hunter2hunter2hunter2", SKILLS)).toBe("other");
+		expect(commandLabel("../background-run", SKILLS)).toBe("other");
+		const { record } = await routeTask(input("/hunter2hunter2hunter2 is my password please rotate it now"), harness({ answer: answers("rigor", 0.99) }).deps);
+		expect(record.explicit).toBe("other");
+		expect(JSON.stringify(record)).not.toContain("hunter2");
+	});
+
 	test("a classifier that hangs is cut off at the deadline", async () => {
 		const hanging: Classify = (_state, signal) => new Promise((resolve) => signal.addEventListener("abort", () => resolve({ kind: "failed", reason: "timeout" })));
 		const started = Date.now();
@@ -107,7 +119,7 @@ describe("routeTask", () => {
 		expect((await routeTask(input("Where does the config loader read XDG paths from?"), harness({ answer: answers("lookup", 0.97), policy: ADVISORY }).deps)).note).toContain("Answer directly");
 		const loop = await routeTask(input("Going to bed, keep fixing the flaky tests until CI is green"), harness({ answer: answers("loop", 0.97), policy: ADVISORY }).deps);
 		expect(loop.note).toContain(`read the background-run skill at ${SKILL}`);
-		const missing = await routeTask(input("Going to bed, keep fixing the flaky tests until CI is green"), harness({ answer: answers("loop", 0.97, "one-way-door", 0.99), policy: ADVISORY, skill: "/nowhere/background-run/SKILL.md" }).deps);
+		const missing = await routeTask(input("Going to bed, keep fixing the flaky tests until CI is green"), harness({ answer: answers("loop", 0.97, "one-way-door", 0.99), policy: ADVISORY, skillsDir: "/nowhere/skills" }).deps);
 		expect(missing.note).toBe(doorNote(oneWay));
 		expect(missing.record).toMatchObject({ delivered: { level: "rigor", door: oneWay }, fallbacks: ["skill-missing"] });
 		const drift = await routeTask(input("Where does the config loader read XDG paths from?"), harness({ answer: answers("lookup", 0.97, "reversible", 0.95, "jev-1.14.0"), policy: ADVISORY }).deps);
@@ -130,8 +142,24 @@ describe("the ledger", () => {
 		expect(JSON.parse(lines[0]!)).toEqual(JSON.parse(JSON.stringify(record)));
 	});
 
-	test("an oversized record is refused rather than written", async () => {
-		const { record } = await routeTask(input(MIGRATE), harness({ answer: answers("rigor", 0.99) }).deps);
-		expect(() => appendRecord({ ...record, repo: "r".repeat(RECORD_MAX_BYTES) }, { XDG_STATE_HOME: mkdtempSync(join(tmpdir(), "jev-state-")) })).toThrow("over 1024");
+	test("the largest record any accepted input can produce fits the cap, and a larger one is refused", async () => {
+		const precise = 0.9876543210987654;
+		const scored = <C extends string>(choice: C, options: readonly C[]) => ({ choice, confidence: precise, probabilities: Object.fromEntries(options.map((o) => [o, precise])) as Record<C, number> });
+		const answer: Answers = { door: scored("one-way-door", ["reversible", "experiment", "one-way-door"] as const), level: scored("loop", ["lookup", "rigor", "loop"] as const), model: "m".repeat(MODEL_NAME_MAX) };
+		const repo = { slug: `${"o".repeat(39)}/${"r".repeat(100)}`, optedOut: false };
+		const policy: Policy = { ...ADVISORY, notes: { ...ADVISORY.notes, loop: { mode: "advisory", calibration: { ...calibrated, model: answer.model } } } };
+		const long = `Keep going ${"word ".repeat(790)}`.slice(0, 4000);
+		const scenarios = [
+			await routeTask(input(long, { sessionId: "s".repeat(500) }), harness({ answer, repo, policy }).deps),
+			await routeTask(input(`/${"c".repeat(300)} ${long.slice(0, 3600)}`, { sessionId: "s".repeat(500) }), harness({ answer, repo, policy }).deps),
+		];
+		for (const { record } of scenarios) {
+			const bytes = Buffer.byteLength(`${JSON.stringify(record)}\n`) + FIELD_MAX.machine - record.machine.length;
+			expect(bytes).toBeLessThan(RECORD_MAX_BYTES);
+		}
+		expect(scenarios[0]!.record.delivered).toEqual({ level: "loop", door: { choice: "one-way-door", confidence: precise } });
+		expect(scenarios[1]!.record.explicit).toBe("other");
+		const { record } = scenarios[0]!;
+		expect(() => appendRecord({ ...record, repo: "r".repeat(RECORD_MAX_BYTES) }, { XDG_STATE_HOME: mkdtempSync(join(tmpdir(), "jev-state-")) })).toThrow(`over ${RECORD_MAX_BYTES}`);
 	});
 });

@@ -225,9 +225,12 @@ function scored<C extends string>(raw: unknown, choices: readonly C[]): ScoredAn
 	return { choice: choice as C, confidence, probabilities: Object.fromEntries(choices.map((option) => [option, table[option]])) as Record<C, number> };
 }
 
+/** Model names such as jev-1.13.0; anything longer is not an answer. */
+export const MODEL_NAME_MAX = 64;
+
 /** Both transports' answers, validated: the HTTP body and Pi's ClassifierResult share this shape. */
 export function parseAnswers(model: unknown, answers: unknown): Answers | undefined {
-	if (typeof model !== "string" || model.length === 0 || typeof answers !== "object" || answers === null) return undefined;
+	if (typeof model !== "string" || model.length === 0 || model.length > MODEL_NAME_MAX || typeof answers !== "object" || answers === null) return undefined;
 	const raw = answers as Record<string, unknown>;
 	const door = scored(raw.door, Object.keys(TASK_CRITERIA) as DoorClass[]);
 	const level = scored(raw.level, Object.keys(LEVEL_CRITERIA) as Level[]);

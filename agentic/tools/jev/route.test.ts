@@ -130,6 +130,7 @@ describe("parseAnswers", () => {
 	test("rejects a missing model, an unknown choice, an out-of-range number, or a missing probability", () => {
 		expect(parseAnswers(undefined, wire)).toBeUndefined();
 		expect(parseAnswers("", wire)).toBeUndefined();
+		expect(parseAnswers("m".repeat(65), wire)).toBeUndefined();
 		expect(parseAnswers("m", { door: wire.door })).toBeUndefined();
 		expect(parseAnswers("m", { ...wire, level: { ...wire.level, choice: "poteto" } })).toBeUndefined();
 		expect(parseAnswers("m", { ...wire, door: { ...wire.door, confidence: 1.5 } })).toBeUndefined();

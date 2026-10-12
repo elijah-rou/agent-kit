@@ -22,6 +22,10 @@ describe("what leaves the machine", () => {
 		expect(sendable(`configure Jev with _${typesafe}_ for this project`)).toBeUndefined();
 		expect(sendable("the api  key: abcd1234efgh5678 for staging")).toBeUndefined();
 		expect(sendable("my api key: abcdefgh12345678 for staging")).toBeUndefined();
+		for (const secret of ["sk_" + "live_" + "a".repeat(24), "npm_" + "b".repeat(36), "glpat-" + "c".repeat(20), "Bearer " + "d".repeat(32), "postgres://" + "admin:" + "s3cretpw" + "@db.internal:5432/app"]) {
+			expect(sendable(`connect the worker with ${secret} before deploying`)).toBeUndefined();
+		}
+		expect(sendable("point the worker at postgres://db.internal:5432/app and https://example.com/docs")).toBe("point the worker at postgres://db.internal:5432/app and https://example.com/docs");
 		expect(sendable("rename the token parser module and update its callers")).toBe("rename the token parser module and update its callers");
 		expect(sendable("document the apikey_ prefix rule and the api key rotation steps")).toBe("document the apikey_ prefix rule and the api key rotation steps");
 		const [mac, linux] = ["/" + "Users/someone", "/" + "home/dev"];
@@ -40,15 +44,16 @@ describe("what leaves the machine", () => {
 });
 
 describe("the task screen", () => {
-	const anywhere = { child: false, optedOut: false };
+	const anywhere = { origin: "user", optedOut: false } as const;
 
 	test("sends a task-sized prompt, redacted, and withholds everything else with its reason", () => {
 		expect(screen(`  Migrate the ledger store to SQLite under ${"/" + "Users/someone"}/app  `, anywhere)).toEqual({ kind: "send", text: "Migrate the ledger store to SQLite under ~/app" as Sendable });
 		expect(screen("yes, continue", anywhere)).toEqual({ kind: "withhold", reason: "not-a-task" });
 		expect(screen(`Fix the build from this log: ${"x".repeat(MAX_TASK_CHARS)}`, anywhere)).toEqual({ kind: "withhold", reason: "unsafe-input" });
 		expect(screen(`rotate the deploy token ${"ghp_" + "c".repeat(30)} today please`, anywhere)).toEqual({ kind: "withhold", reason: "unsafe-input" });
-		expect(screen("Migrate the ledger store to SQLite now", { child: false, optedOut: true })).toEqual({ kind: "withhold", reason: "opted-out" });
-		expect(screen("Migrate the ledger store to SQLite now", { child: true, optedOut: false })).toEqual({ kind: "withhold", reason: "child" });
+		expect(screen("Migrate the ledger store to SQLite now", { origin: "user", optedOut: true })).toEqual({ kind: "withhold", reason: "opted-out" });
+		expect(screen("Migrate the ledger store to SQLite now", { origin: "child", optedOut: false })).toEqual({ kind: "withhold", reason: "child" });
+		expect(screen("Migrate the ledger store to SQLite now", { origin: "extension", optedOut: false })).toEqual({ kind: "withhold", reason: "extension" });
 	});
 
 	test("a prompt at the length limit is still sent", () => {
@@ -103,6 +108,16 @@ describe("Jev over HTTP", () => {
 		const outcome = await httpClassifier(async () => "test-key", fetch)(state, live());
 		expect(sent).toEqual({ url: "https://api.typesafe.ai/v1/systemone", body: { model: "jev-latest", state: { task: "Migrate the ledger store to SQLite" }, questions: JSON.parse(JSON.stringify(QUESTIONS)) }, auth: "Bearer test-key" });
 		expect(outcome).toMatchObject({ kind: "answered", answers: { door: { choice: "one-way-door" }, level: { choice: "rigor" }, model: "jev-1.13.0" } });
+	});
+
+	test("a slow key lookup is cut off by the same deadline as the request", async () => {
+		let fetched = false;
+		const slowKey = () => new Promise<string>((resolve) => setTimeout(() => resolve("k"), 500));
+		const started = Date.now();
+		const outcome = await httpClassifier(slowKey, async () => ((fetched = true), new Response("{}")))(state, AbortSignal.timeout(30));
+		expect(outcome).toEqual({ kind: "failed", reason: "timeout" });
+		expect(Date.now() - started).toBeLessThan(300);
+		expect(fetched).toBe(false);
 	});
 
 	test("no key, an HTTP error, a malformed body, a timeout, or a cancel is a failure, never a throw", async () => {

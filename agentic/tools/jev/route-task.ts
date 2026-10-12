@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { screen, type Repo, type Withheld } from "./egress.ts";
+import { screen, type Origin, type Repo, type Withheld } from "./egress.ts";
 import { applyModes, decide, explicitCommand, noteFor, sessionFor, type Answers, type Classify, type ClassifyFailure, type Policy, type Route, type Session } from "./route.ts";
 
 export type Runtime = "claude" | "codex" | "pi" | "cli";
@@ -16,8 +16,8 @@ export type RouteInput = {
 	cwd: string;
 	runtime: Runtime;
 	sessionId: string;
-	/** A child works from its parent's brief, so it is recorded but never classified. */
-	child: boolean;
+	/** Only the user's own words are classified; a child's brief or another extension's text is recorded but never sent. */
+	origin: Origin;
 };
 export type RouteDeps = {
 	policy: Policy;
@@ -25,8 +25,8 @@ export type RouteDeps = {
 	repo: (cwd: string, timeoutMs: number) => Promise<Repo>;
 	env: Record<string, string | undefined>;
 	now: () => number;
-	/** The path of background-run's SKILL.md, which the loop note points at. */
-	backgroundRunSkill: string;
+	/** agent-kit's skills directory: the loop note points at background-run there, and a typed command is recorded only by a skill's name. */
+	skillsDir: string;
 	/** Cancels the request, for a prompt the user abandons. */
 	signal?: AbortSignal;
 };
@@ -56,6 +56,15 @@ export type RouteRecord = {
 	latencyMs: number;
 };
 
+/** Every variable-length field is cut to these lengths, so a record of any accepted input fits RECORD_MAX_BYTES. */
+export const FIELD_MAX = { machine: 63, session: 128, repo: 140, explicit: 64 } as const;
+
+/** A typed command for the record: an agent-kit skill's name, or "other", so a record never carries typed text. */
+export function commandLabel(command: string, skillsDir: string): string {
+	const name = command.startsWith("skill:") ? command.slice("skill:".length) : command;
+	return /^[a-z][a-z0-9-]*$/.test(name) && existsSync(join(skillsDir, name, "SKILL.md")) ? name : "other";
+}
+
 /** 16 hex digits of the prompt as typed, to join records to transcripts without storing text. */
 export function promptDigest(prompt: string): string {
 	return createHash("sha256").update(prompt.trim()).digest("hex").slice(0, 16);
@@ -63,7 +72,7 @@ export function promptDigest(prompt: string): string {
 
 /** The short, lowercased host name, such as bananamac: the machine the agent runs on. */
 export function machineName(): string {
-	const name = hostname().split(".")[0]?.toLowerCase() ?? "";
+	const name = (hostname().split(".")[0] ?? "").toLowerCase().slice(0, FIELD_MAX.machine);
 	return name.length > 0 ? name : "unknown";
 }
 
@@ -81,10 +90,10 @@ export async function routeTask(input: RouteInput, deps: RouteDeps): Promise<{ n
 		machine: machineName(),
 		runtime: input.runtime,
 		launcher: deps.env.T3CODE_CLI_PATH ? "t3" : "direct",
-		session: input.sessionId,
-		repo: repo.slug,
+		session: input.sessionId.slice(0, FIELD_MAX.session),
+		repo: repo.slug.slice(0, FIELD_MAX.repo),
 		optedOut: repo.optedOut,
-		...(explicit ? { explicit: explicit.command } : {}),
+		...(explicit ? { explicit: commandLabel(explicit.command, deps.skillsDir).slice(0, FIELD_MAX.explicit) } : {}),
 		mode,
 		words: input.prompt.trim().split(/\s+/).filter(Boolean).length,
 		chars: input.prompt.length,
@@ -96,7 +105,7 @@ export async function routeTask(input: RouteInput, deps: RouteDeps): Promise<{ n
 	const rigor: Route = { level: "rigor" };
 
 	if (mode === "off") return { record: record({ delivered: rigor, fallbacks: ["off"] }) };
-	const screened = screen(explicit ? explicit.rest : input.prompt, { child: input.child, optedOut: repo.optedOut });
+	const screened = screen(explicit ? explicit.rest : input.prompt, { origin: input.origin, optedOut: repo.optedOut });
 	if (screened.kind === "withhold") return { record: record({ delivered: rigor, fallbacks: [screened.reason] }) };
 
 	const signals = [AbortSignal.timeout(Math.max(0, left()))];
@@ -112,16 +121,17 @@ export async function routeTask(input: RouteInput, deps: RouteDeps): Promise<{ n
 	const delivery = applyModes(decision.advised, policy, mode, answers.model);
 	if (delivery.fallback) fallbacks.push(delivery.fallback);
 	let delivered = delivery.delivered;
-	if (delivered.level === "loop" && !existsSync(deps.backgroundRunSkill)) {
+	const backgroundRunSkill = join(deps.skillsDir, "background-run", "SKILL.md");
+	if (delivered.level === "loop" && !existsSync(backgroundRunSkill)) {
 		delivered = delivered.door ? { level: "rigor", door: delivered.door } : rigor;
 		fallbacks.push("skill-missing");
 	}
-	const note = noteFor(delivered, deps.backgroundRunSkill);
+	const note = noteFor(delivered, backgroundRunSkill);
 	return { note, record: record({ answers, advised: decision.advised, delivered, noted: note !== undefined, fallbacks }) };
 }
 
-/** Records are capped well under a pipe-atomic write, so one line never interleaves with another writer's. */
-export const RECORD_MAX_BYTES = 1024;
+/** Each file has one writer, so the cap only bounds the ledger's growth; the worst-case record is tested under it. */
+export const RECORD_MAX_BYTES = 2048;
 
 /** Where a session's records go: one file per runtime session, one writer each. */
 export function ledgerFile(record: Pick<RouteRecord, "machine" | "runtime" | "session">, env: Record<string, string | undefined>): string {

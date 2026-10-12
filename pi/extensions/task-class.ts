@@ -1,21 +1,16 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, InputEvent } from "@earendil-works/pi-coding-agent";
 import { fileURLToPath } from "node:url";
 import { repoOf } from "../../agentic/tools/jev/egress.ts";
 import { appendRecord, routeTask } from "../../agentic/tools/jev/route-task.ts";
 import { parseAnswers, POLICY, QUESTIONS, type Classify } from "../../agentic/tools/jev/route.ts";
 
-const BACKGROUND_RUN_SKILL = fileURLToPath(new URL("../../skills/background-run/SKILL.md", import.meta.url));
-// Pi's own expansion of `/skill:name args`, as agent-session's parseSkillBlock reads it back.
-const SKILL_BLOCK = /^<skill name="([^"]+)" location="[^"]+">\n[\s\S]*?\n<\/skill>(?:\n\n([\s\S]+))?$/;
+const SKILLS_DIR = fileURLToPath(new URL("../../skills", import.meta.url));
+const NOTE_TYPE = "agent-kit/task-route";
+/** A note waits this long for its own prompt's turn; past it, the turn belongs to something else. */
+export const NOTE_TTL_MS = 10_000;
 
 function isNativeChild(): boolean {
 	return process.env.PI_SUBAGENT_CHILD === "1" || process.env.PI_SUBAGENT_CHILD === "true";
-}
-
-/** What the user typed: an expanded skill command reads as `/skill:name args` again. */
-export function typedPrompt(prompt: string): string {
-	const skill = SKILL_BLOCK.exec(prompt);
-	return skill ? `/skill:${skill[1]} ${skill[2] ?? ""}`.trim() : prompt;
 }
 
 /** Jev through Pi's classifier registry, with the TypeSafe credential Pi holds. */
@@ -31,24 +26,46 @@ export function registryClassifier(registry: ExtensionContext["modelRegistry"]):
 	};
 }
 
-// Routes each prompt with agent-kit's task-route policy (agentic/tools/jev/route.ts) and records it.
-// A note arrives as a visible custom message, so the system prompt stays byte-stable for the
-// provider cache. Children work from briefs: they are recorded but never classified. A failure
-// only means no note.
-export default function (pi: ExtensionAPI) {
-	pi.on("before_agent_start", async (event, ctx) => {
+/** Routes and records one input as the user typed it; the note, if any. A failure only means no note. */
+async function routeInput(event: InputEvent, ctx: ExtensionContext): Promise<string | undefined> {
+	try {
+		const origin = isNativeChild() ? "child" : event.source === "extension" ? "extension" : "user";
+		const input = { prompt: event.text, cwd: ctx.cwd, runtime: "pi" as const, sessionId: ctx.sessionManager.getSessionId(), origin } as const;
+		const deps = { policy: POLICY, classify: registryClassifier(ctx.modelRegistry), repo: repoOf, env: process.env, now: Date.now, skillsDir: SKILLS_DIR, ...(ctx.signal ? { signal: ctx.signal } : {}) };
+		const { note, record } = await routeTask(input, deps);
 		try {
-			const input = { prompt: typedPrompt(event.prompt), cwd: ctx.cwd, runtime: "pi" as const, sessionId: ctx.sessionManager.getSessionId(), child: isNativeChild() };
-			const deps = { policy: POLICY, classify: registryClassifier(ctx.modelRegistry), repo: repoOf, env: process.env, now: Date.now, backgroundRunSkill: BACKGROUND_RUN_SKILL, ...(ctx.signal ? { signal: ctx.signal } : {}) };
-			const { note, record } = await routeTask(input, deps);
-			try {
-				appendRecord(record, process.env);
-			} catch {
-				// A missing record shows in route-report; the note still goes out.
-			}
-			return note ? { message: { customType: "agent-kit/task-route", content: note, display: true } } : undefined;
+			appendRecord(record, process.env);
 		} catch {
-			return undefined;
+			// A missing record shows in route-report; the note still goes out.
 		}
+		return note;
+	} catch {
+		return undefined;
+	}
+}
+
+// Routes each input with agent-kit's task-route policy (agentic/tools/jev/route.ts) and records it.
+// Input arrives before Pi expands skill commands and prompt templates, so only the typed text is
+// classified, and a typed command counts as the user's choice. Input queued while the agent works
+// gets its note queued the same way; otherwise the next turn's start delivers it. A note is a
+// visible custom message, so the system prompt stays byte-stable for the provider cache.
+export default function (pi: ExtensionAPI) {
+	let pending: { note: string; at: number } | undefined;
+
+	pi.on("input", async (event, ctx) => {
+		pending = undefined;
+		const note = await routeInput(event, ctx);
+		if (note !== undefined) {
+			if (event.streamingBehavior) pi.sendMessage({ customType: NOTE_TYPE, content: note, display: true }, { deliverAs: event.streamingBehavior });
+			else pending = { note, at: Date.now() };
+		}
+		return { action: "continue" };
+	});
+
+	pi.on("before_agent_start", () => {
+		const routed = pending;
+		pending = undefined;
+		if (routed === undefined || Date.now() - routed.at > NOTE_TTL_MS) return undefined;
+		return { message: { customType: NOTE_TYPE, content: routed.note, display: true } };
 	});
 }

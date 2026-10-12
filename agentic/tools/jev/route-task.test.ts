@@ -103,7 +103,7 @@ describe("routeTask", () => {
 		expect(offResult.note).toBeUndefined();
 		expect(offResult.record).toMatchObject({ mode: "off", fallbacks: ["off"] });
 		expect(off.calls).toEqual({ classify: [], repo: 0 });
-		const shadow = await routeTask(input(MIGRATE), harness({ answer: answers("rigor", 0.99, "one-way-door", 0.99), env: { AGENTIC_ROUTE: "shadow" } }).deps);
+		const shadow = await routeTask(input(MIGRATE), harness({ answer: answers("rigor", 0.99, "one-way-door", 0.99), env: { AGENTIC_ROUTE: "shadow" }, policy: DOOR }).deps);
 		expect(shadow.note).toBeUndefined();
 		expect(shadow.record).toMatchObject({ mode: "shadow", advised: { level: "rigor", door: oneWay }, delivered: { level: "rigor" } });
 	});

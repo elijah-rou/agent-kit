@@ -32,7 +32,7 @@ ADR 0001 decision 5 let Jev see task prompts only from public repositories, and 
 - Under Pi, model drift cannot be detected, so Pi's lookup and loop notes stay in shadow until Pi reports the answering version. The door hint is unaffected.
 - A T3-delegated child session cannot yet be told apart from a typed prompt in the Claude and Codex hooks, so its brief is classified like a prompt, as the door hint already was.
 - Each prompt adds one record of under 1 KiB to the local ledger.
-- Since 2026-10-12 the door hint is in shadow too. On live prompts, mostly short follow-ups that Jev sees without their conversation, it fired on nearly every reversible prompt, so it waits for `route-eval` on labeled live records. Turns the runtime starts itself (Claude Code task notifications, T3 wake-ups after a delegated task) are recorded with origin `system` and never sent.
+- Since 2026-10-12 the door hint is in shadow too. On live prompts, mostly short follow-ups that Jev sees without their conversation, it fired on nearly every reversible prompt, so it waits for `route-eval` on labeled live records. Turns the runtime starts itself (Claude Code task notifications, T3 wake-ups after a delegated task) are recorded with the fallback `system` and never sent, in all three runtimes.
 
 ## Reversal conditions
 

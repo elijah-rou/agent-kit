@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, InputEvent } from "@earendil-works/pi-coding-agent";
 import { fileURLToPath } from "node:url";
-import { repoOf } from "../../agentic/tools/jev/egress.ts";
+import { promptOrigin, repoOf } from "../../agentic/tools/jev/egress.ts";
 import { appendRecord, routeTask } from "../../agentic/tools/jev/route-task.ts";
 import { parseAnswers, POLICY, QUESTIONS, type Classify, type Policy } from "../../agentic/tools/jev/route.ts";
 
@@ -27,7 +27,7 @@ export function registryClassifier(registry: ExtensionContext["modelRegistry"]):
 /** Routes and records one input as the user typed it; the note, if any. A failure only means no note. */
 async function routeInput(event: InputEvent, ctx: ExtensionContext, policy: Policy): Promise<string | undefined> {
 	try {
-		const origin = isNativeChild() ? "child" : event.source === "extension" ? "extension" : "user";
+		const origin = isNativeChild() ? "child" : event.source === "extension" ? "extension" : promptOrigin(event.text);
 		const input = { prompt: event.text, cwd: ctx.cwd, runtime: "pi" as const, sessionId: ctx.sessionManager.getSessionId(), origin, queued: event.streamingBehavior !== undefined } as const;
 		const deps = { policy, classify: registryClassifier(ctx.modelRegistry), repo: repoOf, env: process.env, now: Date.now, skillsDir: SKILLS_DIR, ...(ctx.signal ? { signal: ctx.signal } : {}) };
 		const { note, record } = await routeTask(input, deps);

@@ -49,7 +49,7 @@ export function isTask(prompt: string): boolean {
 	return prompt.trim().split(/\s+/).filter(Boolean).length >= MIN_TASK_WORDS;
 }
 
-const CREDENTIAL = [/gh[pousr]_[A-Za-z0-9]{20,}/, /github_pat_[A-Za-z0-9_]{20,}/, /\bsk-[A-Za-z0-9_-]{20,}/, /AKIA[0-9A-Z]{16}/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /\bxox[abprs]-[A-Za-z0-9-]{10,}/, /AIza[0-9A-Za-z_-]{35}/, /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\./, /apikey_[0-9a-f]{20,}/i, /(?:password|passwd|secret|token|api[_\s-]*key)\s*[:=]\s*\S{8,}/i];
+const CREDENTIAL = [/gh[pousr]_[A-Za-z0-9]{20,}/, /github_pat_[A-Za-z0-9_]{20,}/, /\bsk-[A-Za-z0-9_-]{20,}/, /AKIA[0-9A-Z]{16}/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /\bxox[abprs]-[A-Za-z0-9-]{10,}/, /AIza[0-9A-Za-z_-]{35}/, /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\./, /apikey_[0-9a-f]{20,}/i, /\b[rs]k_live_[A-Za-z0-9]{16,}/, /\bnpm_[A-Za-z0-9]{36}\b/, /\bglpat-[A-Za-z0-9_-]{20,}/, /\bBearer\s+[A-Za-z0-9._~+/-]{20,}=*/, /\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:[^\s/@]+@/i, /(?:password|passwd|secret|token|api[_\s-]*key)\s*[:=]\s*\S{8,}/i];
 
 /**
  * The text as it may be sent to TypeSafe: home directories become "~", and text containing a common
@@ -112,12 +112,14 @@ export async function originSlug(cwd: string, timeoutMs = 2000): Promise<string 
 	return remote ? /^(?:https:\/\/|ssh:\/\/git@|git@)github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(remote)?.[1] : undefined;
 }
 
-export type Withheld = "child" | "opted-out" | "not-a-task" | "unsafe-input";
+/** Who wrote the text: the user, a child session's parent (a brief), or another extension. */
+export type Origin = "user" | "child" | "extension";
+export type Withheld = "child" | "extension" | "opted-out" | "not-a-task" | "unsafe-input";
 export type Screened = { kind: "send"; text: Sendable } | { kind: "withhold"; reason: Withheld };
 
 /** Whether a prompt may be sent, and the redacted text if so. The only place a Sendable is made. */
-export function screen(prompt: string, where: { child: boolean; optedOut: boolean }): Screened {
-	if (where.child) return { kind: "withhold", reason: "child" };
+export function screen(prompt: string, where: { origin: Origin; optedOut: boolean }): Screened {
+	if (where.origin !== "user") return { kind: "withhold", reason: where.origin };
 	if (where.optedOut) return { kind: "withhold", reason: "opted-out" };
 	if (!isTask(prompt)) return { kind: "withhold", reason: "not-a-task" };
 	if (prompt.length > MAX_TASK_CHARS) return { kind: "withhold", reason: "unsafe-input" };
@@ -154,10 +156,24 @@ function failure(error: unknown, signal: AbortSignal): ClassifyFailure {
 	return signal.aborted ? "cancelled" : "error";
 }
 
-/** Jev over HTTP, with the key from key(). Both questions go in one request. */
+/** Resolves with the work's result, or with undefined as soon as signal aborts. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T | undefined> {
+	if (signal.aborted) return Promise.resolve(undefined);
+	return new Promise((resolve) => {
+		const abort = () => resolve(undefined);
+		signal.addEventListener("abort", abort, { once: true });
+		work.then(
+			(value) => (signal.removeEventListener("abort", abort), resolve(value)),
+			() => (signal.removeEventListener("abort", abort), resolve(undefined)),
+		);
+	});
+}
+
+/** Jev over HTTP, with the key from key(), which the deadline also bounds. Both questions go in one request. */
 export function httpClassifier(key: () => Promise<string | undefined>, fetchImpl: FetchLike = fetch): Classify {
 	return async (state, signal) => {
-		const token = await key();
+		const token = await untilAborted(key(), signal);
+		if (signal.aborted) return { kind: "failed", reason: failure(signal.reason, signal) };
 		if (!token) return { kind: "failed", reason: "classifier-unavailable" };
 		try {
 			const response = await fetchImpl(JEV_ENDPOINT, {

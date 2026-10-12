@@ -40,16 +40,15 @@ const { note } = await routeTask(
 if (note) printAdditionalContext(note);
 ```
 
-The Pi extension is rewritten in place. It also runs in Pi roots that T3 launches. It routes on Pi's `input` event, which carries the text as typed, before Pi expands skill commands and prompt templates, and which also fires for prompts queued while the agent works:
+The Pi extension is rewritten in place. It also runs in Pi roots that T3 launches. It routes on Pi's `input` event, which carries the text as typed, before Pi expands skill commands and prompt templates, and which also fires for prompts queued while the agent works. This assumes no earlier extension transforms input; the only installed input handler, `pi-unveil`, never does.
 
 ```ts
 pi.on("input", async (event, ctx) => {
-  const note = await routeInput(event, ctx);   // routeTask over event.text, origin "extension" for other extensions' input; appends the record
-  if (note && event.streamingBehavior) pi.sendMessage({ customType: "agent-kit/task-route", content: note, display: true }, { deliverAs: event.streamingBehavior });
-  else if (note) pending = { note, at: Date.now() };
+  const note = await routeInput(event, ctx);   // routeTask over event.text; queued when event.streamingBehavior is set; appends the record
+  if (note) pending.set(event.text, note);     // at most 16 waiting
   return { action: "continue" };
 });
-pi.on("before_agent_start", () => takePending(NOTE_TTL_MS));   // the stored note, once, within 10 s
+pi.on("before_agent_start", (event) => takePending(event.prompt));   // only the turn whose prompt is that same text
 ```
 
 The user runs measurement locally:
@@ -121,7 +120,7 @@ Notes are fixed templates. No Jev text reaches the model, only a route key and n
 | Runtime | Delivery | lookup | loop | rigor or any failure |
 | --- | --- | --- | --- | --- |
 | Claude Code | hook `additionalContext` | "Answer directly: no plan, subagents, or headings. If it turns out to need a change, treat it as a task." | "If the user's words hand the work off, read `background-run`'s SKILL.md at <path> and follow it. This invokes no landing mode." | nothing (the door note fires as today) |
-| Pi, and Pi roots under T3 | a custom message, persisted and visible: from `before_agent_start` for a typed prompt, or queued with a prompt typed while the agent works. Its pointer survives short follow-ups, and the system prompt stays byte-stable for the provider cache. | same | same | nothing |
+| Pi, and Pi roots under T3 | a custom message from `before_agent_start`, persisted and visible, for the turn whose prompt is the routed text. Its pointer survives short follow-ups, and the system prompt stays byte-stable for the provider cache. A prompt queued while the agent works gets no note (`queued`), since Pi would drain a queued note as its own turn ahead of the prompt. | same | same | nothing |
 | Pi and T3 children | none: children work from their brief, whose `Route:` line the parent fills | – | – | – |
 | Codex | hook `additionalContext`, the same mechanism as Claude | same | same | nothing |
 
@@ -148,6 +147,7 @@ Every failure delivers nothing beyond what the door rule allows, writes one reco
 | under 6 words, or a child session | `not-a-task`, `child` | no |
 | a typed slash command (`/name`, including Pi skill commands and prompt templates) or skill mention (`$skill-name`) | `explicit-choice`: only the command's arguments get a shadow answer, and no note is delivered | yes |
 | input from another Pi extension | `extension`: recorded, never sent | no |
+| a Pi prompt queued while the agent works | `queued`: a shadow answer is recorded, and no note is delivered | yes |
 | an opted-out repository, a credential shape, or over 4,000 characters | `opted-out`, `unsafe-input` | no |
 | no key, the 3 s deadline passes, a cancel, or an HTTP or parse error | `classifier-unavailable`, `timeout`, `cancelled`, `error`, `malformed` | maybe |
 | a loop is advised but the skill file is missing | `skill-missing` (falls back to rigor) | yes |
@@ -157,7 +157,7 @@ Every failure delivers nothing beyond what the door rule allows, writes one reco
 
 - **Modes per note.** `door` is advisory (today's behavior). `lookup` and `loop` start in shadow, which records what they would have done.
 - **A note can't act without evidence.** Advisory mode requires a `Calibration`. It holds the threshold, the model, sample and positive counts, precision, recall, the date, and a digest of the exact question wording. A test fails when the wording changes and the digest no longer matches, which turns `jev.ts`'s comment "changing either wording means recalibrating" into a check. Flipping a note to advisory is a reviewed commit that adds its `Calibration`.
-- **Records hold answers, not text.** Each session appends to `$XDG_STATE_HOME/agentic/task-route/<machine>/<runtime>-<session>.jsonl`, one line of under 2 KiB per prompt; every variable-length field is bounded, and the worst case is tested. A line holds the raw answers (choice, confidence, probabilities, model), the advised and delivered routes, modes, fallback, latency, word and character counts, and a 16-hex digest of the prompt. It never holds task text. Each file has one writer, and the reader merges files and dedupes. Because `decide` is pure, a new threshold can be replayed over stored answers without new requests.
+- **Records hold answers, not text.** Each session appends to `$XDG_STATE_HOME/agentic/task-route/<machine>/<runtime>-<session>.jsonl`, one line of under 2 KiB per prompt: every string is cut to a bounded length of characters JSON writes as one byte, and the worst case is tested. A line holds the raw answers (choice, confidence, probabilities, model), the advised and delivered routes, modes, fallback, latency, word and character counts, and a 16-hex digest of the prompt. It never holds task text. Each file has one writer, and the reader merges files and dedupes. Because `decide` is pure, a new threshold can be replayed over stored answers without new requests.
 - **Labels come from the user's own history.**
   - `route-harvest` joins records to local Claude, Codex, and Pi transcripts by digest. It writes candidates to an ignored local file and skips opted-out repositories. Text stays on the machine whose agent received it. The user's labels are stored by digest, without text, in that machine's ledger directory, so they travel with its records.
   - Sessions where the user typed `/background-run` supply loop positives.
@@ -183,7 +183,7 @@ The two-week review of `background-run` (open question 3) only means something i
 | T3 delegated children of Claude and Codex | the same hooks, as ordinary prompts | no environment variable tells them apart yet (checked 2026-10-12), so their briefs are classified like prompts, as the door hint already was |
 | Hermes jobs (later) | the T3 dispatcher, from the job's route field | not built |
 
-**Every prompt writes a record**, including short follow-ups, slash commands, opted-out repositories, and failures. The ledger therefore counts what was not routed and why, not only what was. A slash command is the user's own choice, so no note is delivered. Its remaining text is still classified in shadow, so every manual `/background-run` becomes a labeled loop example together with what Jev would have advised.
+**Every prompt that reaches the agent writes a record**, including short follow-ups, slash commands, opted-out repositories, and failures. The ledger therefore counts what was not routed and why, not only what was. A slash command is the user's own choice, so no note is delivered. Its remaining text is still classified in shadow, so every manual `/background-run` becomes a labeled loop example together with what Jev would have advised.
 
 **Records gain where they came from:**
 

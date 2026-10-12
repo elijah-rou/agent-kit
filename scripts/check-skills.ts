@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Checks every skill's frontmatter and local references, the runtime-neutral Claude export, and that
 // the Codex and Claude skill lists and instructions only name skills that exist.
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const ROOT = join(import.meta.dir, "..");
@@ -12,6 +12,22 @@ const fail = (message: string) => failures.push(message);
 
 function markdownFiles(directory: string): string[] {
   return readdirSync(directory, { recursive: true, encoding: "utf8" }).filter(name => name.endsWith(".md")).map(name => join(directory, name));
+}
+
+// A link inside an instruction folder hides what a runtime loads, and following one can leave the
+// repository, so look for links first without following them, and stop before any other walk.
+const SKILL_ROOTS = ["skills", "claude/skills", ".agents/skills"];
+const INSTRUCTION_ROOTS = [...SKILL_ROOTS, "claude/agents", "pi/prompts", "docs"];
+const walk = (directory: string): string[] =>
+  readdirSync(directory).flatMap(name => {
+    const path = join(directory, name);
+    return lstatSync(path).isDirectory() ? [path, ...walk(path)] : [path];
+  });
+const instructionPaths = INSTRUCTION_ROOTS.filter(root => existsSync(join(ROOT, root))).flatMap(root => walk(join(ROOT, root)).map(path => ({ root, path, name: relative(join(ROOT, root), path) })));
+const links = instructionPaths.filter(({ path }) => lstatSync(path).isSymbolicLink());
+if (links.length > 0) {
+  for (const { path } of links) console.error(`${relative(ROOT, path)}: a link inside an instruction folder hides what a runtime loads; replace it with the file or folder it points to`);
+  process.exit(1);
 }
 
 function checkSkill(directory: string): string | undefined {
@@ -112,23 +128,23 @@ const ALLOWED_KEYS = {
   role: new Set(["name", "description", "model", "effort", "tools", "disallowedTools"]),
   prompt: new Set(["description", "argument-hint"]),
 };
-const SKILL_ROOTS = ["skills", "claude/skills", ".agents/skills"];
-const INSTRUCTION_ROOTS = [...SKILL_ROOTS, "claude/agents", "pi/prompts", "docs"];
 const INLINE_SHELL = /!`/;
-const FENCED_SHELL = /^[ \t]*(?:`{3,}|~{3,})!/m;
+// Unanchored: the runtime finds a fence opened with ! anywhere in the text, not only at a line start.
+const FENCED_SHELL = /(?:```|~~~)!/;
 const PLAIN_FRONTMATTER = /^---\n([\s\S]*?)\n---\n/;
-const instructionFiles = INSTRUCTION_ROOTS.filter(root => existsSync(join(ROOT, root))).flatMap(root =>
-  readdirSync(join(ROOT, root), { recursive: true, encoding: "utf8" }).map(name => ({ root, name, path: join(ROOT, root, name) })).filter(({ path }) => statSync(path).isFile()));
+// Names compare case-insensitively, as the runtime finds .claude/skills and SKILL.md on a case-insensitive disk.
+const SKILL_FILE = /(?:^|\/)skill\.md$/i;
+const instructionFiles = instructionPaths.filter(({ path }) => lstatSync(path).isFile());
 for (const { root, name, path } of instructionFiles) {
   const where = relative(ROOT, path);
-  if (name.split("/").includes(".claude")) fail(`${where}: a nested .claude folder is loaded as its own skill root; move the file out of it`);
-  if (SKILL_ROOTS.includes(root) && name.endsWith("SKILL.md") && name.split("/").length !== 2) fail(`${where}: a SKILL.md below a skill's top folder is loaded as its own skill; keep one SKILL.md per <root>/<name>/`);
-  if (!name.endsWith(".md")) continue;
+  if (name.toLowerCase().split("/").includes(".claude")) fail(`${where}: a nested .claude folder is loaded as its own skill root; move the file out of it`);
+  if (SKILL_ROOTS.includes(root) && SKILL_FILE.test(name) && name.split("/").length !== 2) fail(`${where}: a SKILL.md below a skill's top folder is loaded as its own skill; keep one SKILL.md per <root>/<name>/`);
+  if (!/\.md$/i.test(name)) continue;
   const text = readFileSync(path, "utf8");
   if (INLINE_SHELL.test(text) || FENCED_SHELL.test(text)) fail(`${where}: inline shell (!\`...\` or a fence opened with !) runs before the model reads the file; put the command in a script and name the script, or to document the syntax, separate the ! from the backtick`);
   const opening = text.replace(/^\uFEFF/, "");
-  if (/^---[ \t]*\r?\n/.test(opening) && !PLAIN_FRONTMATTER.test(text)) fail(`${where}: write frontmatter in the plain form (no byte-order mark, no trailing spaces after ---, LF line endings) so this checker reads every key`);
-  const kind = name.endsWith("SKILL.md") && SKILL_ROOTS.includes(root) ? "skill" : root === "claude/agents" ? "role" : root === "pi/prompts" ? "prompt" : undefined;
+  if (/^---\s*\n/.test(opening) && !PLAIN_FRONTMATTER.test(text)) fail(`${where}: write frontmatter in the plain form (no byte-order mark, no trailing spaces after ---, LF line endings) so this checker reads every key`);
+  const kind = SKILL_FILE.test(name) && SKILL_ROOTS.includes(root) ? "skill" : root === "claude/agents" ? "role" : root === "pi/prompts" ? "prompt" : undefined;
   if (kind === undefined) continue;
   const allowed = ALLOWED_KEYS[kind];
   const block = PLAIN_FRONTMATTER.exec(text)?.[1] ?? "";

@@ -46,19 +46,22 @@ async function routeInput(event: InputEvent, ctx: ExtensionContext): Promise<str
 // Input arrives before Pi expands skill commands and prompt templates, so only the typed text is
 // classified, and a typed command counts as the user's choice. Every input, command or not,
 // replaces the one waiting note, and the next turn takes it only when its prompt is that same text
-// (Pi expands only slash commands, which get no note). So a note reaches its own prompt's turn or
-// none: a stale one is always overwritten, and a race drops a note rather than moving it. Input
+// (Pi expands only slash commands, which get no note). Only the newest input may fill the slot, so
+// a slower, older one cannot overwrite it, and a stale note is always overwritten. A note can only
+// reach a turn whose prompt is exactly the text it was computed for; in a race it is dropped. Input
 // queued while the agent works is recorded without a note: a queued message would be drained ahead
 // of its prompt. A note is a visible custom message, so the system prompt stays byte-stable for
 // the provider cache. This assumes no earlier extension transforms input; the only installed input
 // handler (pi-unveil) never does.
 export default function (pi: ExtensionAPI) {
 	let latest: { text: string; note: string | undefined } | undefined;
+	let inputs = 0;
 
 	pi.on("input", async (event, ctx) => {
+		const input = ++inputs;
 		latest = undefined;
 		const note = await routeInput(event, ctx);
-		latest = { text: event.text, note };
+		if (input === inputs) latest = { text: event.text, note };
 		return { action: "continue" };
 	});
 

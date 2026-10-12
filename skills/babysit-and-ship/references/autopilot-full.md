@@ -25,7 +25,7 @@ Run owners in parallel when their PRs touch disjoint files; serialize only work 
 
 A round starts at an owner's code-ready head and at every later push that changes the patch. For each round, spawn fresh verifiers that did not write the code, with these lanes:
 
-- **Live lane (required):** drive the load-bearing behavior on the real surface through the repository's verification skill. A verdict without it is not clean. For a change only to agent instructions or skill text, the live lane is what that skill defines for the case (for example a catalog drive that loads every exported skill, plus a fresh read of the text against the PR's intent), and the evidence says agent behavior was not observed.
+- **Live lane (required):** drive the load-bearing behavior on the real surface through the repository's verification skill. A verdict without it is not clean. For a change only to agent instructions or skill text, the live lane is what that skill defines for the case (for example a catalog drive that loads every exported skill, plus a fresh read of the text against the PR's intent), and the evidence says agent behavior was not observed; if the skill defines no such case, the verdict is `verifier-blocked` at best.
 - **Regression lane:** run the same scenario on current trunk. If trunk lacks the feature, say so and check the end state the user waits for instead.
 - **Audit lane:** read the diff against trunk, distrusting the PR body: callers, data and configuration safety, races, and the repository's review rules (`rules.toml` rows at level `review`). This lane is the PR's adversarial review (`git-workflow`).
 

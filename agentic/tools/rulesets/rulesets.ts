@@ -48,7 +48,8 @@ export function desiredRuleset(tier: Tier, checks: readonly string[]): Ruleset {
 		});
 		rules.push({
 			type: "required_status_checks",
-			parameters: { strict_required_status_checks_policy: false, required_status_checks: [...new Set([VERDICT_CONTEXT, ...checks])].sort().map((context) => ({ context })) },
+			// do_not_enforce_on_create is set explicitly: GitHub's own default would otherwise go unchecked, and true loosens the gate.
+			parameters: { strict_required_status_checks_policy: false, do_not_enforce_on_create: false, required_status_checks: [...new Set([VERDICT_CONTEXT, ...checks])].sort().map((context) => ({ context })) },
 		});
 	}
 	return {
@@ -72,14 +73,30 @@ export function splitChecks(runs: readonly { name: string; conclusion: string | 
 
 /** Rule types in the existing ruleset that differ from the desired one, as added and removed lists. */
 export function ruleDiff(current: readonly Rule[], desired: readonly Rule[]): { add: string[]; remove: string[]; change: string[] } {
-	const key = (rule: Rule) => JSON.stringify(rule.parameters ?? {});
-	const now = new Map(current.map((rule) => [rule.type, key(rule)]));
-	const want = new Map(desired.map((rule) => [rule.type, key(rule)]));
+	const now = new Map(current.map((rule) => [rule.type, rule]));
+	const want = new Map(desired.map((rule) => [rule.type, rule]));
 	return {
 		add: [...want.keys()].filter((type) => !now.has(type)),
 		remove: [...now.keys()].filter((type) => !want.has(type)),
-		change: [...want.keys()].filter((type) => now.has(type) && now.get(type) !== want.get(type)),
+		change: [...want.values()].filter((rule) => now.has(rule.type) && !satisfies(now.get(rule.type)!, rule)).map((rule) => rule.type),
 	};
+}
+
+/**
+ * A stored rule satisfies a desired one when every parameter the desired rule sets has the same value.
+ * GitHub adds its own defaults to stored rules (allowed merge methods, required reviewers, and so on),
+ * so parameters the desired rule leaves unset do not count.
+ */
+function satisfies(stored: Rule, desired: Rule): boolean {
+	const parameters = stored.parameters ?? {};
+	return Object.entries(desired.parameters ?? {}).every(([name, value]) => name in parameters && canonical(parameters[name]) === canonical(value));
+}
+
+/** JSON with object keys sorted and array items sorted: rule parameters hold sets, so order never matters. */
+function canonical(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(canonical).sort().join(",")}]`;
+	if (value !== null && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(",")}}`;
+	return JSON.stringify(value);
 }
 
 /**

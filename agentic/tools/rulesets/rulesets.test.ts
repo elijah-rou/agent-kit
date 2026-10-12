@@ -28,6 +28,48 @@ describe("agentic-backstop ruleset", () => {
 		expect(verified([{ type: "deletion" }, { type: "non_fast_forward" }, { type: "required_linear_history" }, { type: "pull_request" }], desired)).toBe(true);
 	});
 
+	test("parameters GitHub adds to a stored rule do not count as a change", () => {
+		const desired = desiredRuleset("merge-gate", ["validate (macos-latest)", "validate (ubuntu-latest)"]).rules;
+		// The merge-gate rules as GitHub returned them after apply, with its server-side defaults.
+		const stored = [
+			{ type: "deletion" },
+			{ type: "non_fast_forward" },
+			{ type: "required_linear_history" },
+			{
+				type: "pull_request",
+				parameters: {
+					allowed_merge_methods: ["merge", "squash", "rebase"],
+					dismiss_stale_reviews_on_push: false,
+					require_code_owner_review: false,
+					require_extra_approval_for_unattributed_changes: true,
+					require_last_push_approval: false,
+					required_approving_review_count: 0,
+					required_review_thread_resolution: false,
+					required_reviewers: [],
+				},
+			},
+			{
+				type: "required_status_checks",
+				parameters: {
+					do_not_enforce_on_create: false,
+					required_status_checks: [{ context: "agentic/verdict" }, { context: "validate (macos-latest)" }, { context: "validate (ubuntu-latest)" }],
+					strict_required_status_checks_policy: false,
+				},
+			},
+		];
+		expect(ruleDiff(stored, desired)).toEqual({ add: [], remove: [], change: [] });
+		const withoutVerdict = stored.map((rule) => (rule.type === "required_status_checks" ? { ...rule, parameters: { ...rule.parameters, required_status_checks: [{ context: "validate (macos-latest)" }] } } : rule));
+		expect(ruleDiff(withoutVerdict, desired).change).toEqual(["required_status_checks"]);
+		const needsApproval = stored.map((rule) => (rule.type === "pull_request" ? { ...rule, parameters: { ...rule.parameters, required_approving_review_count: 1 } } : rule));
+		expect(ruleDiff(needsApproval, desired).change).toEqual(["pull_request"]);
+		const missingParameter = stored.map((rule) => (rule.type === "pull_request" ? { type: "pull_request" } : rule));
+		expect(ruleDiff(missingParameter, desired).change).toEqual(["pull_request"]);
+		const checks = (list: string[], extra: Record<string, unknown> = {}) => stored.map((rule) => (rule.type === "required_status_checks" ? { ...rule, parameters: { ...rule.parameters, ...extra, required_status_checks: list.map((context) => ({ context })) } } : rule));
+		expect(ruleDiff(checks(["validate (ubuntu-latest)", "validate (macos-latest)", "agentic/verdict"]), desired).change).toEqual([]);
+		expect(ruleDiff(checks(["agentic/verdict", "validate (macos-latest)", "validate (ubuntu-latest)", "lint"]), desired).change).toEqual(["required_status_checks"]);
+		expect(ruleDiff(checks(["agentic/verdict", "validate (macos-latest)", "validate (ubuntu-latest)"], { do_not_enforce_on_create: true }), desired).change).toEqual(["required_status_checks"]);
+	});
+
 	test("a ruleset that is not enforced, can be bypassed, or targets another branch is not up to date", () => {
 		const desired = desiredRuleset("baseline", []);
 		expect(settingsDiff(desired, desired)).toEqual([]);

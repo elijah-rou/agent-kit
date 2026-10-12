@@ -70,9 +70,6 @@ for (const entry of readFileSync(join(ROOT, "claude/skills.txt"), "utf8").split(
 }
 const instructions = readFileSync(join(ROOT, "claude/CLAUDE.md"), "utf8");
 if (RUNTIME_SPECIFIC.test(instructions)) fail("claude/CLAUDE.md: runtime-specific wording");
-for (const match of instructions.matchAll(/`([a-z]+(?:-[a-z]+)+)`/g)) {
-  if (!exported.has(match[1]!)) fail(`claude/CLAUDE.md references an unexported skill: ${match[1]}`);
-}
 
 // Subagent roles: claude/agents/*.md is the only place that binds a model. The roles the instructions
 // name and the role files must match, so neither can drift from the other.
@@ -90,10 +87,15 @@ for (const entry of readdirSync(join(ROOT, "claude/agents")).filter(name => name
   if (!model || !ROLE_MODELS.has(model)) fail(`${path}: model must be one of ${[...ROLE_MODELS].join(", ")}`);
   if (!effort || !EFFORTS.has(effort)) fail(`${path}: effort must be one of ${[...EFFORTS].join(", ")}`);
   if (!/^disallowedTools:.*\bAgent\b/m.test(frontmatter)) fail(`${path}: disallow Agent; children do not launch children`);
+  if (name && roles.has(name)) fail(`${path}: a second role file named ${name}`);
   if (name) roles.add(name);
 }
 const roleLine = instructions.split("\n").find(line => line.startsWith("- Launch children by role"));
-const named = new Set([...(roleLine ?? "").matchAll(/`([A-Za-z]+)`/g)].map(match => match[1]!));
+const named = new Set([...(roleLine ?? "").matchAll(/`([A-Za-z]+(?:-[a-z]+)*)`/g)].map(match => match[1]!));
+// Other hyphenated names in backticks are skill references.
+for (const match of instructions.matchAll(/`([a-z]+(?:-[a-z]+)+)`/g)) {
+  if (!exported.has(match[1]!) && !roles.has(match[1]!)) fail(`claude/CLAUDE.md references an unexported skill: ${match[1]}`);
+}
 if (!roleLine) fail("claude/CLAUDE.md: missing the line starting '- Launch children by role'");
 for (const role of named) if (!roles.has(role)) fail(`claude/CLAUDE.md names role ${role}; add claude/agents/<file>.md with name: ${role}`);
 for (const role of roles) if (!named.has(role)) fail(`claude/agents defines role ${role}; name it in the role line of claude/CLAUDE.md`);

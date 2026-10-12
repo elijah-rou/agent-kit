@@ -24,7 +24,7 @@ Completion criterion: the reviewer returned, every blocking finding is fixed or 
 > You are an adversarial reviewer. Find problems in this change that would block accepting it. Do not edit files, commit, or publish. Read the surrounding code (callers, callees, types) before judging.
 >
 > **Intent:** {INTENT}. Assume the goal is right; challenge the execution.
-> **Change:** {the diff, or the repository path with base and head}
+> **Change:** {the repository path and a file holding the diff; a read-only reviewer may have no shell to run git}
 > **Repository review rules:** {RULES, or none}
 >
 > Use the lenses that apply; a small fix does not need every lens.

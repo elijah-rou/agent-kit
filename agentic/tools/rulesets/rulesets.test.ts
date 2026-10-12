@@ -64,6 +64,10 @@ describe("agentic-backstop ruleset", () => {
 		expect(ruleDiff(needsApproval, desired).change).toEqual(["pull_request"]);
 		const missingParameter = stored.map((rule) => (rule.type === "pull_request" ? { type: "pull_request" } : rule));
 		expect(ruleDiff(missingParameter, desired).change).toEqual(["pull_request"]);
+		const checks = (list: string[], extra: Record<string, unknown> = {}) => stored.map((rule) => (rule.type === "required_status_checks" ? { ...rule, parameters: { ...rule.parameters, ...extra, required_status_checks: list.map((context) => ({ context })) } } : rule));
+		expect(ruleDiff(checks(["validate (ubuntu-latest)", "validate (macos-latest)", "agentic/verdict"]), desired).change).toEqual([]);
+		expect(ruleDiff(checks(["agentic/verdict", "validate (macos-latest)", "validate (ubuntu-latest)", "lint"]), desired).change).toEqual(["required_status_checks"]);
+		expect(ruleDiff(checks(["agentic/verdict", "validate (macos-latest)", "validate (ubuntu-latest)"], { do_not_enforce_on_create: true }), desired).change).toEqual(["required_status_checks"]);
 	});
 
 	test("a ruleset that is not enforced, can be bypassed, or targets another branch is not up to date", () => {

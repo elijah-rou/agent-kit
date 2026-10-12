@@ -48,7 +48,8 @@ export function desiredRuleset(tier: Tier, checks: readonly string[]): Ruleset {
 		});
 		rules.push({
 			type: "required_status_checks",
-			parameters: { strict_required_status_checks_policy: false, required_status_checks: [...new Set([VERDICT_CONTEXT, ...checks])].sort().map((context) => ({ context })) },
+			// do_not_enforce_on_create is set explicitly: GitHub's own default would otherwise go unchecked, and true loosens the gate.
+			parameters: { strict_required_status_checks_policy: false, do_not_enforce_on_create: false, required_status_checks: [...new Set([VERDICT_CONTEXT, ...checks])].sort().map((context) => ({ context })) },
 		});
 	}
 	return {

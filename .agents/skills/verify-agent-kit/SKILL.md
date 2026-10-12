@@ -23,7 +23,7 @@ Read [features/README.md](features/README.md) before driving, then the feature f
 scripts/verify-kit launch --checkout <agent-kit checkout> --install
 ```
 
-`--checkout` names the checkout to drive; it defaults to the one holding this kit. To verify a pull request, always run this kit from a checkout of the base branch (trunk) and point `--checkout` at the head's worktree, so the pull request never supplies its own verifier. `--install` first runs `bun install --frozen-lockfile` in that checkout; leave it off when `node_modules/` is already current. Launch records the checkout's revision, a digest of its tracked changes and untracked files, and the kit's own revision, then prints `RUN_ID=ak-<date>-<time>-<pid>`, `EVIDENCE_DIR=...`, and the readiness line `READY verify-agent-kit <RUN_ID>`. Pass that `RUN_ID` to every later command. Teardown is always Cleanup.
+`--checkout` names the checkout to drive; it defaults to the one holding this kit. To verify a pull request, always run this kit from a checkout of the base branch (trunk) and point `--checkout` at a fresh worktree of the head (`git worktree add --detach <path> <head SHA>`), so the pull request never supplies its own verifier. Launch refuses a driven checkout or kit with uncommitted changes or untracked files, because its evidence would name a commit it did not run; `--allow-dirty` overrides that for experiments and marks every result as unable to back a verdict. `--install` first runs `bun install --frozen-lockfile` in that checkout; leave it off when `node_modules/` is already current. Launch records the checkout's revision, a digest of its tracked changes and untracked files, and the kit's own revision, then prints `RUN_ID=ak-<date>-<time>-<pid>`, `EVIDENCE_DIR=...`, and the readiness line `READY verify-agent-kit <RUN_ID>`. Pass that `RUN_ID` to every later command. Teardown is always Cleanup.
 
 ## Doctor
 
@@ -47,9 +47,11 @@ Which features a change needs. A path matches the first row that names it; anyth
 
 | Changed paths | Drive |
 | --- | --- |
+| test files (`*.test.ts`, `claude/tests/`, `pi/tests/`) | not mapped: read them as code (last row) |
+| the publish path of `agentic/tools/verify/cli.ts`, the apply path of `agentic/tools/rulesets/cli.ts` | not mapped: they write GitHub, and no drive observes them (last row) |
 | `agentic/tools/jev/cli.ts`, `route.ts`, `route-task.ts`, `egress.ts` | `task-route` and `merge-gate` (pr-risk shares the CLI and egress) |
 | `agentic/tools/jev/pr-risk.ts` | `merge-gate` |
-| `agentic/tools/verify/`, `agentic/tools/rulesets/`, `agentic/vendor/orch/` | `merge-gate` |
+| the rest of `agentic/tools/verify/` and `agentic/tools/rulesets/`, `agentic/vendor/orch/` | `merge-gate` (its contract step checks the verdicts, their statuses, and the tiers' rules) |
 | `agentic/tools/pr-feedback/`, `agentic/vendor/watch-pr/` | `pr-state` |
 | `agentic/bin/agentic`, `package.json`, `bun.lock` | every feature (`all`) |
 | `claude/statusline.ts`, `claude/mods/` | `claude-surface` |
@@ -58,9 +60,9 @@ Which features a change needs. A path matches the first row that names it; anyth
 | executable files under `skills/` or `.agents/skills/` (for example `skills/*/scripts/`) | not mapped: code with no drive (last row) |
 | `skills/`, `claude/skills/`, `claude/skills.txt`, `codex/skills.txt`, `claude/agents/`, `claude/CLAUDE.md`, `pi/AGENTS.md`, `codex/AGENTS.md`, `codex/native-tools.md`, `pi/WORKTREE_STREAMS.md`, `pi/prompts/`, `pi/themes/`, other `.agents/skills/` text | `skill-catalog` (instruction text: see the verdict rule) |
 | `docs/`, `README.md`, licenses | none: read the diff (instruction text) |
-| anything else, including `pi/extensions/`, `agentic/tools/upstream-drift/`, `scripts/validate`, `scripts/check-public-safety`, `.github/`, and test files | not mapped: no drive covers it |
+| anything else, including `pi/extensions/`, `agentic/tools/upstream-drift/`, `scripts/validate`, `scripts/check-public-safety`, and `.github/` | not mapped: no drive covers it |
 
-Compare parent and head with this kit (from trunk): launch one run with `--checkout <parent worktree>` and one with `--checkout <head worktree>`, drive the same features in both, and compare the result lines and read-back artifacts (`records.jsonl`, `ledger.tsv`, `exports.tsv`, `roles.tsv`). A pull request that adds behavior, or changes output a drive asserts, must add or change the drive step that shows it, in the same pull request; the verifier reads that step as code and runs the head's kit for it. `--pr` names the pull request under test for `merge-gate` and `pr-state`; `merge-gate` records only a non-passing smoke verdict for it, in the run's own store.
+Compare parent and head with this kit (from trunk): launch one run with `--checkout <parent worktree>` and one with `--checkout <head worktree>`, drive the same features in both, and compare the result lines and read-back artifacts (`records.jsonl`, `ledger.tsv`, `exports.tsv`, `roles.tsv`). A pull request that adds behavior, or changes output a drive asserts, must add or change the drive step that shows it, in the same pull request; the verifier reads that step as code and runs the head's kit for it. `--pr` names the pull request under test for `merge-gate` and `pr-state`; the driven checkout must be at its head, and `merge-gate` records only a non-passing smoke verdict for it, in the run's own store. A run launched by one kit is driven only by that kit, so the evidence names the kit that ran.
 
 The verdict follows from what ran:
 
@@ -89,7 +91,7 @@ It removes `$TMPDIR/verify-agent-kit/<RUN_ID>/` after checking its `run.json` na
 `scripts/verify-kit` is the only entry point agents need; every command has `--help` with examples, takes all input as arguments, and never prompts.
 
 ```sh
-scripts/verify-kit launch [--checkout PATH] [--install]
+scripts/verify-kit launch [--checkout PATH] [--install] [--allow-dirty]
 scripts/verify-kit doctor RUN_ID
 scripts/verify-kit drive RUN_ID task-route
 scripts/verify-kit drive RUN_ID merge-gate --pr 31
@@ -97,7 +99,7 @@ scripts/verify-kit drive RUN_ID pr-state --merged-pr 22
 scripts/verify-kit drive RUN_ID skill-catalog
 scripts/verify-kit drive RUN_ID claude-surface
 scripts/verify-kit cleanup RUN_ID
-scripts/verify-kit all [--checkout PATH] [--install] [--pr N]
+scripts/verify-kit all [--checkout PATH] [--install] [--allow-dirty] [--pr N]
 ```
 
 `all` launches a run, runs doctor and every feature, cleans up even after a failure, and ends with `ALL <RUN_ID>: <n> pass, <n> fail, <n> skip`, exiting 0 only when doctor passed and no feature failed; a SKIP of a drive the change needs is still `verifier-blocked`. Exit codes: 0 done, 1 a failed check or doctor, 2 a usage error. Errors name the command to run instead. The only step that changes state a run did not create is `bun install`, behind `--install`.

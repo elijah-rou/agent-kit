@@ -6,7 +6,7 @@
 // request never supplies its own verifier.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { basename, join, resolve } from "node:path";
 
@@ -21,7 +21,9 @@ const STEP_TIMEOUT_MS = 180_000;
 const FEATURES = ["task-route", "merge-gate", "pr-state", "skill-catalog", "claude-surface"] as const;
 type Feature = (typeof FEATURES)[number];
 type Outcome = { state: "PASS" | "FAIL" | "SKIP"; detail?: string };
-type RunInfo = { marker: string; runId: string; checkout: string; revision: string; tree: string; kit: string; kitRevision: string; startedAt: string };
+type RunInfo = { marker: string; runId: string; checkout: string; revision: string; tree: string; kit: string; kitRevision: string; dirty: boolean; startedAt: string };
+const DIRTY = "WARNING dirty run: its evidence cannot back a verdict";
+const ALLOWED_JEV_FALLBACKS = ["low-confidence", "conflict", "model-drift"];
 type Options = { slug?: string; pr?: number; mergedPr?: number };
 
 const HELP: Record<string, string> = {
@@ -30,11 +32,13 @@ const HELP: Record<string, string> = {
 Drives an agent-kit checkout's entry points with every store redirected into a per-run directory.
 
 Commands:
-  launch [--checkout PATH] [--install]   start a run; prints RUN_ID and EVIDENCE_DIR
+  launch [--checkout PATH] [--install] [--allow-dirty]
+                                         start a run; prints RUN_ID and EVIDENCE_DIR
   doctor RUN_ID                          read-only: is this run worth driving?
   drive RUN_ID <feature> [options]       drive one mapped feature; ends with PASS, FAIL, or SKIP
   cleanup RUN_ID                         remove this run's directory; evidence stays
-  all [--checkout PATH] [options]        launch, doctor, every feature, cleanup, then a count
+  all [--checkout PATH] [--install] [--allow-dirty] [options]
+                                         launch, doctor, every feature, cleanup, then a count
 
 Features: ${FEATURES.join(", ")}
 
@@ -47,7 +51,7 @@ Examples:
 
 Run "${CLI} <command> --help" for each command's options.
 `,
-	launch: `Usage: ${CLI} launch [--checkout PATH] [--install]
+	launch: `Usage: ${CLI} launch [--checkout PATH] [--install] [--allow-dirty]
 
 Creates the run directory $TMPDIR/verify-agent-kit/<RUN_ID> with its own XDG_STATE_HOME, orch store,
 and two scratch git repositories, records the driven checkout's revision and a digest of its tracked
@@ -58,6 +62,9 @@ and untracked files, and prints RUN_ID, EVIDENCE_DIR, and the readiness line
                     a pull request, run trunk's kit with --checkout pointing at the head's worktree.
   --install         first run "bun install --frozen-lockfile" in that checkout (it writes
                     node_modules/, which this run did not create, so it needs the flag)
+  --allow-dirty     drive a checkout or kit with uncommitted changes; every result is marked as
+                    unable to back a verdict. Without it, launch refuses a dirty tree: verify a
+                    fresh worktree at the commit instead (git worktree add --detach PATH SHA).
 
 Examples:
   ${CLI} launch
@@ -79,8 +86,9 @@ Drives one feature from features/ and ends with "PASS <feature>", "FAIL <feature
 Evidence goes to EVIDENCE_DIR/<feature>/. It refuses to drive a checkout that moved since launch.
 
   --repo owner/name   the GitHub repository (default: the driven checkout's origin)
-  --pr N              an open pull request to read and to record a non-passing smoke verdict for in
-                      this run's own ledger (default: the newest open pull request, if any)
+  --pr N              the open pull request under test: the driven checkout must be at its head. It
+                      is read, and gets a non-passing smoke verdict in this run's own ledger
+                      (default: the newest open pull request, as a smoke check only)
   --merged-pr N       a merged pull request to read and to screen (default: the newest merged one)
 
 Features: ${FEATURES.join(", ")}
@@ -100,7 +108,7 @@ its marker names this RUN_ID. Never touches evidence, the checkout, or another r
 Example:
   ${CLI} cleanup ak-20261012-213000-4242
 `,
-	all: `Usage: ${CLI} all [--checkout PATH] [--install] [--repo owner/name] [--pr N] [--merged-pr N]
+	all: `Usage: ${CLI} all [--checkout PATH] [--install] [--allow-dirty] [--repo owner/name] [--pr N] [--merged-pr N]
 
 Launches a run, runs doctor and every feature, cleans up even after a failure, and ends with
 "ALL <RUN_ID>: <n> pass, <n> fail, <n> skip". Exits 0 only when doctor passed and no feature failed.
@@ -150,10 +158,21 @@ function treeDigest(checkout: string): string {
 	const hash = createHash("sha256");
 	hash.update(sh(["git", "diff", "HEAD", "--binary"], { cwd: checkout }).stdout);
 	for (const path of git(["ls-files", "--others", "--exclude-standard", "-z"], checkout).split("\0").filter(Boolean).sort()) {
+		const full = join(checkout, path);
+		const stat = lstatSync(full);
 		hash.update(`\0${path}\0`);
-		hash.update(readFileSync(join(checkout, path)));
+		// A nested repository is listed as a directory and a link is hashed as its target, never followed.
+		if (stat.isSymbolicLink()) hash.update(`link:${readlinkSync(full)}`);
+		else if (stat.isDirectory()) hash.update("directory");
+		else hash.update(readFileSync(full));
 	}
 	return hash.digest("hex").slice(0, 16);
+}
+
+/** Uncommitted changes or untracked, not ignored files, if any. */
+function dirtyState(path: string): string | undefined {
+	const status = git(["status", "--porcelain=v1", "-uall"], path);
+	return status ? status.split("\n").slice(0, 5).join("; ") : undefined;
 }
 
 function runDir(runId: string): string {
@@ -170,6 +189,7 @@ function loadRun(runId: string | undefined): RunInfo {
 	if (!existsSync(file)) throw new Error(`no run ${runId} under ${RUNS_ROOT}; run "${CLI} launch" and use the RUN_ID it prints`);
 	const info = JSON.parse(readFileSync(file, "utf8")) as RunInfo;
 	if (info.marker !== MARKER || info.runId !== runId) throw new Error(`${file} was not written by verify-kit for ${runId}; refusing to drive it`);
+	if (info.kit !== KIT_CHECKOUT) throw new Error(`run ${runId} was launched by the kit in ${info.kit}; drive it with that kit, or launch a run with this one`);
 	return info;
 }
 
@@ -274,6 +294,11 @@ function launch(args: string[]): string {
 	// Compare real paths: on macOS /tmp is a link to /private/tmp, and git reports the resolved top.
 	const checkout = realpathSync(requested);
 	if (realpathSync(git(["rev-parse", "--show-toplevel"], checkout)) !== checkout) throw new Usage(`${checkout} is not the top of its git checkout; pass its root to --checkout`);
+	const allowDirty = args.includes("--allow-dirty");
+	const dirty = [...new Set([checkout, KIT_CHECKOUT])].map((path) => [path, dirtyState(path)] as const).filter(([, state]) => state !== undefined);
+	if (dirty.length && !allowDirty) {
+		throw new Usage(`${dirty.map(([path, state]) => `${path} has uncommitted changes (${state})`).join("; ")}. Commit them, or verify a fresh worktree at the commit (git worktree add --detach PATH SHA), or pass --allow-dirty for a run whose evidence cannot back a verdict`);
+	}
 	if (args.includes("--install")) {
 		const install = sh(["bun", "install", "--frozen-lockfile"], { cwd: checkout });
 		if (install.status !== 0) throw new Error(`bun install --frozen-lockfile failed in ${checkout}: ${install.stderr.trim()}`);
@@ -299,6 +324,7 @@ function launch(args: string[]): string {
 		tree: treeDigest(checkout),
 		kit: KIT_CHECKOUT,
 		kitRevision: git(["rev-parse", "HEAD"], KIT_CHECKOUT),
+		dirty: dirty.length > 0,
 		startedAt: now.toISOString(),
 	};
 	writeFileSync(join(dir, "run.json"), JSON.stringify(info, null, 2) + "\n");
@@ -306,6 +332,7 @@ function launch(args: string[]): string {
 	writeFileSync(join(evidenceDir(runId), "launch.txt"), JSON.stringify({ ...info, runDir: dir }, null, 2) + "\n");
 	console.log(`RUN_ID=${runId}`);
 	console.log(`EVIDENCE_DIR=${evidenceDir(runId)}`);
+	if (info.dirty) console.log(DIRTY);
 	console.log(`READY verify-agent-kit ${runId}`);
 	return runId;
 }
@@ -336,6 +363,7 @@ function doctor(runId: string | undefined): boolean {
 	const claude = Bun.which("claude");
 	lines.push(`info claude CLI: ${claude ? sh([claude, "--version"], { cwd: KIT_CHECKOUT }).stdout.trim() : "absent (claude-surface skips the Mod steps)"}`);
 	lines.push(`info kit ${run.kit} at ${run.kitRevision.slice(0, 12)}${run.kit === run.checkout ? " drives itself" : ` drives ${run.checkout}`}; bun ${Bun.version}; the agentic on PATH is never used`);
+	if (run.dirty) lines.push(DIRTY);
 	lines.push(ok ? `DOCTOR PASS ${run.runId} revision ${run.revision.slice(0, 12)}` : `DOCTOR FAIL ${run.runId}`);
 	const text = lines.join("\n") + "\n";
 	mkdirSync(evidenceDir(run.runId), { recursive: true });
@@ -423,7 +451,8 @@ function driveTaskRoute(run: RunInfo, rec: Recorder): void {
 	if (record) {
 		kept.push(JSON.stringify(record));
 		const answers = record.answers as { door?: { choice?: string }; level?: { choice?: string }; model?: string } | undefined;
-		rec.check(sameList(record.fallbacks as string[] | undefined, []), `jev: the request succeeded with no fallback (got ${JSON.stringify(record.fallbacks)})`);
+		const fallbacks = (record.fallbacks as string[] | undefined) ?? [];
+		rec.check(fallbacks.every((fallback) => ALLOWED_JEV_FALLBACKS.includes(fallback)), `jev: the request reached Jev; any fallback is a routing decision (${ALLOWED_JEV_FALLBACKS.join(", ")}), got ${JSON.stringify(record.fallbacks)}`);
 		rec.check(["reversible", "experiment", "one-way-door"].includes(answers?.door?.choice ?? ""), `jev: the record holds Jev's door answer (${JSON.stringify(answers?.door?.choice)})`);
 		rec.check(["lookup", "rigor", "loop"].includes(answers?.level?.choice ?? ""), `jev: the record holds Jev's level answer (${JSON.stringify(answers?.level?.choice)})`);
 		rec.check(typeof answers?.model === "string" && answers.model.startsWith("jev-"), "jev: the record names the Jev model");
@@ -457,15 +486,43 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 		const usage = rec.step(name, ["bun", agentic, ...argv]);
 		rec.check(usage.status === 2, `agentic ${argv.join(" ")} is a usage error, exit 2 (got ${usage.status})`);
 	}
+	// The gate's contract, checked by this kit against the driven checkout's own modules: a pull request
+	// under test cannot loosen these expectations, because the verifier runs trunk's kit.
+	const contract = rec.step("gate-contract", ["bun", "--eval", `
+		const verify = await import(${JSON.stringify(join(run.checkout, "agentic/tools/verify/verify.ts"))});
+		const rulesets = await import(${JSON.stringify(join(run.checkout, "agentic/tools/rulesets/rulesets.ts"))});
+		const patch = "0".repeat(40);
+		console.log(JSON.stringify({
+			statusContext: verify.STATUS_CONTEXT,
+			verdictContext: rulesets.VERDICT_CONTEXT,
+			verdicts: verify.VERDICTS,
+			passes: Object.fromEntries(verify.VERDICTS.map((v) => [v, verify.passes(v)])),
+			states: Object.fromEntries(verify.VERDICTS.map((v) => [v, verify.statusFor(v, patch, "local-evidence").state])),
+			baseline: rulesets.desiredRuleset("baseline", ["ci"]).rules,
+			gate: rulesets.desiredRuleset("merge-gate", ["ci"]).rules,
+		}));`]);
+	const terms = parseJson(contract.stdout) as { statusContext?: string; verdictContext?: string; verdicts?: string[]; passes?: Record<string, boolean>; states?: Record<string, string>; baseline?: { type: string }[]; gate?: { type: string; parameters?: { required_status_checks?: { context: string }[] } }[] } | undefined;
+	const verdicts = ["live-ui-verified", "unit-test-verified", "type-check-only", "verifier-blocked", "verifier-failed"];
+	const passing = ["live-ui-verified", "unit-test-verified"];
+	rec.check(contract.status === 0 && terms !== undefined, `the gate's modules load in the driven checkout (exit ${contract.status})`);
+	rec.check(terms?.statusContext === "agentic/verdict" && terms.verdictContext === "agentic/verdict", "verify posts, and the merge-gate tier requires, the agentic/verdict status");
+	rec.check(sameList(terms?.verdicts, verdicts), `the verdicts are exactly ${verdicts.join(", ")}`);
+	rec.check(verdicts.every((v) => terms?.passes?.[v] === passing.includes(v) && terms.states?.[v] === (passing.includes(v) ? "success" : "failure")), "only live-ui-verified and unit-test-verified pass, and only they post success");
+	rec.check(sameList(terms?.baseline?.map((rule) => rule.type), BASELINE_RULES), `the baseline tier is exactly ${BASELINE_RULES.join(", ")}`);
+	const gateChecks = terms?.gate?.find((rule) => rule.type === "required_status_checks")?.parameters?.required_status_checks?.map((check) => check.context) ?? [];
+	rec.check(sameList(terms?.gate?.map((rule) => rule.type), GATE_RULES) && gateChecks.includes("agentic/verdict") && gateChecks.includes("ci"), "the merge-gate tier adds a pull request rule and required checks holding agentic/verdict and the passing CI checks");
+
 	if (!ghReady()) return rec.skip("gh is not logged in for the GitHub steps: run gh auth login");
 	const slug = options.slug ?? originSlug(run.checkout);
 	if (!slug) return rec.skip("the driven checkout has no GitHub origin: pass --repo owner/name");
 
 	// Plans are dry runs: observe that the live ruleset is unchanged, and check each plan against it.
-	const rulesetId = (ghJson(`repos/${slug}/rulesets`) as { id: number; name: string }[]).find((ruleset) => ruleset.name === "agentic-backstop")?.id;
-	const liveRuleset = () => (rulesetId === undefined ? "none" : JSON.stringify(ghJson(`repos/${slug}/rulesets/${rulesetId}`)));
+	const liveRuleset = (): string => {
+		const id = (ghJson(`repos/${slug}/rulesets`) as { id: number; name: string }[]).find((ruleset) => ruleset.name === "agentic-backstop")?.id;
+		return id === undefined ? "none" : JSON.stringify(ghJson(`repos/${slug}/rulesets/${id}`));
+	};
 	const rulesetBefore = liveRuleset();
-	const live = rulesetId === undefined ? [] : (JSON.parse(rulesetBefore) as { rules: { type: string; parameters?: { required_status_checks?: { context: string }[] } }[] }).rules;
+	const live = rulesetBefore === "none" ? [] : (JSON.parse(rulesetBefore) as { rules: { type: string; parameters?: { required_status_checks?: { context: string }[] } }[] }).rules;
 	rec.note("ruleset-before.json", rulesetBefore + "\n");
 	for (const [tier, wanted] of [["baseline", BASELINE_RULES], ["merge-gate", GATE_RULES]] as const) {
 		const plan = rec.step(`rulesets-plan-${tier}`, ["bun", agentic, "rulesets", "plan", slug, "--tier", tier]);
@@ -501,8 +558,10 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 		const match = new RegExp(`^${slug.replace(/[.]/g, "\\.")}#${merged}: (clear|hold), P\\(one-way door\\) (\\d\\.\\d\\d) (<=|>) 0\\.3$`).exec(risk.stdout.trim());
 		rec.check(match !== null, `jev pr-risk scores merged #${merged} with Jev's probability (printed "${risk.stdout.trim()}")`);
 		if (match) {
-			const held = Number(match[2]) > 0.3;
-			rec.check(match[1] === (held ? "hold" : "clear") && match[3] === (held ? ">" : "<=") && risk.status === (held ? 1 : 0), `jev pr-risk holds exactly when P(one-way door) > 0.3 (P ${match[2]}, exit ${risk.status})`);
+			// The printed P is rounded to two places, so at exactly 0.30 either decision is possible.
+			const p = Number(match[2]);
+			const held = match[1] === "hold";
+			rec.check((p === 0.3 || held === p > 0.3) && match[3] === (held ? ">" : "<=") && risk.status === (held ? 1 : 0), `jev pr-risk holds exactly when P(one-way door) > 0.3 (printed P ${match[2]}, ${match[1]}, exit ${risk.status})`);
 		}
 	} else rec.skip("no TypeSafe key for jev pr-risk: set TYPESAFE_API_KEY or, on macOS, add the keychain item typesafe-jev");
 
@@ -513,6 +572,8 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 	}
 	const head = parseJson(sh(["gh", "pr", "view", String(open), "-R", slug, "--json", "headRefOid,state"], { cwd: KIT_CHECKOUT }).stdout) as { headRefOid?: string; state?: string } | undefined;
 	if (head?.state !== "OPEN") throw new Error(`#${open} in ${slug} is not open (state ${head?.state ?? "unknown"}); pass --pr with an open pull request`);
+	if (options.pr !== undefined) rec.check(head.headRefOid === run.revision, `the driven checkout is at #${open}'s head (checkout ${run.revision.slice(0, 12)}, head ${head.headRefOid?.slice(0, 12)}); verify a worktree at the head`);
+	else rec.note("smoke-only.txt", `#${open} was picked as the newest open pull request; the driven checkout (${run.revision}) is not necessarily its head, so this record is a ledger smoke check, not evidence about #${open}.\n`);
 	// The smoke verdict never passes, so even a ledger that leaked out of this run's store could not clear a merge.
 	const evidence = join(rec.dir, "verdict-evidence.txt");
 	writeFileSync(evidence, `verify-agent-kit merge-gate smoke verdict for ${slug}#${open} in run ${run.runId}; ledger at ${store}\n`);
@@ -635,10 +696,10 @@ function drive(runId: string | undefined, feature: string | undefined, options: 
 	const run = loadRun(runId);
 	if (!FEATURES.includes(feature as Feature)) throw new Usage(`unknown feature "${feature ?? ""}"; choose one of ${FEATURES.join(", ")}`);
 	const rec = new Recorder(join(evidenceDir(run.runId), feature!), run.checkout);
-	const moved = bound(run);
-	if (moved) rec.check(false, moved);
-	else {
-		try {
+	try {
+		const moved = bound(run);
+		if (moved) rec.check(false, moved);
+		else {
 			switch (feature as Feature) {
 				case "task-route": driveTaskRoute(run, rec); break;
 				case "merge-gate": driveMergeGate(run, rec, options); break;
@@ -646,15 +707,16 @@ function drive(runId: string | undefined, feature: string | undefined, options: 
 				case "skill-catalog": driveSkillCatalog(run, rec); break;
 				case "claude-surface": driveClaudeSurface(run, rec); break;
 			}
-		} catch (error) {
-			rec.check(false, `drive stopped: ${(error as Error).message}`);
+			const after = bound(run);
+			if (after) rec.check(false, after);
 		}
-		const after = bound(run);
-		if (after) rec.check(false, after);
+	} catch (error) {
+		rec.check(false, `drive stopped: ${(error as Error).message}`);
 	}
 	const outcome = rec.outcome();
 	const line = outcome.state === "PASS" ? `PASS ${feature}` : `${outcome.state} ${feature}: ${outcome.detail}`;
-	rec.note("result.txt", `${line}\nrevision ${run.revision} tree ${run.tree} in ${run.checkout}\nkit ${run.kitRevision} in ${run.kit}\n`);
+	rec.note("result.txt", `${line}\n${run.dirty ? `${DIRTY}\n` : ""}revision ${run.revision} tree ${run.tree} in ${run.checkout}\nkit ${run.kitRevision} in ${run.kit}\n`);
+	if (run.dirty) console.log(DIRTY);
 	console.log(line);
 	return outcome;
 }
@@ -668,7 +730,8 @@ function driveOptions(args: string[]): Options {
 function all(args: string[]): number {
 	const options = driveOptions(args);
 	const checkout = option(args, "--checkout");
-	const runId = launch([...(checkout ? ["--checkout", checkout] : []), ...(args.includes("--install") ? ["--install"] : [])]);
+	const runId = launch([...(checkout ? ["--checkout", checkout] : []), ...["--install", "--allow-dirty"].filter((flag) => args.includes(flag))]);
+	const { dirty } = loadRun(runId);
 	const counts = { PASS: 0, FAIL: 0, SKIP: 0 };
 	let doctorOk = false;
 	try {
@@ -677,7 +740,7 @@ function all(args: string[]): number {
 	} finally {
 		cleanup(runId);
 	}
-	const summary = `ALL ${runId}: ${counts.PASS} pass, ${counts.FAIL} fail, ${counts.SKIP} skip${doctorOk ? "" : " (doctor failed; nothing driven)"}`;
+	const summary = `ALL ${runId}: ${counts.PASS} pass, ${counts.FAIL} fail, ${counts.SKIP} skip${doctorOk ? "" : " (doctor failed; nothing driven)"}${dirty ? " (dirty run: cannot back a verdict)" : ""}`;
 	writeFileSync(join(evidenceDir(runId), "all.txt"), summary + "\n");
 	console.log(summary);
 	return doctorOk && counts.FAIL === 0 ? 0 : 1;

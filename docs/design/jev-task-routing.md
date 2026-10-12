@@ -27,7 +27,7 @@ The user types tasks as now, in Claude Code, Codex, or Pi, in any repository the
 - "Where does the config loader read XDG paths?" Once calibrated, the agent gets a lookup note and answers directly.
 - "Migrate the ledger store from JSON files to SQLite." No level note, so this is rigor. The door note fires as today.
 - `/background-run …` or any other slash command is the user's own choice, so no note is delivered. The text is still classified in shadow and recorded, so each manual invocation becomes a labeled example.
-- `AGENTIC_ROUTE=shadow` or `AGENTIC_ROUTE=off` lowers every note for a session. `off` also stops every call to TypeSafe. Nothing local can raise a note.
+- `AGENTIC_ROUTE=shadow` or `AGENTIC_ROUTE=off` lowers every note for a session. `off` also stops every call to TypeSafe. Any other non-empty value counts as `shadow`, so nothing local can raise a note.
 
 The Claude Code hook keeps its command, and Codex's `UserPromptSubmit` hook, which receives the same fields, runs `task-class --codex-hook`. Only the internals change:
 
@@ -75,7 +75,7 @@ The whole flow runs once per prompt, in a single pass through these steps:
 
 ### What Jev is asked
 
-Each prompt gets one request with state `{ task }`, which meets the door bar (see the door recheck below). The Claude hook posts it to `https://api.typesafe.ai/v1/systemone` with the keychain or environment key. Pi sends it through its classifier registry (`ctx.modelRegistry.findOfType("classifier")` and `classify`), with the TypeSafe credential Pi holds. Both questions are `choice` questions, which both paths support. A Pi with no TypeSafe classifier registered takes the `classifier-unavailable` fallback rather than reading the keychain. Because two request paths can wrap the state differently, the eval runs the labeled set through both and requires matching answers before either note goes advisory.
+Each prompt gets one request with state `{ task }`, which meets the door bar (see the door recheck below). The Claude hook posts it to `https://api.typesafe.ai/v1/systemone` with the keychain or environment key. Pi sends it through its classifier registry (`ctx.modelRegistry.findOfType("classifier")` and `classify`), with the TypeSafe credential Pi holds. Both questions are `choice` questions, which both paths support. A Pi with no TypeSafe classifier registered takes the `classifier-unavailable` fallback rather than reading the keychain. Pi's registry reports the requested model (`jev-latest`), not the version that answered, so model drift is invisible under Pi: its lookup and loop notes stay in shadow until Pi reports the version, while its door note is unaffected. Because two request paths can wrap the state differently, the eval runs the labeled set through both and requires matching answers before either note goes advisory.
 
 | Id | Type | Wording |
 | --- | --- | --- |
@@ -146,7 +146,7 @@ Every failure delivers nothing beyond what the door rule allows, writes one reco
 | Condition | Fallback | Request sent |
 | --- | --- | --- |
 | under 6 words, or a child session | `not-a-task`, `child` | no |
-| a slash command | `explicit-choice`: a shadow answer is recorded, and no note is delivered | yes |
+| a slash command (`/name`), a skill mention (`$skill-name`), or Pi's expanded `/skill:name` block | `explicit-choice`: a shadow answer is recorded, and no note is delivered. Pi prompt templates expand before the extension sees them, so they count as ordinary prompts. | yes |
 | an opted-out repository, a credential shape, or over 4,000 characters | `opted-out`, `unsafe-input` | no |
 | no key, the 3 s deadline passes, a cancel, or an HTTP or parse error | `classifier-unavailable`, `timeout`, `cancelled`, `error`, `malformed` | maybe |
 | a loop is advised but the skill file is missing | `skill-missing` (falls back to rigor) | yes |
@@ -178,7 +178,8 @@ The two-week review of `background-run` (open question 3) only means something i
 | Claude Code, direct or launched by T3 | the `UserPromptSubmit` hook | T3-launched sessions carry `T3CODE_CLI_PATH`, recorded as launcher `t3` |
 | Codex, direct or launched by T3 | the `UserPromptSubmit` hook (Codex 0.162, stable `hooks` feature) | Codex asks the user to review a non-managed hook once with `/hooks`. Whether it fires under T3 is unverified, and the coverage report shows it. |
 | Pi: terminal, RPC, and T3 roots | the `task-class` extension | |
-| Children (native Pi children, T3 delegated tasks) | none | they act on a brief, not a user prompt |
+| Children (native Pi children) | the `task-class` extension, as `child`, never classified | they act on a brief, not a user prompt |
+| T3 delegated children of Claude and Codex | the same hooks, as ordinary prompts | no environment variable tells them apart yet (checked 2026-10-12), so their briefs are classified like prompts, as the door hint already was |
 | Hermes jobs (later) | the T3 dispatcher, from the job's route field | not built |
 
 **Every prompt writes a record**, including short follow-ups, slash commands, opted-out repositories, and failures. The ledger therefore counts what was not routed and why, not only what was. A slash command is the user's own choice, so no note is delivered. Its remaining text is still classified in shadow, so every manual `/background-run` becomes a labeled loop example together with what Jev would have advised.
@@ -221,11 +222,12 @@ The main flow is three files deep: the adapter, then `route.ts`, then `egress.ts
 | Path | Owns | Change |
 | --- | --- | --- |
 | `agentic/tools/jev/egress.ts` | Everything that leaves the machine: screen, redaction, length bound, `isPublic`, `originSlug`, `apiKey`, and `httpClassifier`. Only it produces `Sendable`, and both transports accept only `Sendable`. | split from `jev.ts` |
-| `agentic/tools/jev/route.ts` | Policy `task-route@1`: `QUESTIONS`, `POLICY`, `decide`, `applyModes`, `noteFor`, `routeTask`, `RouteRecord` | new |
+| `agentic/tools/jev/route.ts` | Policy `task-route@1`, all pure: `QUESTIONS`, `POLICY`, `decide`, `applyModes`, `noteFor`, `parseAnswers`, `explicitCommand` | new |
+| `agentic/tools/jev/route-task.ts` | the one I/O pass per prompt: `routeTask`, `RouteRecord`, and the ledger writer | new |
 | `agentic/tools/jev/route-eval.ts` | `harvest`, `score`, and a report without text | new |
 | `agentic/tools/jev/pr-risk.ts` | the PR-risk question, threshold, and state | the rest of `jev.ts` |
 | `agentic/tools/jev/cli.ts` | `task-class --claude-hook` (unchanged command), `task-class --codex-hook`, `pr-risk`, `route-harvest`, `route-eval`, `route-report`, `route-sync` | edited |
-| `pi/extensions/task-class.ts` | the Pi adapter above, including `registryClassifier`, which parses Pi's `ClassifierAnswer` into the shared answer shape | rewritten in place |
+| `pi/extensions/task-class.ts` | the Pi adapter above, including `registryClassifier`, which parses Pi's `ClassifierAnswer` into the shared answer shape, and the reading of Pi's expanded `<skill>` block back into `/skill:name` | rewritten in place |
 | `docs/adr/0002-task-routing.md` | amends ADR 0001 decision 5 | new |
 
 `taskClass`, `taskHint`, and `taskHintFor` are deleted in the same change that migrates their callers and tests. `pi-t3-runtime` is out of scope for now and needs no routing code.

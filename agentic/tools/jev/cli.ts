@@ -36,7 +36,7 @@ function routeDeps(env: Record<string, string | undefined>): RouteDeps {
 async function promptHook(runtime: Runtime): Promise<void> {
 	const event: unknown = JSON.parse(await Bun.stdin.text());
 	const field = (name: string) => (typeof event === "object" && event !== null && typeof (event as Record<string, unknown>)[name] === "string" ? ((event as Record<string, unknown>)[name] as string) : undefined);
-	const input = { prompt: field("prompt") ?? "", cwd: field("cwd") ?? process.cwd(), runtime, sessionId: field("session_id") ?? "unknown", origin: "user" as const };
+	const input = { prompt: field("prompt") ?? "", cwd: field("cwd") ?? process.cwd(), runtime, sessionId: field("session_id") ?? "unknown", origin: "user" as const, queued: false };
 	const { note, record } = await routeTask(input, routeDeps(process.env));
 	if (note) console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: note } }));
 	appendRecord(record, process.env);
@@ -64,7 +64,7 @@ async function main(args: string[]): Promise<number> {
 		}
 		const text = rest.join(" ").trim();
 		if (!text) return console.error(USAGE), 2;
-		const { note, record } = await routeTask({ prompt: text, cwd: process.cwd(), runtime: "cli", sessionId: "manual", origin: "user" as const }, routeDeps(process.env));
+		const { note, record } = await routeTask({ prompt: text, cwd: process.cwd(), runtime: "cli", sessionId: "manual", origin: "user" as const, queued: false }, routeDeps(process.env));
 		console.log(JSON.stringify({ repo: record.repo, advised: record.advised, delivered: record.delivered, fallbacks: record.fallbacks, model: record.answers?.model }));
 		console.log(note ?? "no note");
 		return 0;

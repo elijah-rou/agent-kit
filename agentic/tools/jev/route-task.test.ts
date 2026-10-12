@@ -32,7 +32,7 @@ function harness(options: { answer?: Answers; classify?: Classify; repo?: Repo; 
 	};
 	return { deps, calls };
 }
-const input = (prompt: string, fields: Partial<RouteInput> = {}): RouteInput => ({ prompt, cwd: "/repo", runtime: "claude", sessionId: "s1", origin: "user", ...fields });
+const input = (prompt: string, fields: Partial<RouteInput> = {}): RouteInput => ({ prompt, cwd: "/repo", runtime: "claude", sessionId: "s1", origin: "user", queued: false, ...fields });
 
 const calibrated: Calibration = { threshold: 0.9, questionsDigest: digestQuestion(QUESTIONS.level), model: "jev-1.13.0", samples: 200, positives: 20, precision: 0.95, recall: 0.8, date: "2026-10-30", source: "test" };
 const ADVISORY: Policy = { ...POLICY, notes: { ...POLICY.notes, lookup: { mode: "advisory", calibration: calibrated }, loop: { mode: "advisory", calibration: calibrated } } };
@@ -106,6 +106,12 @@ describe("routeTask", () => {
 		expect(JSON.stringify(record)).not.toContain("hunter2");
 	});
 
+	test("a prompt queued while the agent works is classified and recorded, but gets no note", async () => {
+		const { note, record } = await routeTask(input(MIGRATE, { queued: true }), harness({ answer: answers("rigor", 0.99, "one-way-door", 0.99) }).deps);
+		expect(note).toBeUndefined();
+		expect(record).toMatchObject({ advised: { level: "rigor", door: oneWay }, delivered: { level: "rigor" }, noted: false, fallbacks: ["queued"] });
+	});
+
 	test("a classifier that hangs is cut off at the deadline", async () => {
 		const hanging: Classify = (_state, signal) => new Promise((resolve) => signal.addEventListener("abort", () => resolve({ kind: "failed", reason: "timeout" })));
 		const started = Date.now();
@@ -144,17 +150,20 @@ describe("the ledger", () => {
 
 	test("the largest record any accepted input can produce fits the cap, and a larger one is refused", async () => {
 		const precise = 0.9876543210987654;
-		const scored = <C extends string>(choice: C, options: readonly C[]) => ({ choice, confidence: precise, probabilities: Object.fromEntries(options.map((o) => [o, precise])) as Record<C, number> });
+		const tiny = 1.1102230246251565e-16;
+		const scored = <C extends string>(choice: C, options: readonly C[]) => ({ choice, confidence: precise, probabilities: Object.fromEntries(options.map((o) => [o, o === choice ? precise : tiny])) as Record<C, number> });
 		const answer: Answers = { door: scored("one-way-door", ["reversible", "experiment", "one-way-door"] as const), level: scored("loop", ["lookup", "rigor", "loop"] as const), model: "m".repeat(MODEL_NAME_MAX) };
-		const repo = { slug: `${"o".repeat(39)}/${"r".repeat(100)}`, optedOut: false };
+		const repo = { slug: `${"\u00f6".repeat(39)}/${"\u0000".repeat(300)}`, optedOut: false };
 		const policy: Policy = { ...ADVISORY, notes: { ...ADVISORY.notes, loop: { mode: "advisory", calibration: { ...calibrated, model: answer.model } } } };
 		const long = `Keep going ${"word ".repeat(790)}`.slice(0, 4000);
 		const scenarios = [
-			await routeTask(input(long, { sessionId: "s".repeat(500) }), harness({ answer, repo, policy }).deps),
-			await routeTask(input(`/${"c".repeat(300)} ${long.slice(0, 3600)}`, { sessionId: "s".repeat(500) }), harness({ answer, repo, policy }).deps),
+			await routeTask(input(long, { sessionId: "\u0000\u2028".repeat(500) }), harness({ answer, repo, policy }).deps),
+			await routeTask(input(`/${"c".repeat(300)} ${long.slice(0, 3600)}`, { sessionId: "\u0000\u2028".repeat(500) }), harness({ answer, repo, policy }).deps),
 		];
 		for (const { record } of scenarios) {
-			const bytes = Buffer.byteLength(`${JSON.stringify(record)}\n`) + FIELD_MAX.machine - record.machine.length;
+			const line = `${JSON.stringify(record)}\n`;
+			expect(Buffer.byteLength(line)).toBe(line.length);
+			const bytes = Buffer.byteLength(line) + FIELD_MAX.machine - record.machine.length;
 			expect(bytes).toBeLessThan(RECORD_MAX_BYTES);
 		}
 		expect(scenarios[0]!.record.delivered).toEqual({ level: "loop", door: { choice: "one-way-door", confidence: precise } });

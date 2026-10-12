@@ -6,7 +6,7 @@
 
 ## The door
 
-Two things here become contracts shared between agent-kit and bootstrap. The first is the role names (`quick`, `build`, `review`): skills and instructions name them, native agent types and T3 delegations carry them, and Jev routing records will store them. The second is the per-machine overlay format, `~/.config/bootstrap/roles.json`, which each machine's private dotfiles persist. Everything else is reversible: which model and effort a role gets, the renderer, and the wording.
+Two things here become contracts shared between agent-kit and bootstrap. The first is the role names (`explore`, `quick`, `build`, `review`): skills and instructions name them, native agent types and T3 delegations carry them, and Jev routing records will store them. The second is the per-machine overlay format, `~/.config/bootstrap/roles.json`, which each machine's private dotfiles persist. Everything else is reversible: which model and effort a role gets, the renderer, and the wording.
 
 ## Problem
 
@@ -32,7 +32,7 @@ Two more constraints are already in force. The parent already understands the ta
 
 ## Usage (caller's view)
 
-**From Claude Code.** The Agent tool lists `quick` and `build` as agent types. Each description names its model and effort. The parent launches by name and passes no model:
+**From Claude Code.** The Agent tool lists `quick` and `build` as agent types, and the built-in `Explore` now runs on `claude-haiku-5-5` because the `explore` role overrides it. The parent launches by name and passes no model:
 
 ```
 Agent(subagent_type: "build", prompt: <brief>)
@@ -45,9 +45,9 @@ delegate_task(target: {providerInstanceId: "codex", model: "gpt-6.1-sol", option
               task: <review charter from the table> + <brief>)
 ```
 
-**From Codex.** `review` is a native agent type (`~/.codex/agents/review.toml`), spawned by name. `build` and `quick` are rows in the same table, which a Codex `SessionStart` hook puts in context, and each row has its T3 target.
+**From Codex.** `review` is a native agent type (`~/.codex/agents/review.toml`), spawned by name. `build`, `quick` and `explore` are rows in the same table, which a Codex `SessionStart` hook puts in context, and each row has its T3 target.
 
-**Outside T3.** A Claude Code parent in a plain terminal has no route to `gpt-6.1-sol`. It reports `review` as unavailable and launches nothing in its place. A Codex parent is in the same position for `quick` and `build` (see open question 2).
+**Outside T3.** A Claude Code parent in a plain terminal has no route to `gpt-6.1-sol`. It reports `review` as unavailable and launches nothing in its place. A Codex parent is in the same position for `explore`, `quick` and `build` (see open question 2).
 
 **Changing the opinion.** Edit one line in one file, open a PR, advance bootstrap's agent-kit pin, then run `install.sh link`:
 
@@ -75,15 +75,17 @@ The rendered table ends with: `Machine overrides: build gpt-6.1-sol high (agent-
 
 | Role | Use for | Model (decided) | Effort (proposed) | Read-only | T3 role |
 | --- | --- | --- | --- | --- | --- |
-| `quick` | bounded lookups, scouting, bulk or mechanical edits, summaries | `claude-haiku-5-5` | `medium` | no | `general` |
+| `explore` | read-only lookups, codebase search, scouting | `claude-haiku-5-5` | `medium` | yes | `research` |
+| `quick` | bulk or mechanical edits, bounded tasks that write, summaries | `claude-haiku-5-5` | `medium` | no | `general` |
 | `build` | implementation, diagnosis, and the review done while building | `claude-opus-5-5` | `high` | no | `implementation` |
 | `review` | independent review or verification of work the child did not write | `gpt-6.1-sol` | `xhigh` | yes | `review` |
 
-Existing call sites map onto these three roles:
+Existing call sites map onto these four roles:
 
 - `review`: the pr-review reviewer, the ship and autopilot verifiers, show-me-your-work's attention reviewer, design-checkpoint's judge, and reflect's lenses.
 - `build`: design-checkpoint's candidates, reflect's synthesizer, and all implementation.
-- `quick`: scouting and bounded lookups.
+- `explore`: scouting and bounded lookups, including the ones Claude Code delegates to `Explore` on its own.
+- `quick`: bulk or mechanical edits and other bounded work that writes.
 
 Focused research has no decided model, so it runs as `build`. A `research` role is the first likely split, and a `verify` role is the second: a reviewer that drives the real product and writes evidence under a sandbox.
 
@@ -103,6 +105,8 @@ t3Role: review
 
 You are an independent reviewer. You did not write the change, you start from this brief rather than the author's transcript, and you report only findings that would block acceptance: each with its location, why it is wrong, and how to show it fails. "No blocking findings" is a valid result. Change nothing in the repository; the only writes allowed are evidence files and a verdict the brief asks for. Do not publish, push, comment, or launch children.
 ```
+
+A role may also set `nativeName` for a harness, which makes its rendered agent replace that harness's built-in agent of the same name. The only use today is `explore`, which sets `nativeName: {claude: Explore}`. The Claude Code docs describe exactly this override: a user agent named `Explore` with `model: haiku`. Codex's built-in `explorer` is left alone, because Codex cannot run Haiku.
 
 `agent-kit/roles/catalog.json` lists the models a role may name. For each model it gives the provider and the effort levels that model accepts. For each provider it says how each harness spells a launch: native, a T3 target with an option name, or `null` for no route. Pi's Anthropic entry stays `null` until pi-claude-bridge is adopted.
 
@@ -127,7 +131,8 @@ type Harness = "claude" | "codex";              // "pi" when Pi is adopted
 type RoleName = string & { readonly brand: "RoleName" };  // /^[a-z]+$/, minted only by loadRoles
 
 interface Binding { model: string; effort: Effort }
-interface Role { name: RoleName; use: string; charter: string; binding: Binding; readOnly: boolean; t3Role: string }
+interface Role { name: RoleName; use: string; charter: string; binding: Binding; readOnly: boolean; t3Role: string;
+               nativeName: Partial<Record<Harness, string>> }   // e.g. explore -> {claude: "Explore"}
 interface Override { binding: Binding; reason: string }
 interface Overlay { unavailable: ReadonlySet<Provider>; roles: ReadonlyMap<RoleName, Override>; source: string | null }
 
@@ -200,7 +205,7 @@ Both harnesses load it with a `SessionStart` hook, and bootstrap installs the ho
 
 One paragraph replaces the Codex table at `codex/AGENTS.md:37-48` and the model sentence at `claude/CLAUDE.md:36`:
 
-> Launch children by role, never by picking a model: `quick` for bounded or bulk work you could not finish in a handful of tool calls yourself, `build` for implementation and the review done while building, `review` for independent review (a child that did not write the change, starts from a brief, changes nothing, and reports only blocking findings). The role table in context binds each role to a model and effort on this machine and says whether it is a native agent here or a T3 target. Launch natively when you can, otherwise through the T3 target with the role's charter at the top of the brief, and pass no model or effort of your own. If a role has neither, report it as unavailable with the missing route; do not launch another role or model in its place, and do not relaunch elsewhere after a launch was accepted. Every review record names the model that ran.
+> Launch children by role, never by picking a model: `explore` for read-only lookups and `quick` for bulk or bounded work that writes, when you could not finish either in a handful of tool calls yourself; `build` for implementation and the review done while building, `review` for independent review (a child that did not write the change, starts from a brief, changes nothing, and reports only blocking findings). The role table in context binds each role to a model and effort on this machine and says whether it is a native agent here or a T3 target. Launch natively when you can, otherwise through the T3 target with the role's charter at the top of the brief, and pass no model or effort of your own. If a role has neither, report it as unavailable with the missing route; do not launch another role or model in its place, and do not relaunch elsewhere after a launch was accepted. Every review record names the model that ran.
 
 The paragraph names no harness, so `check-skills.ts`'s runtime-neutral check still passes for `claude/CLAUDE.md`.
 
@@ -236,7 +241,7 @@ Running install twice writes nothing the second time. When render fails, the ste
 
 ```
 agent-kit/
-  roles/{quick,build,review}.md        opinion and charters (source of truth)
+  roles/{explore,quick,build,review}.md   opinion and charters (source of truth)
   roles/catalog.json                   models, efforts, per-harness launch spelling
   roles/fixtures/no-anthropic.json     overlay fixture for validate
   roles/README.md                      change a binding, add a role, write an overlay
@@ -269,7 +274,7 @@ Checked 2026-10-12 against the Claude Code docs (code.claude.com/docs/en/sub-age
   - Codex ships `default`, `worker` and `explorer`.
   - pi-subagents ships `scout`, `researcher`, `worker`, `reviewer`, `oracle` and `delegate`, and advises overriding built-ins before copying agent files.
 
-  Open question 5 covers Claude's `Explore`. Codex's built-ins cannot take Claude models, so they stay as they are.
+  The `explore` role overrides Claude's `Explore`, as the user decided. Codex's built-ins cannot take Claude models, so they stay as they are.
 - **Who wins on model choice differs.**
   - Codex: the agent file's model and effort beat spawn values.
   - Claude: a per-launch `model` beats the frontmatter.
@@ -338,7 +343,13 @@ No separate judge ran. The skill makes one optional, and the scores above are mi
 
 - **Hand-synced prose tables in each harness** (the status quo). Three copies, already out of date, and no machine overrides.
 - **One `roles.json` imported into `CLAUDE.md` with `@import`.** Codex cannot import, and an import inside a symlinked file has undocumented path semantics.
-- **A runtime `resolve(role)` tool or service.** It adds a process and a call to every launch, for an answer that is fixed at install time.
+- **An agent-kit MCP server with `resolve(role)` or `launch(role, brief)` tools.** All three harnesses support MCP, but a server cannot do the parts that matter:
+  - It cannot register native agent types. Claude Code's own routing to `Explore`, and Codex's `agent_type`, read only agent files. So the files are needed anyway, and an MCP path would be a second way to do one task.
+  - `resolve` spends a tool call per launch on an answer that is fixed per machine at install time. The `SessionStart` table gives the same answer with no call.
+  - `launch` would be a second executor beside T3's `delegate_task`. The Hermes and pi-t3-runtime designs give T3 sole ownership of delegated launches.
+  - It costs a server process in every session, tool schemas in context, and MCP registration in each harness, which bootstrap would have to keep in step with the agent-kit pin.
+
+  Enforcing the binding is a hook's job, not a server's: a Claude `PreToolUse` hook on `Agent` can refuse a launch that passes its own `model`.
 - **Keeping the opinion in bootstrap**, through Pi agent overrides, Codex `[agents]`, or agent files. Wrong owner by the user's decision, and it is how the OpenCode routes crept in.
 - **pstack's setup skill, which writes one always-applied rule.** Its override semantics are right (one line per role, delete a line to fall back, values validated), and the overlay keeps them. But the skill is interactive, Cursor-only, and produces no native agent files.
 
@@ -350,12 +361,12 @@ No separate judge ran. The skill makes one optional, and the scores above are mi
 
    I recommend (a). Medium is Haiku 5.5's default in T3's catalog, so `quick` claims no tuning that nobody has measured. High is one step above Opus 5.5's default of medium, because implementation is the work that most needs it. Xhigh matches both reviewer configs the user already wrote (bootstrap `pi/settings.json` and pi-t3-runtime's reviewer profile). If review effort is left unstated, T3 runs `gpt-6.1-sol` at its catalog default of `low`. Against this, the Codex docs suggest `high` for "reviewer or security-focused agents", and their example reviewer runs `gpt-6.1-sol` at `medium`. Default: (a), revisited once routing records show cost and quality.
 
-2. **Cross-harness `quick`.** From Codex, `quick` on Haiku means a T3 child thread per lookup, and it is unavailable outside T3. Options:
+2. **Cross-harness `quick` and `explore`.** From Codex, either role on Haiku means a T3 child thread per lookup, and it is unavailable outside T3. Options:
    - (a) Strict: T3 or unavailable.
    - (b) A role file may declare a per-harness binding, such as `codex: {model: gpt-6-luna, effort: low}`. The table shows it, so it is not a substitution.
    - (c) A's ordered fallback list.
 
-   I recommend (b), for `quick` only: the role exists to be cheap, and a cross-provider thread defeats that. Default: (a) until answered.
+   I recommend (b), for `explore` and `quick` only: those roles exist to be cheap, and a cross-provider thread defeats that. Default: (a) until answered.
 
 3. **Model diversity among design-checkpoint candidates.** This is separate from reviewer independence. pstack holds that "different models have different blind spots". Options:
    - (a) Candidates run as `build`, and diversity comes from independent briefs.
@@ -363,13 +374,9 @@ No separate judge ran. The skill makes one optional, and the scores above are mi
 
    I recommend (b): candidate diversity is what the step is for, and it is cheap at two or three launches. Default: (b).
 
-4. **Role names.** `quick`, `build`, `review`. Alternatives: `bulk`/`implementation`/`review` (B), or `quick`/`implement`/`review` (A). I recommend the short verbs, because they are one word, read as agent types, and do not collide with skill names. Default: `quick`, `build`, `review`.
+4. **Role names.** `explore`, `quick`, `build`, `review`. Alternatives: `bulk`/`implementation`/`review` (B), or `quick`/`implement`/`review` (A). I recommend the short verbs, because they are one word, read as agent types, and do not collide with skill names. Default: `explore`, `quick`, `build`, `review`.
 
-5. **Claude's built-in `Explore`.** Claude Code routes lookups to its built-in `Explore` agent on its own, and `Explore` runs on the main conversation's model, which is Opus here. The Claude docs say to override it by defining a user agent named `Explore` with `model: haiku`. Options:
-   - (a) Leave `Explore` alone.
-   - (b) Render a read-only `Explore` override with the `quick` binding.
-
-   `quick` itself cannot replace `Explore`, because `quick` may edit and `Explore` is read-only. I recommend (b): it moves Claude's own lookups to Haiku without any instruction change. Default: (a) until answered.
+5. **Claude's built-in `Explore`.** Decided by the user on 2026-10-12: `Explore` runs on `claude-haiku-5-5`. The design now has an `explore` role that renders as Claude's `Explore` agent (see Roles and Source of truth).
 
 6. **Usage limits.** Two of the three design candidates for this document died on a Claude session limit. pi-subagents handles this with `fallbackModels`, which applies only to quota, auth, timeout and unavailable-model errors, is reported in the output, and is recorded in `status.json`. Options:
    - (a) Stop and report, as written above.
@@ -386,9 +393,9 @@ No separate judge ran. The skill makes one optional, and the scores above are mi
 
 ## First implementation step
 
-On `agent/model-roles`, add `roles/` (three roles, catalog, fixture) and `agentic/tools/roles/` with `loadRoles`, `loadCatalog`, `parseOverlay`, `resolve`, `launchFor` and `render` for both harnesses, plus `agentic roles check --repo` in `scripts/validate`. It is done when:
+On `agent/model-roles`, add `roles/` (four roles, catalog, fixture) and `agentic/tools/roles/` with `loadRoles`, `loadCatalog`, `parseOverlay`, `resolve`, `launchFor` and `render` for both harnesses, plus `agentic roles check --repo` in `scripts/validate`. It is done when:
 
-- `agentic roles render --harness claude` writes `agents/quick.md`, `agents/build.md`, `roles.md` and `roles.json`, and no `agents/review.md`.
+- `agentic roles render --harness claude` writes `agents/Explore.md`, `agents/quick.md`, `agents/build.md`, `roles.md` and `roles.json`, and no `agents/review.md`.
 - The Codex render writes only `agents/review.toml` plus the table files.
 - The no-Anthropic fixture renders with both overrides named.
 - An overlay that marks `anthropic` unavailable without rebinding is refused with exit 1 and writes nothing.

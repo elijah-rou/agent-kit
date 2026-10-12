@@ -21,7 +21,7 @@ const STEP_TIMEOUT_MS = 180_000;
 const FEATURES = ["task-route", "merge-gate", "pr-state", "skill-catalog", "claude-surface"] as const;
 type Feature = (typeof FEATURES)[number];
 type Outcome = { state: "PASS" | "FAIL" | "SKIP"; detail?: string };
-type RunInfo = { marker: string; runId: string; checkout: string; revision: string; tree: string; kit: string; kitRevision: string; dirty: boolean; startedAt: string };
+type RunInfo = { marker: string; runId: string; checkout: string; revision: string; tree: string; kit: string; kitRevision: string; kitTree: string; dirty: boolean; startedAt: string };
 const DIRTY = "WARNING dirty run: its evidence cannot back a verdict";
 const ALLOWED_JEV_FALLBACKS = ["low-confidence", "conflict", "model-drift"];
 type Options = { slug?: string; pr?: number; mergedPr?: number };
@@ -193,11 +193,13 @@ function loadRun(runId: string | undefined): RunInfo {
 	return info;
 }
 
-/** Fails unless the driven checkout still has the revision and tree recorded at launch. */
+/** Fails unless the driven checkout and the kit still have the revisions and trees recorded at launch. */
 function bound(run: RunInfo): string | undefined {
-	const revision = git(["rev-parse", "HEAD"], run.checkout);
-	if (revision !== run.revision) return `checkout ${run.checkout} moved from ${run.revision.slice(0, 12)} to ${revision.slice(0, 12)} since launch; launch a new run`;
-	if (treeDigest(run.checkout) !== run.tree) return `checkout ${run.checkout} changed since launch (tree digest ${run.tree}); launch a new run`;
+	for (const [what, path, revisionAt, treeAt] of [["checkout", run.checkout, run.revision, run.tree], ["kit", run.kit, run.kitRevision, run.kitTree]] as const) {
+		const revision = git(["rev-parse", "HEAD"], path);
+		if (revision !== revisionAt) return `${what} ${path} moved from ${revisionAt.slice(0, 12)} to ${revision.slice(0, 12)} since launch; launch a new run`;
+		if (treeDigest(path) !== treeAt) return `${what} ${path} changed since launch (tree digest ${treeAt}); launch a new run`;
+	}
 	return undefined;
 }
 
@@ -295,13 +297,16 @@ function launch(args: string[]): string {
 	const checkout = realpathSync(requested);
 	if (realpathSync(git(["rev-parse", "--show-toplevel"], checkout)) !== checkout) throw new Usage(`${checkout} is not the top of its git checkout; pass its root to --checkout`);
 	const allowDirty = args.includes("--allow-dirty");
-	const dirty = [...new Set([checkout, KIT_CHECKOUT])].map((path) => [path, dirtyState(path)] as const).filter(([, state]) => state !== undefined);
+	const dirty: (readonly [string, string | undefined])[] = [...new Set([checkout, KIT_CHECKOUT])].map((path) => [path, dirtyState(path)] as const).filter(([, state]) => state !== undefined);
 	if (dirty.length && !allowDirty) {
 		throw new Usage(`${dirty.map(([path, state]) => `${path} has uncommitted changes (${state})`).join("; ")}. Commit them, or verify a fresh worktree at the commit (git worktree add --detach PATH SHA), or pass --allow-dirty for a run whose evidence cannot back a verdict`);
 	}
 	if (args.includes("--install")) {
 		const install = sh(["bun", "install", "--frozen-lockfile"], { cwd: checkout });
 		if (install.status !== 0) throw new Error(`bun install --frozen-lockfile failed in ${checkout}: ${install.stderr.trim()}`);
+		const installed = dirtyState(checkout);
+		if (installed !== undefined && !allowDirty) throw new Usage(`bun install left uncommitted changes in ${checkout} (${installed}); commit or ignore them, or pass --allow-dirty for a run whose evidence cannot back a verdict`);
+		if (installed !== undefined && !dirty.some(([path]) => path === checkout)) dirty.push([checkout, installed]);
 	}
 	const now = new Date();
 	const runId = `ak-${now.toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15)}-${process.pid}`;
@@ -324,6 +329,7 @@ function launch(args: string[]): string {
 		tree: treeDigest(checkout),
 		kit: KIT_CHECKOUT,
 		kitRevision: git(["rev-parse", "HEAD"], KIT_CHECKOUT),
+		kitTree: treeDigest(KIT_CHECKOUT),
 		dirty: dirty.length > 0,
 		startedAt: now.toISOString(),
 	};
@@ -478,6 +484,7 @@ function realLedger(checkout: string): string {
 }
 
 const BASELINE_RULES = ["deletion", "non_fast_forward", "required_linear_history"];
+const BACKSTOP_SETTINGS = { name: "agentic-backstop", target: "branch", enforcement: "active", conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: [] } }, bypass_actors: [] };
 const GATE_RULES = [...BASELINE_RULES, "pull_request", "required_status_checks"];
 
 function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
@@ -500,8 +507,22 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 			states: Object.fromEntries(verify.VERDICTS.map((v) => [v, verify.statusFor(v, patch, "local-evidence").state])),
 			baseline: rulesets.desiredRuleset("baseline", ["ci"]).rules,
 			gate: rulesets.desiredRuleset("merge-gate", ["ci"]).rules,
+			settings: (({ name, target, enforcement, conditions, bypass_actors }) => ({ name, target, enforcement, conditions, bypass_actors }))(rulesets.desiredRuleset("merge-gate", ["ci"])),
+			settingsSame: rulesets.settingsDiff({ enforcement: "active", bypass_actors: [], conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: [] } } }, rulesets.desiredRuleset("merge-gate", ["ci"])),
+			settingsLoose: rulesets.settingsDiff({ enforcement: "evaluate", bypass_actors: [{ actor_id: 1, actor_type: "OrganizationAdmin" }], conditions: { ref_name: { include: ["refs/heads/other"], exclude: [] } } }, rulesets.desiredRuleset("merge-gate", ["ci"])),
+			latestWins: verify.currentVerdict([{ pr: 1, sha: "a", verdict: "live-ui-verified" }, { pr: 1, sha: "a", verdict: "verifier-failed" }], 1, "a").state,
+			laterPass: verify.currentVerdict([{ pr: 1, sha: "a", verdict: "verifier-failed" }, { pr: 1, sha: "a", verdict: "unit-test-verified" }], 1, "a").state,
+			oldHead: verify.currentVerdict([{ pr: 1, sha: "b", verdict: "live-ui-verified" }], 1, "a").state,
+			noRows: verify.currentVerdict([{ pr: 2, sha: "a", verdict: "live-ui-verified" }], 1, "a").state,
+			rowForHead: verify.rowForHead([{ pr: 1, sha: "a", verdict: "first" }, { pr: 1, sha: "a", verdict: "second" }, { pr: 2, sha: "a", verdict: "other" }], 1, "a")?.verdict,
+			unknown: [verify.isVerdict("passed"), verify.passes("passed")],
 		}));`]);
-	const terms = parseJson(contract.stdout) as { statusContext?: string; verdictContext?: string; verdicts?: string[]; passes?: Record<string, boolean>; states?: Record<string, string>; baseline?: { type: string }[]; gate?: { type: string; parameters?: { required_status_checks?: { context: string }[] } }[] } | undefined;
+	const terms = parseJson(contract.stdout) as {
+		statusContext?: string; verdictContext?: string; verdicts?: string[]; passes?: Record<string, boolean>; states?: Record<string, string>;
+		baseline?: { type: string }[]; gate?: { type: string; parameters?: { required_status_checks?: { context: string }[] } }[];
+		settings?: Record<string, unknown>; settingsSame?: string[]; settingsLoose?: string[];
+		latestWins?: string; laterPass?: string; oldHead?: string; noRows?: string; rowForHead?: string; unknown?: boolean[];
+	} | undefined;
 	const verdicts = ["live-ui-verified", "unit-test-verified", "type-check-only", "verifier-blocked", "verifier-failed"];
 	const passing = ["live-ui-verified", "unit-test-verified"];
 	rec.check(contract.status === 0 && terms !== undefined, `the gate's modules load in the driven checkout (exit ${contract.status})`);
@@ -511,6 +532,10 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 	rec.check(sameList(terms?.baseline?.map((rule) => rule.type), BASELINE_RULES), `the baseline tier is exactly ${BASELINE_RULES.join(", ")}`);
 	const gateChecks = terms?.gate?.find((rule) => rule.type === "required_status_checks")?.parameters?.required_status_checks?.map((check) => check.context) ?? [];
 	rec.check(sameList(terms?.gate?.map((rule) => rule.type), GATE_RULES) && gateChecks.includes("agentic/verdict") && gateChecks.includes("ci"), "the merge-gate tier adds a pull request rule and required checks holding agentic/verdict and the passing CI checks");
+	rec.check(JSON.stringify(terms?.settings) === JSON.stringify(BACKSTOP_SETTINGS), `the ruleset is ${JSON.stringify(BACKSTOP_SETTINGS)} (got ${JSON.stringify(terms?.settings)})`);
+	rec.check(sameList(terms?.settingsSame, []) && sameList(terms?.settingsLoose, ["enforcement", "bypass_actors", "conditions"]), "the plan reports evaluate mode, a bypass actor, and another branch as settings to change, and nothing for the desired settings");
+	rec.check(terms?.latestWins === "fail" && terms.laterPass === "pass" && terms.oldHead === "void" && terms.noRows === "none" && terms.rowForHead === "second", "the latest verdict for the head decides, a verdict for an old head is void, and publish posts the latest row for the head");
+	rec.check(sameList(terms?.unknown?.map(String), ["false", "false"]), "a verdict outside the list is neither recognized nor passing");
 
 	if (!ghReady()) return rec.skip("gh is not logged in for the GitHub steps: run gh auth login");
 	const slug = options.slug ?? originSlug(run.checkout);
@@ -522,7 +547,14 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 		return id === undefined ? "none" : JSON.stringify(ghJson(`repos/${slug}/rulesets/${id}`));
 	};
 	const rulesetBefore = liveRuleset();
-	const live = rulesetBefore === "none" ? [] : (JSON.parse(rulesetBefore) as { rules: { type: string; parameters?: { required_status_checks?: { context: string }[] } }[] }).rules;
+	const liveState = rulesetBefore === "none" ? undefined : (JSON.parse(rulesetBefore) as { enforcement?: string; bypass_actors?: unknown[]; conditions?: { ref_name?: { include?: string[]; exclude?: string[] } }; rules: { type: string; parameters?: { required_status_checks?: { context: string }[] } }[] });
+	const live = liveState?.rules ?? [];
+	const sorted = (list: readonly string[] | undefined) => JSON.stringify([...(list ?? [])].sort());
+	const expectSettings = liveState === undefined ? [] : [
+		...(liveState.enforcement !== BACKSTOP_SETTINGS.enforcement ? ["~enforcement"] : []),
+		...(JSON.stringify(liveState.bypass_actors ?? null) !== JSON.stringify(BACKSTOP_SETTINGS.bypass_actors) ? ["~bypass_actors"] : []),
+		...(sorted(liveState.conditions?.ref_name?.include) !== sorted(BACKSTOP_SETTINGS.conditions.ref_name.include) || sorted(liveState.conditions?.ref_name?.exclude) !== sorted(BACKSTOP_SETTINGS.conditions.ref_name.exclude) ? ["~conditions"] : []),
+	];
 	rec.note("ruleset-before.json", rulesetBefore + "\n");
 	for (const [tier, wanted] of [["baseline", BASELINE_RULES], ["merge-gate", GATE_RULES]] as const) {
 		const plan = rec.step(`rulesets-plan-${tier}`, ["bun", agentic, "rulesets", "plan", slug, "--tier", tier]);
@@ -535,6 +567,8 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 		const removed = changes.filter((change) => change.startsWith("-"));
 		rec.check(plan.status === 0 && line.includes(`tier ${tier}`), `rulesets plan --tier ${tier} prints its plan for ${slug} (exit ${plan.status})`);
 		rec.check(sameList(added.sort(), expectAdd.sort()) && sameList(removed.sort(), expectRemove.sort()), `rulesets plan --tier ${tier} adds ${JSON.stringify(expectAdd)} and removes ${JSON.stringify(expectRemove)} against the live ruleset (printed "${line}")`);
+		const settingChanges = changes.filter((change) => ["~enforcement", "~bypass_actors", "~conditions"].includes(change));
+		rec.check(sameList(settingChanges.sort(), [...expectSettings].sort()), `rulesets plan --tier ${tier} changes exactly the settings ${JSON.stringify(expectSettings)} against the live ruleset (printed "${line}")`);
 		if (tier === "merge-gate" && types.includes("required_status_checks")) {
 			const contexts = live.find((rule) => rule.type === "required_status_checks")?.parameters?.required_status_checks?.map((check) => check.context) ?? [];
 			if (!contexts.includes("agentic/verdict")) rec.check(changes.includes("~required_status_checks"), "rulesets plan --tier merge-gate changes the required checks to include agentic/verdict");

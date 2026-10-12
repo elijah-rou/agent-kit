@@ -48,10 +48,10 @@ Which features a change needs. A path matches the first row that names it; anyth
 | Changed paths | Drive |
 | --- | --- |
 | test files (`*.test.ts`, `claude/tests/`, `pi/tests/`) | not mapped: read them as code (last row) |
-| the publish path of `agentic/tools/verify/cli.ts`, the apply path of `agentic/tools/rulesets/cli.ts` | not mapped: they write GitHub, and no drive observes them (last row) |
+| `agentic/tools/verify/cli.ts`, `agentic/tools/rulesets/cli.ts` | `merge-gate`, which drives record, status, and plan; a diff that touches the `publish` or `apply` branch, or a helper they call, also needs the last row's test, because those write GitHub and no drive observes them |
 | `agentic/tools/jev/cli.ts`, `route.ts`, `route-task.ts`, `egress.ts` | `task-route` and `merge-gate` (pr-risk shares the CLI and egress) |
 | `agentic/tools/jev/pr-risk.ts` | `merge-gate` |
-| the rest of `agentic/tools/verify/` and `agentic/tools/rulesets/`, `agentic/vendor/orch/` | `merge-gate` (its contract step checks the verdicts, their statuses, and the tiers' rules) |
+| the rest of `agentic/tools/verify/` and `agentic/tools/rulesets/`, `agentic/vendor/orch/` | `merge-gate` (its contract step checks the verdicts, their statuses, how the ledger decides, and the ruleset's rules and settings) |
 | `agentic/tools/pr-feedback/`, `agentic/vendor/watch-pr/` | `pr-state` |
 | `agentic/bin/agentic`, `package.json`, `bun.lock` | every feature (`all`) |
 | `claude/statusline.ts`, `claude/mods/` | `claude-surface` |
@@ -62,7 +62,7 @@ Which features a change needs. A path matches the first row that names it; anyth
 | `docs/`, `README.md`, licenses | none: read the diff (instruction text) |
 | anything else, including `pi/extensions/`, `agentic/tools/upstream-drift/`, `scripts/validate`, `scripts/check-public-safety`, and `.github/` | not mapped: no drive covers it |
 
-Compare parent and head with this kit (from trunk): launch one run with `--checkout <parent worktree>` and one with `--checkout <head worktree>`, drive the same features in both, and compare the result lines and read-back artifacts (`records.jsonl`, `ledger.tsv`, `exports.tsv`, `roles.tsv`). A pull request that adds behavior, or changes output a drive asserts, must add or change the drive step that shows it, in the same pull request; the verifier reads that step as code and runs the head's kit for it. `--pr` names the pull request under test for `merge-gate` and `pr-state`; the driven checkout must be at its head, and `merge-gate` records only a non-passing smoke verdict for it, in the run's own store. A run launched by one kit is driven only by that kit, so the evidence names the kit that ran.
+Compare parent and head with this kit (from trunk): launch one run with `--checkout <parent worktree>` and one with `--checkout <head worktree>`, drive the same features in both, and compare the result lines and read-back artifacts (`records.jsonl`, `ledger.tsv`, `exports.tsv`, `roles.tsv`). A pull request that adds behavior, or changes output a drive asserts, must add or change the drive step that shows it, in the same pull request; the verifier reads that step as code and runs the head's kit for it. `--pr` names the pull request under test for `merge-gate` and `pr-state`; pass it only to the head run, since the driven checkout must be at its head, and `merge-gate` records only a non-passing smoke verdict for it, in the run's own store. A run launched by one kit is driven only by that kit, and every drive fails if the kit's revision or tree changed since launch, so the evidence names the kit that ran.
 
 The verdict follows from what ran:
 

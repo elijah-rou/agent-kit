@@ -11,7 +11,7 @@ The user is retiring the Codex subscription and asked for an initial version bui
 | Role (agent name) | Use for | Model | Effort | Tools |
 | --- | --- | --- | --- | --- |
 | `Explore` | read-only lookups; replaces Claude Code's built-in `Explore`, which otherwise runs on the main model | `claude-haiku-5-5` | `medium` | no `Agent`, `Edit`, `Write`, `NotebookEdit` |
-| `quick` | bulk or bounded work that writes | `claude-haiku-5-5` | `medium` | no `Agent` |
+| `quick` | bulk or bounded work that writes | `claude-haiku-5-5` | `high` | no `Agent` |
 | `build` | implementation, diagnosis, and fresh verifiers that run the product and record a verdict | `claude-opus-5-5` | `high` | no `Agent` |
 | `review` | read-only review by a child that did not write the change: pull requests, designs, run transcripts | `claude-opus-5-5` | `xhigh` | only `Read`, `Grep`, `Glob` |
 | `autopilot-owner` | the one child that may publish: an autopilot-full owner carrying its own pull request to merge | `claude-opus-5-5` | `high` | no `Agent` |
@@ -26,7 +26,7 @@ What is deferred, with the reason:
 
 - **The overlay, the renderer, the role table, `SessionStart` hooks and T3 targets.** They exist to cross providers and harnesses. With one provider, the agent files are the whole mechanism.
 - **Codex and Pi.** `codex/AGENTS.md` and `pi/AGENTS.md` are unchanged, including the Codex model table and their alternate-model reviewer wording.
-- **Open questions 2 and 6** (cross-harness `quick` and `explore`, and usage-limit fallback) do not arise with one provider. Questions 1 and 4 took their defaults. Question 3 keeps design-checkpoint's candidate-diversity preference, which only applies "where available".
+- **Open questions 2 and 6** (cross-harness `quick` and `explore`, and usage-limit fallback) do not arise with one provider. Question 4 took its default. Question 1 took its default except `quick`, which the user moved to `high` because it writes files. Question 3 keeps design-checkpoint's candidate-diversity preference, which only applies "where available".
 
 Verified on 2026-10-12 with Claude Code 2.1.296 in a scratch project: the four files, copied and also as symlinks, appear in the session's agent list, with `Explore` replacing the built-in. A headless run launched `Explore` on `claude-haiku-5-5` and `review` on `claude-opus-5-5`. Whether `effort` took effect is not visible in the output.
 

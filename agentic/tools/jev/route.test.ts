@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { applyModes, decide, digestQuestion, NOTE_QUESTION, noteFor, POLICY, QUESTIONS, sessionFor, type Answers, type Calibration, type Level, type NoteId, type Policy, type Route } from "./route.ts";
+import { applyModes, decide, digestQuestion, explicitCommand, NOTE_QUESTION, noteFor, parseAnswers, POLICY, QUESTIONS, sessionFor, type Answers, type Calibration, type Level, type NoteId, type Policy, type Route } from "./route.ts";
 
 const answers = (level: Level, levelConfidence: number, door: Answers["door"]["choice"] = "reversible", doorConfidence = 0.95): Answers => ({
-	door: { choice: door, confidence: doorConfidence },
-	level: { choice: level, confidence: levelConfidence },
+	door: { choice: door, confidence: doorConfidence, probabilities: { reversible: 0, experiment: 0, "one-way-door": 0, [door]: doorConfidence } },
+	level: { choice: level, confidence: levelConfidence, probabilities: { lookup: 0, rigor: 0, loop: 0, [level]: levelConfidence } },
 	model: "jev-1.13.0",
 });
 
@@ -110,5 +110,42 @@ describe("calibration", () => {
 		expect(digestQuestion(reordered)).toBe(digestQuestion(QUESTIONS.door));
 		const reworded = { ...QUESTIONS.door, instructions: `${QUESTIONS.door.instructions} ` };
 		expect(digestQuestion(reworded)).not.toBe(digestQuestion(QUESTIONS.door));
+	});
+});
+
+describe("parseAnswers", () => {
+	const wire = {
+		door: { type: "choice", choice: "reversible", confidence: 0.98, probabilities: { reversible: 0.99, experiment: 0.01, "one-way-door": 0 } },
+		level: { type: "choice", choice: "lookup", confidence: 0.97, probabilities: { lookup: 0.97, rigor: 0.03, loop: 0 } },
+	};
+
+	test("accepts both questions' choice answers and keeps their probabilities", () => {
+		expect(parseAnswers("jev-1.13.0", wire)).toEqual({
+			door: { choice: "reversible", confidence: 0.98, probabilities: { reversible: 0.99, experiment: 0.01, "one-way-door": 0 } },
+			level: { choice: "lookup", confidence: 0.97, probabilities: { lookup: 0.97, rigor: 0.03, loop: 0 } },
+			model: "jev-1.13.0",
+		});
+	});
+
+	test("rejects a missing model, an unknown choice, an out-of-range number, or a missing probability", () => {
+		expect(parseAnswers(undefined, wire)).toBeUndefined();
+		expect(parseAnswers("", wire)).toBeUndefined();
+		expect(parseAnswers("m", { door: wire.door })).toBeUndefined();
+		expect(parseAnswers("m", { ...wire, level: { ...wire.level, choice: "poteto" } })).toBeUndefined();
+		expect(parseAnswers("m", { ...wire, door: { ...wire.door, confidence: 1.5 } })).toBeUndefined();
+		expect(parseAnswers("m", { ...wire, level: { ...wire.level, probabilities: { lookup: 0.97, rigor: 0.03 } } })).toBeUndefined();
+		expect(parseAnswers("m", { ...wire, level: { ...wire.level, type: "noul" } })).toBeUndefined();
+	});
+});
+
+describe("explicitCommand", () => {
+	test("a leading slash command or skill mention is the user's choice; paths and variables are not", () => {
+		expect(explicitCommand("/background-run fix the flaky session tests until CI is green")).toEqual({ command: "background-run", rest: "fix the flaky session tests until CI is green" });
+		expect(explicitCommand("/skill:background-run keep going")).toEqual({ command: "skill:background-run", rest: "keep going" });
+		expect(explicitCommand("$background-run keep going")).toEqual({ command: "background-run", rest: "keep going" });
+		expect(explicitCommand("/compact")).toEqual({ command: "compact", rest: "" });
+		expect(explicitCommand(`${"/" + "Users/someone"}/app crashes on start`)).toBeUndefined();
+		expect(explicitCommand("$HOME is wrong in the launcher")).toBeUndefined();
+		expect(explicitCommand("fix the /etc/hosts entry")).toBeUndefined();
 	});
 });

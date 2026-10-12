@@ -150,9 +150,9 @@ Every failure delivers nothing beyond what the door rule allows, writes one reco
   - `route-harvest` joins records to local Claude, Codex, and Pi transcripts by digest. It writes candidates to an ignored local file and skips opted-out repositories. Text stays on the machine whose agent received it. The user's labels are stored by digest, without text, in that machine's ledger directory, so they travel with its records.
   - Sessions where the user typed `/background-run` supply loop positives.
   - The user labels 150 to 200 prompts, about an hour.
-  - The 2026-10-07 calibration samples were never committed, so this rebuilds them.
+  - The 2026-10-07 door samples are committed in `elijah-rou/agentic` (`evals/jev-risk`: 90 hand-labeled tasks, each asked twice, answered by `jev-1.13.0`), so the door bar is rechecked on them directly. Only lookup and loop need new labels.
 - **Acting bars.** These are proposals and the user's decision:
-  - **door:** with the combined request, no worse than the 2026-10-07 baseline on the same samples (at most 2 of 30 doors missed, at most 1 in 8 others hinted).
+  - **door:** with the combined request, no worse than the 2026-10-07 baseline on the same samples: 4 of 60 door calls missed (2 of 30 tasks) and 16 of 120 other calls hinted.
   - **lookup:** precision of at least 0.95, and no door-labeled sample routed to lookup.
   - **loop:** precision of at least 0.9 on at least 10 labeled positives, and it must beat a local handoff word list ("going to bed", "keep going until", "overnight", "until green"). If Jev doesn't beat the list, the list routes loops and sends nothing.
 
@@ -239,19 +239,21 @@ type Classify = (state: { task: Sendable }, questions: typeof QUESTIONS, signal:
 function httpClassifier(key: (env: Env, timeoutMs: number) => Promise<string | undefined>): Classify;   // Claude hook
 function registryClassifier(registry: PiModelRegistry): Classify;                                        // Pi; unavailable without a TypeSafe classifier
 
-type Answers = { door: { choice: DoorClass; confidence: number }; level: { choice: Level; confidence: number; probabilities: Record<Level, number> }; model: string };
+type ChoiceAnswer<C> = { choice: C; confidence: number };
+type Answers = { door: ChoiceAnswer<DoorClass>; level: ChoiceAnswer<Level>; model: string };   // the record also keeps each answer's probabilities
 type DoorNote = { choice: DoorClass; confidence: number };
 type Route = { level: "lookup" } | { level: "rigor"; door?: DoorNote } | { level: "loop"; door?: DoorNote };   // lookup has no door
 
-type Calibration = { threshold: number; questionsDigest: string; model: string; samples: number; positives: number; precision: number; recall: number; date: string };
-type NotePolicy = { mode: "off" | "shadow"; calibration?: Calibration } | { mode: "advisory"; calibration: Calibration };
-type Policy = { id: "task-route"; version: number; deadlineMs: 3000; notes: Record<"door" | "lookup" | "loop", NotePolicy> };
+type Calibration = { threshold: number; questionsDigest: string; model: string; samples: number; positives: number; precision: number; recall: number; date: string; source: string };
+type NotePolicy = { mode: "shadow"; threshold: number } | { mode: "advisory"; calibration: Calibration };   // a shadow threshold is provisional
+type Policy = { id: "task-route"; version: number; deadlineMs: number; notes: Record<"door" | "lookup" | "loop", NotePolicy> };
+type Session = "policy" | "shadow" | "off";   // from AGENTIC_ROUTE; any value other than off lowers to shadow
 
 function decide(answers: Answers, policy: Policy): { advised: Route; fallback?: "conflict" | "low-confidence" };
-function applyModes(advised: Route, policy: Policy, env: Env, model: string): { delivered: Route; fallback?: "model-drift" };
-function noteFor(delivered: Route, skills: { backgroundRun?: string }): string | undefined;
+function applyModes(advised: Route, policy: Policy, session: Session, model: string): { delivered: Route; fallback?: "model-drift" };
+function noteFor(delivered: Route, backgroundRunSkill: string): string | undefined;   // routeTask records skill-missing before calling it
 function routeTask(input: RouteInput, deps: RouteDeps): Promise<{ note?: string; record: RouteRecord }>;
-function digestQuestions(questions: typeof QUESTIONS): string;
+function digestQuestion(question: (typeof QUESTIONS)["door" | "level"]): string;   // each note's calibration names its own question's digest
 ```
 
 ## Synthesis decision

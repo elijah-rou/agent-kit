@@ -1,68 +1,72 @@
 #!/usr/bin/env bun
-// Control CLI for the verify-agent-kit skill. It drives this checkout's own entry points (the agentic CLI,
-// the prompt-routing hook, the skill exports, the Claude Code Mod and status line) the way the runtimes
-// call them, with every writable store redirected into a per-run directory, and keeps evidence under the
-// skill's evidence/ directory, which cleanup never touches.
+// Control CLI for the verify-agent-kit skill. It drives an agent-kit checkout's own entry points (the
+// agentic CLI, the prompt-routing hook, the skill exports, the Claude Code Mod and status line) the way
+// the runtimes call them, with every writable store redirected into a per-run directory. The kit that
+// runs need not be the checkout it drives: a verifier runs trunk's kit with --checkout <head>, so a pull
+// request never supplies its own verifier.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir, userInfo } from "node:os";
-import { basename, join, relative, resolve } from "node:path";
+import { homedir, tmpdir, userInfo } from "node:os";
+import { basename, join, resolve } from "node:path";
 
-const SKILL_DIR = resolve(import.meta.dir, "..");
-const CHECKOUT = resolve(SKILL_DIR, "../../..");
+const KIT_DIR = resolve(import.meta.dir, "..");
+const KIT_CHECKOUT = resolve(KIT_DIR, "../../..");
 const CLI = ".agents/skills/verify-agent-kit/scripts/verify-kit";
-const AGENTIC = join(CHECKOUT, "agentic/bin/agentic");
-const ROUTE_HOOK = join(CHECKOUT, "agentic/tools/jev/cli.ts");
 const RUNS_ROOT = join(tmpdir(), "verify-agent-kit");
-const EVIDENCE_ROOT = join(SKILL_DIR, "evidence");
+const EVIDENCE_ROOT = join(process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "verify-agent-kit", "evidence");
 const RUN_ID = /^ak-\d{8}-\d{6}-\d+$/;
 const MARKER = "verify-kit run";
 const STEP_TIMEOUT_MS = 180_000;
 const FEATURES = ["task-route", "merge-gate", "pr-state", "skill-catalog", "claude-surface"] as const;
 type Feature = (typeof FEATURES)[number];
 type Outcome = { state: "PASS" | "FAIL" | "SKIP"; detail?: string };
-type RunInfo = { marker: string; runId: string; checkout: string; revision: string; tree: string; startedAt: string };
+type RunInfo = { marker: string; runId: string; checkout: string; revision: string; tree: string; kit: string; kitRevision: string; startedAt: string };
+type Options = { slug?: string; pr?: number; mergedPr?: number };
 
 const HELP: Record<string, string> = {
 	main: `Usage: ${CLI} <command> [args]
 
-Drives this agent-kit checkout's entry points with every store redirected into a per-run directory.
+Drives an agent-kit checkout's entry points with every store redirected into a per-run directory.
 
 Commands:
-  launch [--install]                 start a run; prints RUN_ID and EVIDENCE_DIR
-  doctor RUN_ID                      read-only: is this run worth driving?
-  drive RUN_ID <feature> [options]   drive one mapped feature; ends with PASS, FAIL, or SKIP
-  cleanup RUN_ID                     remove this run's directory; evidence stays
-  all [options]                      launch, doctor, every feature, cleanup, then a count
+  launch [--checkout PATH] [--install]   start a run; prints RUN_ID and EVIDENCE_DIR
+  doctor RUN_ID                          read-only: is this run worth driving?
+  drive RUN_ID <feature> [options]       drive one mapped feature; ends with PASS, FAIL, or SKIP
+  cleanup RUN_ID                         remove this run's directory; evidence stays
+  all [--checkout PATH] [options]        launch, doctor, every feature, cleanup, then a count
 
 Features: ${FEATURES.join(", ")}
 
 Examples:
   ${CLI} launch
+  ${CLI} launch --checkout ../agent-verify-head --install
   ${CLI} doctor ak-20261012-213000-4242
   ${CLI} drive ak-20261012-213000-4242 task-route
-  ${CLI} all --pr 31
+  ${CLI} all --checkout ../agent-verify-head --pr 31
 
 Run "${CLI} <command> --help" for each command's options.
 `,
-	launch: `Usage: ${CLI} launch [--install]
+	launch: `Usage: ${CLI} launch [--checkout PATH] [--install]
 
 Creates the run directory $TMPDIR/verify-agent-kit/<RUN_ID> with its own XDG_STATE_HOME, orch store,
-and two scratch git repositories, records the checkout's revision and tree digest, and prints RUN_ID,
-EVIDENCE_DIR, and the readiness line "READY verify-agent-kit <RUN_ID>".
+and two scratch git repositories, records the driven checkout's revision and a digest of its tracked
+and untracked files, and prints RUN_ID, EVIDENCE_DIR, and the readiness line
+"READY verify-agent-kit <RUN_ID>".
 
-  --install   first run "bun install --frozen-lockfile" in the checkout (it writes node_modules/,
-              which this run did not create, so it needs the flag)
+  --checkout PATH   the agent-kit checkout to drive (default: the checkout holding this kit). To verify
+                    a pull request, run trunk's kit with --checkout pointing at the head's worktree.
+  --install         first run "bun install --frozen-lockfile" in that checkout (it writes
+                    node_modules/, which this run did not create, so it needs the flag)
 
 Examples:
   ${CLI} launch
-  ${CLI} launch --install
+  ${CLI} launch --checkout ../agent-verify-head --install
 `,
 	doctor: `Usage: ${CLI} doctor RUN_ID
 
-Read-only. Checks the run directory, that the checkout still has the launched revision and tree,
-that this checkout's agentic CLI starts and node_modules matches bun.lock, and reports which optional
+Read-only. Checks the run directory, that the driven checkout still has the launched revision and
+tree, that its agentic CLI starts and its node_modules matches bun.lock, and reports which optional
 prerequisites (gh login, TypeSafe key, claude CLI) are present. Ends with DOCTOR PASS or DOCTOR FAIL.
 
 Example:
@@ -71,12 +75,13 @@ Example:
 	drive: `Usage: ${CLI} drive RUN_ID <feature> [--repo owner/name] [--pr N] [--merged-pr N]
 
 Drives one feature from features/ and ends with "PASS <feature>", "FAIL <feature>: <check>", or
-"SKIP <feature>: <missing prerequisite>". Evidence goes to EVIDENCE_DIR/<feature>/.
+"SKIP <feature>: <missing prerequisites>". A SKIP still ran every step whose prerequisites held.
+Evidence goes to EVIDENCE_DIR/<feature>/. It refuses to drive a checkout that moved since launch.
 
-  --repo owner/name   the GitHub repository (default: this checkout's origin)
-  --pr N              an open pull request to read and to record a verdict for in this run's own
-                      ledger (default: the newest open pull request, if any)
-  --merged-pr N       a merged pull request to read (default: the newest merged pull request)
+  --repo owner/name   the GitHub repository (default: the driven checkout's origin)
+  --pr N              an open pull request to read and to record a non-passing smoke verdict for in
+                      this run's own ledger (default: the newest open pull request, if any)
+  --merged-pr N       a merged pull request to read and to screen (default: the newest merged one)
 
 Features: ${FEATURES.join(", ")}
 
@@ -95,14 +100,14 @@ its marker names this RUN_ID. Never touches evidence, the checkout, or another r
 Example:
   ${CLI} cleanup ak-20261012-213000-4242
 `,
-	all: `Usage: ${CLI} all [--install] [--repo owner/name] [--pr N] [--merged-pr N]
+	all: `Usage: ${CLI} all [--checkout PATH] [--install] [--repo owner/name] [--pr N] [--merged-pr N]
 
 Launches a run, runs doctor and every feature, cleans up even after a failure, and ends with
 "ALL <RUN_ID>: <n> pass, <n> fail, <n> skip". Exits 0 only when doctor passed and no feature failed.
 
 Examples:
   ${CLI} all
-  ${CLI} all --pr 31
+  ${CLI} all --checkout ../agent-verify-head --pr 31
 `,
 };
 
@@ -122,9 +127,9 @@ function positiveInt(value: string | undefined, name: string): number | undefine
 	return Number(value);
 }
 
-function sh(argv: string[], options: { cwd?: string; env?: Record<string, string>; input?: string } = {}) {
+function sh(argv: string[], options: { cwd: string; env?: Record<string, string>; input?: string }) {
 	const result = spawnSync(argv[0]!, argv.slice(1), {
-		cwd: options.cwd ?? CHECKOUT,
+		cwd: options.cwd,
 		env: { ...process.env, ...options.env },
 		input: options.input ?? "",
 		encoding: "utf8",
@@ -134,17 +139,20 @@ function sh(argv: string[], options: { cwd?: string; env?: Record<string, string
 	return { status: result.status ?? (result.signal ? 128 : 1), stdout: result.stdout ?? "", stderr: (result.stderr ?? "") + (result.error ? String(result.error) : "") };
 }
 
-function git(args: string[], cwd = CHECKOUT): string {
+function git(args: string[], cwd: string): string {
 	const result = sh(["git", ...args], { cwd });
-	if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.trim()}`);
+	if (result.status !== 0) throw new Error(`git ${args.join(" ")} in ${cwd} failed: ${result.stderr.trim()}`);
 	return result.stdout.trim();
 }
 
-/** The tracked and untracked (not ignored) state, so doctor can tell whether the tree moved since launch. */
-function treeDigest(): string {
+/** Tracked changes against HEAD plus every untracked, not ignored file's path and bytes. */
+function treeDigest(checkout: string): string {
 	const hash = createHash("sha256");
-	hash.update(git(["status", "--porcelain=v1", "-uall"]));
-	hash.update(sh(["git", "diff", "HEAD", "--binary"]).stdout);
+	hash.update(sh(["git", "diff", "HEAD", "--binary"], { cwd: checkout }).stdout);
+	for (const path of git(["ls-files", "--others", "--exclude-standard", "-z"], checkout).split("\0").filter(Boolean).sort()) {
+		hash.update(`\0${path}\0`);
+		hash.update(readFileSync(join(checkout, path)));
+	}
 	return hash.digest("hex").slice(0, 16);
 }
 
@@ -161,26 +169,34 @@ function loadRun(runId: string | undefined): RunInfo {
 	const file = join(runDir(runId), "run.json");
 	if (!existsSync(file)) throw new Error(`no run ${runId} under ${RUNS_ROOT}; run "${CLI} launch" and use the RUN_ID it prints`);
 	const info = JSON.parse(readFileSync(file, "utf8")) as RunInfo;
-	if (info.marker !== MARKER || info.runId !== runId || info.checkout !== CHECKOUT) {
-		throw new Error(`${file} was not written by this checkout's verify-kit for ${runId}; refusing to drive it`);
-	}
+	if (info.marker !== MARKER || info.runId !== runId) throw new Error(`${file} was not written by verify-kit for ${runId}; refusing to drive it`);
 	return info;
 }
 
-/** Runs one step, writes its command, exit code, stdout, and stderr to the evidence file, and returns the result. */
+/** Fails unless the driven checkout still has the revision and tree recorded at launch. */
+function bound(run: RunInfo): string | undefined {
+	const revision = git(["rev-parse", "HEAD"], run.checkout);
+	if (revision !== run.revision) return `checkout ${run.checkout} moved from ${run.revision.slice(0, 12)} to ${revision.slice(0, 12)} since launch; launch a new run`;
+	if (treeDigest(run.checkout) !== run.tree) return `checkout ${run.checkout} changed since launch (tree digest ${run.tree}); launch a new run`;
+	return undefined;
+}
+
+/** Runs each step, writes its command, exit code, stdout, and stderr to the evidence file, and collects failures and skips. */
 class Recorder {
 	private index = 0;
 	readonly failures: string[] = [];
-	constructor(readonly dir: string) {
+	readonly skips: string[] = [];
+	constructor(readonly dir: string, readonly checkout: string) {
 		mkdirSync(dir, { recursive: true });
 	}
 	step(name: string, argv: string[], options: { cwd?: string; env?: Record<string, string>; input?: string } = {}) {
-		const result = sh(argv, options);
+		const cwd = options.cwd ?? this.checkout;
+		const result = sh(argv, { ...options, cwd });
 		const file = join(this.dir, `${String(++this.index).padStart(2, "0")}-${name}.txt`);
 		const env = Object.entries(options.env ?? {}).map(([key, value]) => `${key}=${value}`).join(" ");
 		writeFileSync(file, [
 			`$ ${argv.map((part) => (/^[\w./:=@+-]+$/.test(part) ? part : JSON.stringify(part))).join(" ")}`,
-			`cwd: ${options.cwd ?? CHECKOUT}`,
+			`cwd: ${cwd}`,
 			env ? `env: ${env}` : "env: (inherited)",
 			options.input ? `stdin: ${options.input}` : "stdin: (empty)",
 			`exit: ${result.status}`,
@@ -198,33 +214,43 @@ class Recorder {
 		if (!condition) this.failures.push(what);
 		return condition;
 	}
-	outcome(skip?: string): Outcome {
+	skip(prerequisite: string): void {
+		this.skips.push(prerequisite);
+	}
+	outcome(): Outcome {
 		if (this.failures.length) return { state: "FAIL", detail: this.failures[0] };
-		if (skip) return { state: "SKIP", detail: skip };
+		if (this.skips.length) return { state: "SKIP", detail: this.skips.join("; ") };
 		return { state: "PASS" };
 	}
 }
 
 function ghReady(): boolean {
-	return Bun.which("gh") !== null && sh(["gh", "auth", "status"]).status === 0;
+	return Bun.which("gh") !== null && sh(["gh", "auth", "status"], { cwd: KIT_CHECKOUT }).status === 0;
 }
 
 /** Whether a TypeSafe key is configured, without reading it. */
 function typesafeKeyPresent(): boolean {
 	if (process.env.TYPESAFE_API_KEY?.trim()) return true;
 	if (process.platform !== "darwin") return false;
-	return sh(["security", "find-generic-password", "-a", userInfo().username, "-s", "typesafe-jev"]).status === 0;
+	return sh(["security", "find-generic-password", "-a", userInfo().username, "-s", "typesafe-jev"], { cwd: KIT_CHECKOUT }).status === 0;
 }
 
-function originSlug(): string | undefined {
-	const remote = sh(["git", "remote", "get-url", "origin"]).stdout.trim();
+function originSlug(checkout: string): string | undefined {
+	const remote = sh(["git", "remote", "get-url", "origin"], { cwd: checkout }).stdout.trim();
 	return /^(?:https:\/\/|ssh:\/\/git@|git@)github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(remote)?.[1];
 }
 
+/** The newest pull request in a state, undefined when there is none; a gh failure is an error, not a skip. */
 function newestPr(slug: string, state: "open" | "merged"): number | undefined {
-	const result = sh(["gh", "pr", "list", "-R", slug, "--state", state, "--limit", "1", "--json", "number"]);
-	if (result.status !== 0) return undefined;
+	const result = sh(["gh", "pr", "list", "-R", slug, "--state", state, "--limit", "1", "--json", "number"], { cwd: KIT_CHECKOUT });
+	if (result.status !== 0) throw new Error(`gh pr list -R ${slug} --state ${state} failed: ${result.stderr.trim()}`);
 	return (JSON.parse(result.stdout) as { number: number }[])[0]?.number;
+}
+
+function ghJson(path: string): unknown {
+	const result = sh(["gh", "api", path], { cwd: KIT_CHECKOUT });
+	if (result.status !== 0) throw new Error(`gh api ${path} failed: ${result.stderr.trim()}`);
+	return JSON.parse(result.stdout);
 }
 
 function parseJson(text: string): unknown {
@@ -235,29 +261,44 @@ function parseJson(text: string): unknown {
 	}
 }
 
+function sameList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {
+	return actual !== undefined && actual.length === expected.length && actual.every((value, index) => value === expected[index]);
+}
+
 // ---------------------------------------------------------------- launch, doctor, cleanup
 
 function launch(args: string[]): string {
+	const checkoutArg = option(args, "--checkout");
+	const checkout = checkoutArg === undefined ? KIT_CHECKOUT : resolve(checkoutArg);
+	if (!existsSync(join(checkout, "agentic/bin/agentic"))) throw new Usage(`${checkout} is not an agent-kit checkout (no agentic/bin/agentic); pass --checkout with one`);
+	if (git(["rev-parse", "--show-toplevel"], checkout) !== checkout) throw new Usage(`${checkout} is not the top of its git checkout; pass its root to --checkout`);
 	if (args.includes("--install")) {
-		const install = sh(["bun", "install", "--frozen-lockfile"]);
-		if (install.status !== 0) throw new Error(`bun install --frozen-lockfile failed in ${CHECKOUT}: ${install.stderr.trim()}`);
+		const install = sh(["bun", "install", "--frozen-lockfile"], { cwd: checkout });
+		if (install.status !== 0) throw new Error(`bun install --frozen-lockfile failed in ${checkout}: ${install.stderr.trim()}`);
 	}
 	const now = new Date();
-	const stamp = now.toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
-	const runId = `ak-${stamp}-${process.pid}`;
+	const runId = `ak-${now.toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15)}-${process.pid}`;
 	const dir = runDir(runId);
 	if (existsSync(dir)) throw new Error(`${dir} already exists; launch again`);
 	mkdirSync(join(dir, "state"), { recursive: true });
 	mkdirSync(join(dir, "orch"), { recursive: true });
 	// Two scratch repositories for the routing hook: a plain checkout and one that opts out of Jev.
 	for (const name of ["fixture", "fixture-optout"]) {
-		const repo = join(dir, name);
-		mkdirSync(repo);
-		git(["init", "-q", "-b", "main"], repo);
+		mkdirSync(join(dir, name));
+		git(["init", "-q", "-b", "main"], join(dir, name));
 	}
 	mkdirSync(join(dir, "fixture-optout", ".agents"));
 	writeFileSync(join(dir, "fixture-optout", ".agents", "jev-opt-out"), "verify-agent-kit fixture\n");
-	const info: RunInfo = { marker: MARKER, runId, checkout: CHECKOUT, revision: git(["rev-parse", "HEAD"]), tree: treeDigest(), startedAt: now.toISOString() };
+	const info: RunInfo = {
+		marker: MARKER,
+		runId,
+		checkout,
+		revision: git(["rev-parse", "HEAD"], checkout),
+		tree: treeDigest(checkout),
+		kit: KIT_CHECKOUT,
+		kitRevision: git(["rev-parse", "HEAD"], KIT_CHECKOUT),
+		startedAt: now.toISOString(),
+	};
 	writeFileSync(join(dir, "run.json"), JSON.stringify(info, null, 2) + "\n");
 	mkdirSync(evidenceDir(runId), { recursive: true });
 	writeFileSync(join(evidenceDir(runId), "launch.txt"), JSON.stringify({ ...info, runDir: dir }, null, 2) + "\n");
@@ -268,54 +309,52 @@ function launch(args: string[]): string {
 }
 
 function doctor(runId: string | undefined): boolean {
-	const info = loadRun(runId);
+	const run = loadRun(runId);
 	const lines: string[] = [];
 	let ok = true;
-	const need = (condition: boolean, what: string) => {
-		lines.push(`${condition ? "ok  " : "FAIL"} ${what}`);
+	const need = (condition: boolean, pass: string, fail: string) => {
+		lines.push(condition ? `ok   ${pass}` : `FAIL ${fail}`);
 		ok &&= condition;
 	};
-	const dir = runDir(info.runId);
-	need(["state", "orch", "fixture", "fixture-optout/.agents/jev-opt-out"].every((path) => existsSync(join(dir, path))), `run directory ${dir} holds state/, orch/, and both fixtures`);
-	const revision = git(["rev-parse", "HEAD"]);
-	need(revision === info.revision, `checkout ${CHECKOUT} is at the launched revision ${info.revision.slice(0, 12)} (now ${revision.slice(0, 12)})`);
-	need(treeDigest() === info.tree, `checkout tree matches launch (digest ${info.tree}); relaunch after editing`);
-	const agentic = sh(["bun", AGENTIC, "--help"]);
+	const dir = runDir(run.runId);
+	const stores = ["state", "orch", "fixture", "fixture-optout/.agents/jev-opt-out"].every((path) => existsSync(join(dir, path)));
+	need(stores, `run directory ${dir} holds state/, orch/, and both fixtures`, `run directory ${dir} is missing a store or fixture; launch a new run`);
+	const moved = bound(run);
+	need(moved === undefined, `checkout ${run.checkout} is at the launched revision ${run.revision.slice(0, 12)} with the launched tree`, moved ?? "");
+	const agentic = sh(["bun", join(run.checkout, "agentic/bin/agentic"), "--help"], { cwd: run.checkout });
 	const tools = ["rulesets", "upstream-drift", "verify", "jev", "pr-feedback", "orch", "watch-pr"];
-	need(agentic.status === 0 && tools.every((tool) => agentic.stderr.includes(tool)), `this checkout's agentic CLI starts and lists ${tools.join(", ")}`);
-	const lock = readFileSync(join(CHECKOUT, "bun.lock"), "utf8");
-	const locked = /"commander@([\d.]+)"/.exec(lock)?.[1];
-	const installedFile = join(CHECKOUT, "node_modules/commander/package.json");
+	const listed = agentic.status === 0 && tools.every((tool) => agentic.stderr.includes(tool));
+	need(listed, `the checkout's agentic CLI starts and lists ${tools.join(", ")}`, `the checkout's agentic CLI did not start or list ${tools.join(", ")}; read EVIDENCE_DIR/doctor.txt`);
+	const locked = /"commander@([\d.]+)"/.exec(readFileSync(join(run.checkout, "bun.lock"), "utf8"))?.[1];
+	const installedFile = join(run.checkout, "node_modules/commander/package.json");
 	const installed = existsSync(installedFile) ? (JSON.parse(readFileSync(installedFile, "utf8")) as { version: string }).version : undefined;
-	need(locked !== undefined && installed === locked, `node_modules has commander ${locked ?? "?"} from bun.lock (found ${installed ?? "none"}; run "${CLI} launch --install")`);
-	lines.push(`info gh login: ${ghReady() ? "ready" : "absent (merge-gate and pr-state will SKIP)"}`);
-	lines.push(`info TypeSafe key: ${typesafeKeyPresent() ? "present" : "absent (task-route will SKIP its Jev steps)"}`);
+	need(locked !== undefined && installed === locked, `node_modules has commander ${locked} from bun.lock`, `node_modules has commander ${installed ?? "none"}, bun.lock wants ${locked ?? "?"}; run "${CLI} launch --checkout ${run.checkout} --install"`);
+	lines.push(`info gh login: ${ghReady() ? "ready" : "absent (merge-gate and pr-state skip their GitHub steps)"}`);
+	lines.push(`info TypeSafe key: ${typesafeKeyPresent() ? "present" : "absent (task-route and merge-gate skip their Jev steps)"}`);
 	const claude = Bun.which("claude");
-	lines.push(`info claude CLI: ${claude ? sh([claude, "--version"]).stdout.trim() : "absent (claude-surface will SKIP the Mod steps)"}`);
-	lines.push(`info bun ${Bun.version}; the installed agentic on PATH is never used, only ${relative(CHECKOUT, AGENTIC)}`);
-	lines.push(ok ? `DOCTOR PASS ${info.runId} revision ${revision.slice(0, 12)}` : `DOCTOR FAIL ${info.runId}`);
+	lines.push(`info claude CLI: ${claude ? sh([claude, "--version"], { cwd: KIT_CHECKOUT }).stdout.trim() : "absent (claude-surface skips the Mod steps)"}`);
+	lines.push(`info kit ${run.kit} at ${run.kitRevision.slice(0, 12)}${run.kit === run.checkout ? " drives itself" : ` drives ${run.checkout}`}; bun ${Bun.version}; the agentic on PATH is never used`);
+	lines.push(ok ? `DOCTOR PASS ${run.runId} revision ${run.revision.slice(0, 12)}` : `DOCTOR FAIL ${run.runId}`);
 	const text = lines.join("\n") + "\n";
-	mkdirSync(evidenceDir(info.runId), { recursive: true });
-	writeFileSync(join(evidenceDir(info.runId), "doctor.txt"), text);
+	mkdirSync(evidenceDir(run.runId), { recursive: true });
+	writeFileSync(join(evidenceDir(run.runId), "doctor.txt"), text);
 	process.stdout.write(text);
 	return ok;
 }
 
 function cleanup(runId: string | undefined): void {
-	const info = loadRun(runId);
-	const dir = runDir(info.runId);
+	const run = loadRun(runId);
+	const dir = runDir(run.runId);
 	rmSync(dir, { recursive: true, force: true });
 	const gone = !existsSync(dir);
-	const text = `${gone ? "removed" : "FAILED to remove"} ${dir}\nkept ${evidenceDir(info.runId)}\nstarted nothing else: drives are synchronous and open no ports, sessions, or containers\n`;
-	mkdirSync(evidenceDir(info.runId), { recursive: true });
-	writeFileSync(join(evidenceDir(info.runId), "cleanup.txt"), text);
+	const text = `${gone ? "removed" : "FAILED to remove"} ${dir}\nkept ${evidenceDir(run.runId)}\nstarted nothing else: drives are synchronous and open no ports, sessions, or containers\n`;
+	mkdirSync(evidenceDir(run.runId), { recursive: true });
+	writeFileSync(join(evidenceDir(run.runId), "cleanup.txt"), text);
 	process.stdout.write(text);
 	if (!gone) throw new Error(`could not remove ${dir}`);
 }
 
 // ---------------------------------------------------------------- features
-
-type DriveOptions = { slug?: string; pr?: number; mergedPr?: number };
 
 function hookEvent(sessionId: string, cwd: string, prompt: string): string {
 	return JSON.stringify({ session_id: sessionId, cwd, prompt, hook_event_name: "UserPromptSubmit", transcript_path: "/dev/null" });
@@ -331,139 +370,198 @@ function routeRecords(state: string, file: string): Record<string, unknown>[] {
 	return [];
 }
 
-function driveTaskRoute(run: RunInfo, rec: Recorder): Outcome {
+/** A record must not carry the prompt: no prompt or text field, and for a prompt long enough to be distinctive, no value containing it. */
+function holdsPrompt(record: Record<string, unknown>, prompt: string): boolean {
+	if ("prompt" in record || "text" in record) return true;
+	return prompt.trim().length >= 16 && JSON.stringify(record).includes(prompt.trim().slice(0, 24));
+}
+
+function driveTaskRoute(run: RunInfo, rec: Recorder): void {
 	const dir = runDir(run.runId);
 	const state = join(dir, "state");
 	const fixture = join(dir, "fixture");
+	const hookCli = join(run.checkout, "agentic/tools/jev/cli.ts");
 	const task = "Change how attempts are stored in the database so each one keeps its full test output";
 	// A credential-shaped assignment, assembled here so no such literal sits in the repository.
 	const unsafe = `Deploy with the ${"to"}${"ken"}=${"z".repeat(12)} from the vault`;
-	const offline: { id: string; prompt: string; route: string; cwd: string; codex?: boolean; fallback: string }[] = [
-		{ id: "off", prompt: task, route: "off", cwd: fixture, fallback: "off" },
-		{ id: "not-a-task", prompt: "ok", route: "", cwd: fixture, fallback: "not-a-task" },
-		{ id: "system", prompt: "<task-notification> task finished", route: "", cwd: fixture, fallback: "system" },
-		{ id: "unsafe-input", prompt: unsafe, route: "", cwd: fixture, fallback: "unsafe-input" },
-		{ id: "opted-out", prompt: task, route: "", cwd: join(dir, "fixture-optout"), fallback: "opted-out" },
-		{ id: "codex-off", prompt: task, route: "off", cwd: fixture, codex: true, fallback: "off" },
+	const withheld: { id: string; prompt: string; route: string; cwd: string; codex?: boolean; fallbacks: string[] }[] = [
+		{ id: "off", prompt: task, route: "off", cwd: fixture, fallbacks: ["off"] },
+		{ id: "not-a-task", prompt: "ok", route: "", cwd: fixture, fallbacks: ["not-a-task"] },
+		{ id: "system", prompt: "<task-notification> task finished", route: "", cwd: fixture, fallbacks: ["system"] },
+		{ id: "unsafe-input", prompt: unsafe, route: "", cwd: fixture, fallbacks: ["unsafe-input"] },
+		{ id: "opted-out", prompt: task, route: "", cwd: join(dir, "fixture-optout"), fallbacks: ["opted-out"] },
+		{ id: "codex-off", prompt: task, route: "off", cwd: fixture, codex: true, fallbacks: ["off"] },
 	];
-	for (const c of offline) {
+	const kept: string[] = [];
+	for (const c of withheld) {
 		const session = `${run.runId}-${c.id}`;
-		const hook = c.codex ? "--codex-hook" : "--claude-hook";
-		const result = rec.step(`hook-${c.id}`, ["bun", ROUTE_HOOK, "task-class", hook], { cwd: c.cwd, env: { XDG_STATE_HOME: state, AGENTIC_ROUTE: c.route }, input: hookEvent(session, c.cwd, c.prompt) });
+		const file = `${c.codex ? "codex" : "claude"}-${session}.jsonl`;
+		const result = rec.step(`hook-${c.id}`, ["bun", hookCli, "task-class", c.codex ? "--codex-hook" : "--claude-hook"], { cwd: c.cwd, env: { XDG_STATE_HOME: state, AGENTIC_ROUTE: c.route }, input: hookEvent(session, c.cwd, c.prompt) });
 		rec.check(result.status === 0, `${c.id}: the hook exits 0 (got ${result.status})`);
 		rec.check(result.stdout.trim() === "", `${c.id}: a withheld prompt adds no note`);
-		const records = routeRecords(state, `${c.codex ? "codex" : "claude"}-${session}.jsonl`);
-		rec.check(records.length === 1, `${c.id}: exactly one record is written (found ${records.length})`);
+		const records = routeRecords(state, file);
+		kept.push(...records.map((record) => JSON.stringify(record)));
+		rec.check(records.length === 1, `${c.id}: exactly one record is written to ${file} (found ${records.length})`);
 		const record = records[0];
 		if (!record) continue;
-		const fallbacks = (record.fallbacks as string[] | undefined) ?? [];
-		const optedOutMatches = c.id === "opted-out" ? record.optedOut === true && record.answers === undefined : fallbacks.includes(c.fallback);
-		rec.check(optedOutMatches, `${c.id}: the record shows ${c.fallback} (fallbacks ${JSON.stringify(fallbacks)}, optedOut ${String(record.optedOut)})`);
-		rec.check(record.answers === undefined, `${c.id}: no Jev request was made`);
-		rec.check(!JSON.stringify(record).includes(c.prompt.slice(0, 24)), `${c.id}: the record holds no prompt text`);
+		rec.check(sameList(record.fallbacks as string[] | undefined, c.fallbacks), `${c.id}: the record's fallbacks are exactly ${JSON.stringify(c.fallbacks)} (got ${JSON.stringify(record.fallbacks)})`);
+		rec.check(record.answers === undefined, `${c.id}: no Jev answer is recorded`);
+		if (c.id === "opted-out") rec.check(record.optedOut === true, "opted-out: the record marks the repository opted out");
+		rec.check(!holdsPrompt(record, c.prompt), `${c.id}: the record holds no prompt text`);
 	}
-	if (!typesafeKeyPresent()) return rec.outcome("no TypeSafe key: set TYPESAFE_API_KEY or, on macOS, add the keychain item typesafe-jev");
-
+	if (!typesafeKeyPresent()) {
+		rec.note("records.jsonl", kept.join("\n") + "\n");
+		return rec.skip("no TypeSafe key for the Jev steps: set TYPESAFE_API_KEY or, on macOS, add the keychain item typesafe-jev");
+	}
 	const session = `${run.runId}-jev`;
-	const live = rec.step("hook-jev", ["bun", ROUTE_HOOK, "task-class", "--claude-hook"], { cwd: fixture, env: { XDG_STATE_HOME: state, AGENTIC_ROUTE: "" }, input: hookEvent(session, fixture, task) });
+	const live = rec.step("hook-jev", ["bun", hookCli, "task-class", "--claude-hook"], { cwd: fixture, env: { XDG_STATE_HOME: state, AGENTIC_ROUTE: "" }, input: hookEvent(session, fixture, task) });
 	rec.check(live.status === 0, `jev: the hook exits 0 (got ${live.status})`);
 	const record = routeRecords(state, `claude-${session}.jsonl`)[0];
 	rec.check(record !== undefined, "jev: a record is written");
 	if (record) {
+		kept.push(JSON.stringify(record));
 		const answers = record.answers as { door?: { choice?: string }; level?: { choice?: string }; model?: string } | undefined;
+		rec.check(sameList(record.fallbacks as string[] | undefined, []), `jev: the request succeeded with no fallback (got ${JSON.stringify(record.fallbacks)})`);
 		rec.check(["reversible", "experiment", "one-way-door"].includes(answers?.door?.choice ?? ""), `jev: the record holds Jev's door answer (${JSON.stringify(answers?.door?.choice)})`);
 		rec.check(["lookup", "rigor", "loop"].includes(answers?.level?.choice ?? ""), `jev: the record holds Jev's level answer (${JSON.stringify(answers?.level?.choice)})`);
 		rec.check(typeof answers?.model === "string" && answers.model.startsWith("jev-"), "jev: the record names the Jev model");
 		const note = parseJson(live.stdout) as { hookSpecificOutput?: { additionalContext?: string } } | undefined;
 		if (record.noted === true) rec.check(Boolean(note?.hookSpecificOutput?.additionalContext), "jev: a noted record answers with additionalContext");
 		else rec.check(live.stdout.trim() === "", "jev: a record without a note answers nothing");
-		rec.check(!JSON.stringify(record).includes(task.slice(0, 24)), "jev: the record holds no prompt text");
+		rec.check(!holdsPrompt(record, task), "jev: the record holds no prompt text");
 	}
-	const before = readdirSync(state, { recursive: true }).length;
-	const manual = rec.step("manual-route", ["bun", AGENTIC, "jev", "task-class", task], { cwd: fixture, env: { XDG_STATE_HOME: state, AGENTIC_ROUTE: "" } });
-	rec.check(manual.status === 0 && /rigor|lookup|loop/.test(manual.stdout), "manual: agentic jev task-class prints a route");
-	rec.check(readdirSync(state, { recursive: true }).length === before, "manual: agentic jev task-class records nothing");
-	return rec.outcome();
+	rec.note("records.jsonl", kept.join("\n") + "\n");
+	const entries = () => readdirSync(state, { recursive: true }).length;
+	const before = entries();
+	const manual = rec.step("manual-route", ["bun", join(run.checkout, "agentic/bin/agentic"), "jev", "task-class", task], { cwd: fixture, env: { XDG_STATE_HOME: state, AGENTIC_ROUTE: "" } });
+	const route = parseJson(manual.stdout.split("\n")[0] ?? "") as { advised?: { level?: string }; delivered?: { level?: string }; model?: string; fallbacks?: string[] } | undefined;
+	rec.check(manual.status === 0 && typeof route?.model === "string" && route.model.startsWith("jev-") && Boolean(route.advised?.level) && Boolean(route.delivered?.level), "manual: agentic jev task-class prints the route Jev advised");
+	rec.check(entries() === before, "manual: agentic jev task-class records nothing");
 }
 
-function driveMergeGate(run: RunInfo, rec: Recorder, options: DriveOptions): Outcome {
-	const usage = rec.step("verify-usage", ["bun", AGENTIC, "verify"]);
-	rec.check(usage.status === 2, `verify with no command is a usage error, exit 2 (got ${usage.status})`);
-	const rulesetsUsage = rec.step("rulesets-usage", ["bun", AGENTIC, "rulesets"]);
-	rec.check(rulesetsUsage.status === 2, `rulesets with no command is a usage error, exit 2 (got ${rulesetsUsage.status})`);
-	if (!ghReady()) return rec.outcome("gh is not logged in: run gh auth login");
-	const slug = options.slug ?? originSlug();
-	if (!slug) return rec.outcome("this checkout has no GitHub origin: pass --repo owner/name");
-	const store = join(runDir(run.runId), "orch");
-	const env = { AGENTIC_ORCH_STORE: store, AGENTIC_AGENT_ID: `verify-agent-kit-${run.runId}` };
+/** The real verdict ledger in the driven checkout's git common directory, as bytes (or absent). */
+function realLedger(checkout: string): string {
+	const common = git(["rev-parse", "--path-format=absolute", "--git-common-dir"], checkout);
+	const file = join(common, "agentic", "orch", "ledger.tsv");
+	return existsSync(file) ? createHash("sha256").update(readFileSync(file)).digest("hex") : "absent";
+}
 
-	for (const tier of ["baseline", "merge-gate"]) {
-		const plan = rec.step(`rulesets-plan-${tier}`, ["bun", AGENTIC, "rulesets", "plan", slug, "--tier", tier]);
-		rec.check(plan.status === 0 && plan.stdout.includes(slug) && plan.stdout.includes(`tier ${tier}`), `rulesets plan --tier ${tier} reads ${slug} (exit ${plan.status})`);
+const BASELINE_RULES = ["deletion", "non_fast_forward", "required_linear_history"];
+const GATE_RULES = [...BASELINE_RULES, "pull_request", "required_status_checks"];
+
+function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
+	const agentic = join(run.checkout, "agentic/bin/agentic");
+	for (const [name, argv] of [["verify-usage", ["verify"]], ["rulesets-usage", ["rulesets"]], ["pr-risk-usage", ["jev", "pr-risk", "0"]]] as const) {
+		const usage = rec.step(name, ["bun", agentic, ...argv]);
+		rec.check(usage.status === 2, `agentic ${argv.join(" ")} is a usage error, exit 2 (got ${usage.status})`);
 	}
+	if (!ghReady()) return rec.skip("gh is not logged in for the GitHub steps: run gh auth login");
+	const slug = options.slug ?? originSlug(run.checkout);
+	if (!slug) return rec.skip("the driven checkout has no GitHub origin: pass --repo owner/name");
+
+	// Plans are dry runs: observe that the live ruleset is unchanged, and check each plan against it.
+	const rulesetId = (ghJson(`repos/${slug}/rulesets`) as { id: number; name: string }[]).find((ruleset) => ruleset.name === "agentic-backstop")?.id;
+	const liveRuleset = () => (rulesetId === undefined ? "none" : JSON.stringify(ghJson(`repos/${slug}/rulesets/${rulesetId}`)));
+	const rulesetBefore = liveRuleset();
+	const live = rulesetId === undefined ? [] : (JSON.parse(rulesetBefore) as { rules: { type: string; parameters?: { required_status_checks?: { context: string }[] } }[] }).rules;
+	rec.note("ruleset-before.json", rulesetBefore + "\n");
+	for (const [tier, wanted] of [["baseline", BASELINE_RULES], ["merge-gate", GATE_RULES]] as const) {
+		const plan = rec.step(`rulesets-plan-${tier}`, ["bun", agentic, "rulesets", "plan", slug, "--tier", tier]);
+		const line = plan.stdout.split("\n").find((text) => text.startsWith(`${slug} (`)) ?? "";
+		const changes = /changes (.+)$/.exec(line)?.[1]?.split(" ") ?? [];
+		const types = live.map((rule) => rule.type);
+		const expectAdd = wanted.filter((type) => !types.includes(type)).map((type) => `+${type}`);
+		const expectRemove = types.filter((type) => !(wanted as readonly string[]).includes(type)).map((type) => `-${type}`);
+		const added = changes.filter((change) => change.startsWith("+"));
+		const removed = changes.filter((change) => change.startsWith("-"));
+		rec.check(plan.status === 0 && line.includes(`tier ${tier}`), `rulesets plan --tier ${tier} prints its plan for ${slug} (exit ${plan.status})`);
+		rec.check(sameList(added.sort(), expectAdd.sort()) && sameList(removed.sort(), expectRemove.sort()), `rulesets plan --tier ${tier} adds ${JSON.stringify(expectAdd)} and removes ${JSON.stringify(expectRemove)} against the live ruleset (printed "${line}")`);
+		if (tier === "merge-gate" && types.includes("required_status_checks")) {
+			const contexts = live.find((rule) => rule.type === "required_status_checks")?.parameters?.required_status_checks?.map((check) => check.context) ?? [];
+			if (!contexts.includes("agentic/verdict")) rec.check(changes.includes("~required_status_checks"), "rulesets plan --tier merge-gate changes the required checks to include agentic/verdict");
+		}
+	}
+	rec.check(liveRuleset() === rulesetBefore, `the live ruleset on ${slug} is unchanged after the plans`);
 
 	const merged = options.mergedPr ?? newestPr(slug, "merged");
-	if (merged === undefined) return rec.outcome(`no merged pull request in ${slug}: pass --merged-pr N`);
-	const status = rec.step("verify-status-merged", ["bun", AGENTIC, "verify", "status", String(merged), "--repo", slug], { env });
+	if (merged === undefined) return rec.skip(`no merged pull request in ${slug}: pass --merged-pr N`);
+	const store = join(runDir(run.runId), "orch");
+	const env = { AGENTIC_ORCH_STORE: store, AGENTIC_AGENT_ID: `verify-agent-kit-smoke-${run.runId}` };
+	const ledgerBefore = realLedger(run.checkout);
+	const status = rec.step("verify-status-merged", ["bun", agentic, "verify", "status", String(merged), "--repo", slug], { env });
 	rec.check(status.status === 1 && status.stdout.startsWith(`${slug}#${merged} (MERGED,`) && status.stdout.includes("ledger none"), `verify status on merged #${merged} reports an empty ledger, exit 1 (got ${status.status})`);
-	const refused = rec.step("verify-record-merged", ["bun", AGENTIC, "verify", "record", String(merged), "--repo", slug, "--verdict", "unit-test-verified", "--evidence", rec.dir], { env });
+	const refused = rec.step("verify-record-merged", ["bun", agentic, "verify", "record", String(merged), "--repo", slug, "--verdict", "type-check-only", "--evidence", rec.dir], { env });
 	rec.check(refused.status === 1 && refused.stderr.includes("verdicts are for open pull requests"), `verify record refuses merged #${merged} (exit ${refused.status})`);
 	rec.check(!existsSync(join(store, "ledger.tsv")), "a refused record writes no ledger");
 
+	if (typesafeKeyPresent()) {
+		const risk = rec.step("pr-risk-merged", ["bun", agentic, "jev", "pr-risk", String(merged), "--repo", slug]);
+		const match = new RegExp(`^${slug.replace(/[.]/g, "\\.")}#${merged}: (clear|hold), P\\(one-way door\\) (\\d\\.\\d\\d) (<=|>) 0\\.3$`).exec(risk.stdout.trim());
+		rec.check(match !== null, `jev pr-risk scores merged #${merged} with Jev's probability (printed "${risk.stdout.trim()}")`);
+		if (match) {
+			const held = Number(match[2]) > 0.3;
+			rec.check(match[1] === (held ? "hold" : "clear") && match[3] === (held ? ">" : "<=") && risk.status === (held ? 1 : 0), `jev pr-risk holds exactly when P(one-way door) > 0.3 (P ${match[2]}, exit ${risk.status})`);
+		}
+	} else rec.skip("no TypeSafe key for jev pr-risk: set TYPESAFE_API_KEY or, on macOS, add the keychain item typesafe-jev");
+
 	const open = options.pr ?? newestPr(slug, "open");
-	if (open === undefined) return rec.outcome(`no open pull request in ${slug} to record a verdict for: pass --pr N`);
-	const head = sh(["gh", "pr", "view", String(open), "-R", slug, "--json", "headRefOid,state"]);
-	const headInfo = parseJson(head.stdout) as { headRefOid?: string; state?: string } | undefined;
-	if (headInfo?.state !== "OPEN") return rec.outcome(`#${open} in ${slug} is not open: pass --pr with an open pull request`);
+	if (open === undefined) {
+		rec.check(realLedger(run.checkout) === ledgerBefore, "the real verdict ledger is unchanged");
+		return rec.skip(`no open pull request in ${slug} to record a smoke verdict for: pass --pr N`);
+	}
+	const head = parseJson(sh(["gh", "pr", "view", String(open), "-R", slug, "--json", "headRefOid,state"], { cwd: KIT_CHECKOUT }).stdout) as { headRefOid?: string; state?: string } | undefined;
+	if (head?.state !== "OPEN") throw new Error(`#${open} in ${slug} is not open (state ${head?.state ?? "unknown"}); pass --pr with an open pull request`);
+	// The smoke verdict never passes, so even a ledger that leaked out of this run's store could not clear a merge.
 	const evidence = join(rec.dir, "verdict-evidence.txt");
-	writeFileSync(evidence, `verify-agent-kit merge-gate drive for ${slug}#${open} in run ${run.runId}; ledger at ${store}\n`);
-	const recorded = rec.step("verify-record-open", ["bun", AGENTIC, "verify", "record", String(open), "--repo", slug, "--verdict", "unit-test-verified", "--evidence", evidence], { env });
-	rec.check(recorded.status === 0 && recorded.stdout.includes(`recorded unit-test-verified on ${headInfo.headRefOid?.slice(0, 12)}`), `verify record writes a verdict for open #${open} (exit ${recorded.status})`);
+	writeFileSync(evidence, `verify-agent-kit merge-gate smoke verdict for ${slug}#${open} in run ${run.runId}; ledger at ${store}\n`);
+	const recorded = rec.step("verify-record-open", ["bun", agentic, "verify", "record", String(open), "--repo", slug, "--verdict", "type-check-only", "--evidence", evidence], { env });
+	rec.check(recorded.status === 0 && recorded.stdout.includes(`recorded type-check-only on ${head.headRefOid?.slice(0, 12)}`), `verify record writes the smoke verdict for open #${open} (exit ${recorded.status})`);
 	const ledgerFile = join(store, "ledger.tsv");
 	const ledger = existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : "";
 	rec.note("ledger.tsv", ledger);
-	const row = ledger.split("\n").filter(Boolean).at(-1) ?? "";
-	rec.check(row.includes(String(open)) && row.includes(headInfo.headRefOid ?? "?") && row.includes(env.AGENTIC_AGENT_ID) && row.includes("patch"), "the ledger row binds the PR, its head SHA, the patch ID, and this verifier");
-	const after = rec.step("verify-status-open", ["bun", AGENTIC, "verify", "status", String(open), "--repo", slug], { env });
-	rec.check(after.stdout.includes("ledger pass (unit-test-verified"), `verify status reads the passing verdict back for #${open}`);
-	rec.check(after.status === 0 || after.stdout.includes(`run "agentic verify publish ${open}"`), "verify status either agrees with the forge or says to publish");
-	return rec.outcome();
+	const row = ledger.split("\n").filter(Boolean).at(-1)?.split("\t") ?? [];
+	rec.check(row.includes(String(open)) && row.includes(head.headRefOid ?? "?") && row.includes(env.AGENTIC_AGENT_ID) && row.some((cell) => / patch:[0-9a-f]{40}$/.test(cell)), "the run's ledger row binds the PR, its head SHA, the patch ID, and the verifier ID");
+	const after = rec.step("verify-status-open", ["bun", agentic, "verify", "status", String(open), "--repo", slug], { env });
+	rec.check(after.status === 1 && after.stdout.includes("ledger fail (type-check-only"), `verify status reads the non-passing smoke verdict back for #${open} and exits 1`);
+	rec.check(realLedger(run.checkout) === ledgerBefore, "the real verdict ledger is unchanged: every verdict went to this run's store");
 }
 
-function drivePrState(run: RunInfo, rec: Recorder, options: DriveOptions): Outcome {
-	const usage = rec.step("pr-feedback-usage", ["bun", AGENTIC, "pr-feedback", "--no-such-flag"]);
+function drivePrState(run: RunInfo, rec: Recorder, options: Options): void {
+	const agentic = join(run.checkout, "agentic/bin/agentic");
+	const usage = rec.step("pr-feedback-usage", ["bun", agentic, "pr-feedback", "--no-such-flag"]);
 	rec.check(usage.status === 2, `pr-feedback with an unknown flag is a usage error, exit 2 (got ${usage.status})`);
-	if (!ghReady()) return rec.outcome("gh is not logged in: run gh auth login");
-	const slug = options.slug ?? originSlug();
-	if (!slug) return rec.outcome("this checkout has no GitHub origin: pass --repo owner/name");
+	if (!ghReady()) return rec.skip("gh is not logged in for the GitHub steps: run gh auth login");
+	const slug = options.slug ?? originSlug(run.checkout);
+	if (!slug) return rec.skip("the driven checkout has no GitHub origin: pass --repo owner/name");
 	const [owner, name] = slug.split("/") as [string, string];
 	const merged = options.mergedPr ?? newestPr(slug, "merged");
-	if (merged === undefined) return rec.outcome(`no merged pull request in ${slug}: pass --merged-pr N`);
+	if (merged === undefined) return rec.skip(`no merged pull request in ${slug}: pass --merged-pr N`);
 
-	const text = rec.step("pr-feedback-merged", ["bun", AGENTIC, "pr-feedback", String(merged), "--repo", slug]);
+	const text = rec.step("pr-feedback-merged", ["bun", agentic, "pr-feedback", String(merged), "--repo", slug]);
 	rec.check(text.status === 0 && text.stdout.startsWith(`# PR #${merged}:`) && text.stdout.includes("PR is MERGED") && text.stdout.includes("## Blockers") && text.stdout.includes("## Retrieval gaps"), `pr-feedback prints merged #${merged}'s state, blockers, and gaps (exit ${text.status})`);
-	const json = rec.step("pr-feedback-merged-json", ["bun", AGENTIC, "pr-feedback", String(merged), "--repo", slug, "--json"]);
-	const parsed = parseJson(json.stdout) as { number?: number; state?: string; readiness?: string } | undefined;
-	rec.check(json.status === 0 && parsed?.number === merged && parsed.state === "MERGED" && parsed.readiness?.startsWith("closed") === true, `pr-feedback --json describes merged #${merged}`);
-	const table = rec.step("watch-pr-merged", ["bun", AGENTIC, "watch-pr", "--owner", owner, "--repo", name, "--pr", String(merged), "--status-only", "--pretty"]);
+	const json = rec.step("pr-feedback-merged-json", ["bun", agentic, "pr-feedback", String(merged), "--repo", slug, "--json"]);
+	const parsed = parseJson(json.stdout) as { number?: number; state?: string; readiness?: string; headSha?: string } | undefined;
+	const truth = ghJson(`repos/${slug}/pulls/${merged}`) as { head: { sha: string }; merged: boolean };
+	rec.check(json.status === 0 && parsed?.number === merged && parsed.state === "MERGED" && truth.merged && parsed.headSha === truth.head.sha, `pr-feedback --json describes merged #${merged} with the head SHA GitHub reports`);
+	const table = rec.step("watch-pr-merged", ["bun", agentic, "watch-pr", "--owner", owner, "--repo", name, "--pr", String(merged), "--status-only", "--pretty"]);
 	rec.check(table.status === 0 && table.stdout.includes(`#${merged}`) && table.stdout.includes("merged"), `watch-pr --status-only --pretty shows #${merged} merged`);
-	const watch = rec.step("watch-pr-merged-json", ["bun", AGENTIC, "watch-pr", "--owner", owner, "--repo", name, "--pr", String(merged), "--status-only"]);
-	const status = parseJson(watch.stdout.trim().split("\n")[0] ?? "") as { kind?: string; rows?: { kind?: string; facts?: { state?: string } }[] } | undefined;
-	rec.check(watch.status === 0 && status?.kind === "STATUS" && status.rows?.[0]?.facts?.state === "MERGED", `watch-pr --status-only JSON reports #${merged} MERGED`);
+	const watch = rec.step("watch-pr-merged-json", ["bun", agentic, "watch-pr", "--owner", owner, "--repo", name, "--pr", String(merged), "--status-only"]);
+	const status = parseJson(watch.stdout.trim().split("\n")[0] ?? "") as { kind?: string; rows?: { facts?: { state?: string; headRefOid?: string } }[] } | undefined;
+	rec.check(watch.status === 0 && status?.kind === "STATUS" && status.rows?.[0]?.facts?.state === "MERGED" && status.rows[0].facts.headRefOid === truth.head.sha, `watch-pr --status-only JSON reports #${merged} MERGED at GitHub's head SHA`);
 
 	const open = options.pr ?? newestPr(slug, "open");
-	if (open === undefined) return rec.outcome(`no open pull request in ${slug}: pass --pr N to read one`);
-	const openText = rec.step("pr-feedback-open", ["bun", AGENTIC, "pr-feedback", String(open), "--repo", slug]);
-	rec.check(openText.status === 0 && openText.stdout.startsWith(`# PR #${open}:`) && !openText.stdout.includes("PR is MERGED"), `pr-feedback reads open #${open}`);
-	const openWatch = rec.step("watch-pr-open-json", ["bun", AGENTIC, "watch-pr", "--owner", owner, "--repo", name, "--pr", String(open), "--status-only"]);
-	const openStatus = parseJson(openWatch.stdout.trim().split("\n")[0] ?? "") as { kind?: string; rows?: { facts?: { state?: string } }[] } | undefined;
-	rec.check(openWatch.status === 0 && openStatus?.rows?.[0]?.facts?.state === "OPEN", `watch-pr --status-only JSON reports #${open} OPEN`);
-	return rec.outcome();
+	if (open === undefined) return rec.skip(`no open pull request in ${slug}: pass --pr N to read one`);
+	const openTruth = ghJson(`repos/${slug}/pulls/${open}`) as { head: { sha: string }; state: string };
+	const openJson = rec.step("pr-feedback-open-json", ["bun", agentic, "pr-feedback", String(open), "--repo", slug, "--json"]);
+	const openParsed = parseJson(openJson.stdout) as { number?: number; state?: string; headSha?: string } | undefined;
+	rec.check(openJson.status === 0 && openParsed?.state === "OPEN" && openParsed.headSha === openTruth.head.sha, `pr-feedback --json reads open #${open} at GitHub's head SHA`);
+	const openWatch = rec.step("watch-pr-open-json", ["bun", agentic, "watch-pr", "--owner", owner, "--repo", name, "--pr", String(open), "--status-only"]);
+	const openStatus = parseJson(openWatch.stdout.trim().split("\n")[0] ?? "") as { rows?: { facts?: { state?: string; headRefOid?: string } }[] } | undefined;
+	rec.check(openWatch.status === 0 && openStatus?.rows?.[0]?.facts?.state === "OPEN" && openStatus.rows[0].facts.headRefOid === openTruth.head.sha, `watch-pr --status-only JSON reports #${open} OPEN at GitHub's head SHA`);
 }
 
 function frontmatter(path: string): Map<string, string> {
-	const text = readFileSync(path, "utf8");
-	const block = /^---\n([\s\S]*?)\n---\n/.exec(text)?.[1] ?? "";
+	const block = /^---\n([\s\S]*?)\n---\n/.exec(readFileSync(path, "utf8"))?.[1] ?? "";
 	const fields = new Map<string, string>();
 	for (const line of block.split("\n")) {
 		const at = line.indexOf(":");
@@ -472,89 +570,94 @@ function frontmatter(path: string): Map<string, string> {
 	return fields;
 }
 
-function driveSkillCatalog(_run: RunInfo, rec: Recorder): Outcome {
+function driveSkillCatalog(run: RunInfo, rec: Recorder): void {
+	const root = run.checkout;
 	const check = rec.step("check-skills", ["bun", "scripts/check-skills.ts"]);
 	rec.check(check.status === 0, `scripts/check-skills.ts passes (exit ${check.status})`);
 	const rows: string[] = ["runtime\tskill\tpath\tinvocation\tdescription_chars"];
 	const add = (runtime: string, directory: string) => {
-		const file = join(CHECKOUT, directory, "SKILL.md");
+		const file = join(root, directory, "SKILL.md");
 		if (!rec.check(existsSync(file), `${runtime} export ${directory} has a SKILL.md`)) return;
 		const fields = frontmatter(file);
 		rec.check(fields.get("name") === basename(directory), `${runtime} export ${directory} is named after its directory`);
 		rows.push([runtime, fields.get("name"), directory, fields.get("disable-model-invocation") === "true" ? "user-only" : "model-and-user", String((fields.get("description") ?? "").length)].join("\t"));
 	};
-	const lines = (path: string) => readFileSync(join(CHECKOUT, path), "utf8").split("\n").map((line) => line.trim()).filter(Boolean);
+	const lines = (path: string) => readFileSync(join(root, path), "utf8").split("\n").map((line) => line.trim()).filter(Boolean);
 	for (const entry of lines("claude/skills.txt")) add("claude", entry);
 	for (const name of lines("codex/skills.txt")) add("codex", `skills/${name}`);
-	const pkg = JSON.parse(readFileSync(join(CHECKOUT, "package.json"), "utf8")) as { pi?: { skills?: string[] } };
-	for (const root of pkg.pi?.skills ?? []) {
-		for (const name of readdirSync(join(CHECKOUT, root)).sort()) if (existsSync(join(CHECKOUT, root, name, "SKILL.md"))) add("pi", join(root, name).replace(/^\.\//, ""));
+	const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { pi?: { skills?: string[] } };
+	for (const directory of pkg.pi?.skills ?? []) {
+		for (const name of readdirSync(join(root, directory)).sort()) if (existsSync(join(root, directory, name, "SKILL.md"))) add("pi", join(directory, name).replace(/^\.\//, ""));
 	}
-	for (const name of readdirSync(join(CHECKOUT, ".agents/skills")).sort()) {
+	for (const name of readdirSync(join(root, ".agents/skills")).sort()) {
 		add("repo", `.agents/skills/${name}`);
-		const link = join(CHECKOUT, ".claude/skills", name, "SKILL.md");
-		rec.check(existsSync(link) && readFileSync(link, "utf8") === readFileSync(join(CHECKOUT, ".agents/skills", name, "SKILL.md"), "utf8"), `.claude/skills/${name} resolves to .agents/skills/${name} so Claude Code finds it`);
+		const link = join(root, ".claude/skills", name, "SKILL.md");
+		rec.check(existsSync(link) && readFileSync(link, "utf8") === readFileSync(join(root, ".agents/skills", name, "SKILL.md"), "utf8"), `.claude/skills/${name} resolves to .agents/skills/${name} so Claude Code finds it`);
 	}
 	rec.note("exports.tsv", rows.join("\n") + "\n");
 	const roles: string[] = ["role\tmodel\teffort\ttools\tdisallowed"];
-	for (const entry of readdirSync(join(CHECKOUT, "claude/agents")).filter((name) => name.endsWith(".md")).sort()) {
-		const fields = frontmatter(join(CHECKOUT, "claude/agents", entry));
+	for (const entry of readdirSync(join(root, "claude/agents")).filter((name) => name.endsWith(".md")).sort()) {
+		const fields = frontmatter(join(root, "claude/agents", entry));
 		rec.check(Boolean(fields.get("name")) && Boolean(fields.get("description")), `role ${entry} has a name and a description`);
 		rec.check((fields.get("model") ?? "").startsWith("claude-"), `role ${entry} binds a Claude model (got ${fields.get("model") ?? "none"})`);
 		roles.push([fields.get("name"), fields.get("model"), fields.get("effort") ?? "", fields.get("tools") ?? "(all)", fields.get("disallowedTools") ?? ""].join("\t"));
 	}
 	rec.note("roles.tsv", roles.join("\n") + "\n");
 	rec.check(rows.length > 1 && roles.length > 1, "the catalog lists at least one skill and one role");
-	return rec.outcome();
 }
 
-function driveClaudeSurface(_run: RunInfo, rec: Recorder): Outcome {
-	const statusline = join(CHECKOUT, "claude/statusline.ts");
+function driveClaudeSurface(run: RunInfo, rec: Recorder): void {
+	const statusline = join(run.checkout, "claude/statusline.ts");
 	const now = Math.floor(Date.now() / 1000);
 	const quota = JSON.stringify({ rate_limits: { five_hour: { used_percentage: 42.4, resets_at: now + 5400 }, seven_day: { used_percentage: 7, resets_at: now + 200_000 } } });
 	const shown = rec.step("statusline-quota", ["bun", statusline], { input: quota });
-	rec.check(shown.status === 0 && /^claude 5h \S 42% ↻1h(29|30)m · 7d \S 7% ↻2d7h$/.test(shown.stdout.trim()), `the status line renders both windows with gauges and countdowns (got "${shown.stdout.trim()}")`);
+	rec.check(shown.status === 0 && /^claude 5h ▄ 42% ↻1h(29|30)m · 7d ▁ 7% ↻2d7h$/.test(shown.stdout.trim()), `the status line renders both windows with gauges and countdowns (got "${shown.stdout.trim()}")`);
 	const missing = rec.step("statusline-no-limits", ["bun", statusline], { input: "{}" });
 	rec.check(missing.status === 0 && missing.stdout.trim() === "claude limits: n/a", "the status line shows n/a without rate limits");
 	const invalid = rec.step("statusline-invalid", ["bun", statusline], { input: "not json" });
 	rec.check(invalid.status === 0 && invalid.stdout.trim() === "claude limits: n/a", "the status line shows n/a for invalid input");
 	const claude = Bun.which("claude");
-	if (!claude) return rec.outcome("the claude CLI is not on PATH: install Claude Code to drive the Mod");
-	const mod = join(CHECKOUT, "claude/mods/trial-tools");
-	const before = git(["status", "--porcelain=v1", "-uall"]);
+	if (!claude) return rec.skip("the claude CLI is not on PATH for the Mod steps: install Claude Code");
+	const mod = join(run.checkout, "claude/mods/trial-tools");
+	const before = git(["status", "--porcelain=v1", "-uall"], run.checkout);
 	const env = { CLAUDE_CODE_ENABLE_FUNCTION_HOOKS: "1" };
 	const validate = rec.step("mod-validate", [claude, "plugin", "validate", "--strict", mod], { env });
 	rec.check(validate.status === 0 && (validate.stdout + validate.stderr).includes("Validation passed"), `claude plugin validate --strict passes for trial-tools (exit ${validate.status})`);
 	const test = rec.step("mod-test", [claude, "plugin", "test", mod], { env });
 	const summary = /(\d+) pass\s+(\d+) fail/.exec(test.stdout + test.stderr);
 	rec.check(test.status === 0 && summary !== null && Number(summary[1]) > 0 && summary[2] === "0", `claude plugin test runs the Mod's native tests with no failures (${summary ? `${summary[1]} pass, ${summary[2]} fail` : `exit ${test.status}`})`);
-	rec.check(git(["status", "--porcelain=v1", "-uall"]) === before, "driving the Mod leaves the checkout's tracked and untracked files unchanged");
-	return rec.outcome();
+	rec.check(git(["status", "--porcelain=v1", "-uall"], run.checkout) === before, "driving the Mod leaves the checkout's tracked and untracked files unchanged");
 }
 
-function drive(runId: string | undefined, feature: string | undefined, options: DriveOptions): Outcome {
+function drive(runId: string | undefined, feature: string | undefined, options: Options): Outcome {
 	const run = loadRun(runId);
 	if (!FEATURES.includes(feature as Feature)) throw new Usage(`unknown feature "${feature ?? ""}"; choose one of ${FEATURES.join(", ")}`);
-	const rec = new Recorder(join(evidenceDir(run.runId), feature!));
-	let outcome: Outcome;
-	try {
-		switch (feature as Feature) {
-			case "task-route": outcome = driveTaskRoute(run, rec); break;
-			case "merge-gate": outcome = driveMergeGate(run, rec, options); break;
-			case "pr-state": outcome = drivePrState(run, rec, options); break;
-			case "skill-catalog": outcome = driveSkillCatalog(run, rec); break;
-			case "claude-surface": outcome = driveClaudeSurface(run, rec); break;
+	const rec = new Recorder(join(evidenceDir(run.runId), feature!), run.checkout);
+	const moved = bound(run);
+	if (moved) rec.check(false, moved);
+	else {
+		try {
+			switch (feature as Feature) {
+				case "task-route": driveTaskRoute(run, rec); break;
+				case "merge-gate": driveMergeGate(run, rec, options); break;
+				case "pr-state": drivePrState(run, rec, options); break;
+				case "skill-catalog": driveSkillCatalog(run, rec); break;
+				case "claude-surface": driveClaudeSurface(run, rec); break;
+			}
+		} catch (error) {
+			rec.check(false, `drive stopped: ${(error as Error).message}`);
 		}
-	} catch (error) {
-		outcome = { state: "FAIL", detail: `drive crashed: ${(error as Error).message}` };
+		const after = bound(run);
+		if (after) rec.check(false, after);
 	}
+	const outcome = rec.outcome();
 	const line = outcome.state === "PASS" ? `PASS ${feature}` : `${outcome.state} ${feature}: ${outcome.detail}`;
-	rec.note("result.txt", line + "\n");
+	rec.note("result.txt", `${line}\nrevision ${run.revision} tree ${run.tree} in ${run.checkout}\nkit ${run.kitRevision} in ${run.kit}\n`);
 	console.log(line);
 	return outcome;
 }
 
-function driveOptions(args: string[]): DriveOptions {
+function driveOptions(args: string[]): Options {
 	const slug = option(args, "--repo");
 	if (slug !== undefined && !/^[\w.-]+\/[\w.-]+$/.test(slug)) throw new Usage(`--repo must be owner/name, got "${slug}"`);
 	return { slug, pr: positiveInt(option(args, "--pr"), "--pr"), mergedPr: positiveInt(option(args, "--merged-pr"), "--merged-pr") };
@@ -562,7 +665,8 @@ function driveOptions(args: string[]): DriveOptions {
 
 function all(args: string[]): number {
 	const options = driveOptions(args);
-	const runId = launch(args.includes("--install") ? ["--install"] : []);
+	const checkout = option(args, "--checkout");
+	const runId = launch([...(checkout ? ["--checkout", checkout] : []), ...(args.includes("--install") ? ["--install"] : [])]);
 	const counts = { PASS: 0, FAIL: 0, SKIP: 0 };
 	let doctorOk = false;
 	try {
@@ -579,7 +683,8 @@ function all(args: string[]): number {
 
 function main(args: string[]): number {
 	const [command, ...rest] = args;
-	if (command === undefined || command === "help" || command === "--help" || command === "-h") return console.log(HELP.main), command === undefined ? 2 : 0;
+	if (command === undefined) return console.log(HELP.main), 2;
+	if (command === "help" || command === "--help" || command === "-h") return console.log(HELP.main), 0;
 	if (!(command in HELP) || command === "main") throw new Usage(`unknown command "${command}"; run "${CLI} --help"`);
 	if (rest.includes("--help") || rest.includes("-h")) return console.log(HELP[command]), 0;
 	switch (command) {
@@ -595,10 +700,6 @@ function main(args: string[]): number {
 try {
 	process.exit(main(process.argv.slice(2)));
 } catch (error) {
-	if (error instanceof Usage) {
-		console.error(`verify-kit: ${error.message}`);
-		process.exit(2);
-	}
 	console.error(`verify-kit: ${(error as Error).message}`);
-	process.exit(1);
+	process.exit(error instanceof Usage ? 2 : 1);
 }

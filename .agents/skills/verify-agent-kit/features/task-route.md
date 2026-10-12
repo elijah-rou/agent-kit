@@ -28,20 +28,20 @@ Preconditions:
 - Drive target: `scripts/verify-kit drive RUN_ID task-route`.
 - Doctor passed. For `route-jev` and `route-manual`, doctor reports a TypeSafe key; without one the drive checks every offline step and ends with `SKIP`.
 
-- **Off.** The hook runs in `fixture/` with `AGENTIC_ROUTE=off` and a real task. Exit 0, no stdout, one record with `mode: "off"`, fallback `off`, and no `answers`.
-- **Not a task.** The prompt `ok`. One record with fallback `not-a-task` and no `answers`.
-- **Runtime turn.** The prompt `<task-notification> task finished`. One record with fallback `system` and no `answers`.
-- **Credential-shaped text.** A prompt holding a `token=` assignment. One record with fallback `unsafe-input` and no `answers`.
-- **Opted out.** The real task from `fixture-optout/`. One record with `optedOut: true` and no `answers`.
+- **Off.** The hook runs in `fixture/` with `AGENTIC_ROUTE=off` and a real task. Exit 0, no stdout, one record whose `fallbacks` are exactly `["off"]`, and no `answers`.
+- **Not a task.** The prompt `ok`. One record whose `fallbacks` are exactly `["not-a-task"]`, and no `answers`.
+- **Runtime turn.** The prompt `<task-notification> task finished`. One record whose `fallbacks` are exactly `["system"]`, and no `answers`.
+- **Credential-shaped text.** A prompt holding a `token=` assignment. One record whose `fallbacks` are exactly `["unsafe-input"]`, and no `answers`.
+- **Opted out.** The real task from `fixture-optout/`. One record whose `fallbacks` are exactly `["opted-out"]`, with `optedOut: true` and no `answers`. A request that was sent and failed would show a different fallback.
 - **Codex.** The off case through `--codex-hook`. The record file is `codex-<session>.jsonl`.
-- **Jev.** The real task with routing on. Exit 0, one record whose `answers` hold a door choice (`reversible`, `experiment`, or `one-way-door`), a level choice (`lookup`, `rigor`, or `loop`), and a `jev-` model. A record marked `noted` comes with `hookSpecificOutput.additionalContext` on stdout; otherwise stdout is empty.
-- **Manual.** `agentic jev task-class "<task>"` prints the route and adds no file under `state/`.
-- **Proof.** Every record holds counts and a digest, never the prompt's text. Evidence: `task-route/NN-hook-*.txt` with each event on stdin and the hook's output; the records stay in the run's `state/` until cleanup.
+- **Jev.** The real task with routing on. Exit 0, one record with no fallbacks whose `answers` hold a door choice (`reversible`, `experiment`, or `one-way-door`), a level choice (`lookup`, `rigor`, or `loop`), and a `jev-` model. A record marked `noted` comes with `hookSpecificOutput.additionalContext` on stdout; otherwise stdout is empty.
+- **Manual.** `agentic jev task-class "<task>"` prints a route naming Jev's model with its advised and delivered levels, and adds no file under `state/`.
+- **Proof.** Every record holds counts and a digest, never the prompt's text. Evidence: `task-route/NN-hook-*.txt` with each event on stdin and the hook's output, and `records.jsonl` with every record the drive read back.
 
 ## Gotchas
 
 - The hook's stdout is the note. An empty stdout is correct while every note is in shadow (`agentic/tools/jev/route.ts`); a note appears only after a note's policy becomes advisory.
 - An inherited `AGENTIC_ROUTE` from the shell would change every case; the drive sets it explicitly for each step.
 - The opt-out check is the file's presence at the checkout root, committed or not, although the help text says "commits".
-- `route-jev` makes one real TypeSafe request per run. Its classification can differ between runs; only the shape of the answers is checked.
+- The Jev steps make two real TypeSafe requests per run (the hook and the manual route). Classifications can differ between runs; only their shape is checked.
 - The records' `launcher` field reflects the environment the CLI runs in (for example `t3` inside T3 Code).

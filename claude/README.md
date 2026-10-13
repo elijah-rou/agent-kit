@@ -19,12 +19,13 @@ Mods enabled); model, effort, and permissions stay user choices.
 `agentic/tools/git-guard/cli.ts --claude-hook` is a PreToolUse hook that applies the git policy Pi's
 `git-interceptor` applies, to every tool that runs a shell command: Bash, Monitor, and PowerShell (Claude
 Code 2.1.296's tools that execute code and take a command). It refuses skipping git hooks (`--no-verify`,
-`git commit -n` or `git am -n`, a `-c` or `GIT_CONFIG_*` override of `core.hooksPath` or a `hook.*` key) in
-every session, and refuses `git push`, `pull`, `merge`, `rebase`, `cherry-pick`, `revert`, `am`, `apply`,
-`tag` (except listing or verifying tags), `send-pack`, `git subtree push`, `pull`, and `merge`, and
-`gh pr merge` inside a subagent (an event carrying `agent_id`) unless its
-`agent_type` is `autopilot-owner`. The main session may publish. It denies with Claude Code's JSON decision,
-which holds in bypass-permission mode too, and allows by printing nothing. An event it cannot read is denied.
+`git commit -n` or `git am -n`, a `-c` or `GIT_CONFIG_*` override of `core.hooksPath` or a `hook.*` key, or
+a hook manager's skip variable such as `HUSKY=0` or `SKIP=` set on or before a git command) in every
+session, and refuses `git push`, `pull`, `merge`, `rebase`, `cherry-pick`, `revert`, `am`, `apply`, `tag`
+(except listing or verifying tags), `send-pack`, `http-push`, `git subtree push`, `pull`, and `merge`, and
+`gh pr merge` inside a subagent (an event carrying `agent_id`) unless its `agent_type` is `autopilot-owner`.
+The main session may publish. It denies with Claude Code's JSON decision, which holds in bypass-permission
+mode too, and allows by printing nothing. An event it cannot read is denied.
 
 What it refuses that it need not (the same list is in ADR 0001 and the verify-agent-kit `git-guard` feature):
 
@@ -86,7 +87,9 @@ What the guard does not stop (the same list is in ADR 0001 and the verify-agent-
   programs that publish (`gh pr create` or `comment`, `gh api`). Anything it cannot read is refused.
 - Hooks disabled another way: editing `.git/hooks` or `.git/config` (or a file it includes),
   `GIT_CONFIG_GLOBAL` or `GIT_CONFIG_SYSTEM` pointing at a file, a `GIT_CONFIG_*` variable exported by an
-  earlier command, or a tool's own skip variable such as `HUSKY=0`.
+  earlier command, or a skip variable of a hook manager the guard does not list (it refuses `HUSKY`,
+  `HUSKY_SKIP_HOOKS`, `SKIP`, `PRE_COMMIT_ALLOW_NO_CONFIG`, `LEFTHOOK`, `LEFTHOOK_EXCLUDE`, and
+  `OVERCOMMIT_DISABLE`).
 - Identity it cannot tell: a nested `claude -p` started from a subagent's shell has no `agent_id`, so it is
   treated as a main session; a child that holds the Agent tool (the built-in `general-purpose`) can launch an
   `autopilot-owner` grandchild, which may publish; and `agent_id` for teammates is documented but not observed.

@@ -157,7 +157,7 @@ Each slice is one PR or a short stack. It is verified with `verify-agent-kit`, a
 
 0. **Make `main` live (O1).**
    - 0a (done: bootstrap #28 merged and installed): bump bootstrap's pin to `14659cb`, the last commit before #28. At `23142b7`, Pi's `git-interceptor.ts` loads #28's shell parser on install and refuses commands Pi runs today (`curl … | sh`, `bash -l`, `git commit -n`). D3 drops that parser.
-   - 0c: X7 in agent-kit (drop `shell.ts`, keep the regex classifier), then pin past it. 0b must not ship before 0c, or the automatic bump would switch the parser on in Pi.
+   - 0c (PR #37 open): X7 in agent-kit (drop `shell.ts`, keep targeted text patterns), then pin past it. 0b must not ship before 0c, or the automatic bump would switch the parser on in Pi.
    - 0b: the post-merge bump and the lag warning.
 1. **Control:** P1, P2, P3, X5, O2, X4, X1, X2, X3.
 2. **Review economy:** X6, O8, P4.

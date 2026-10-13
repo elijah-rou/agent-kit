@@ -192,6 +192,11 @@ for (const { root, name, path } of instructionFiles) {
   for (const key of ["name", "description"]) {
     if (key in values && (typeof values[key] !== "string" || (values[key] as string).trim() === "")) fail(`${where}: ${key} must be non-empty text`);
   }
+  if (kind === "skill") {
+    const directory = name.split("/")[0];
+    if (values.name !== directory) fail(`${where}: name must be exactly ${directory}, its directory, as the runtime reads it (YAML read ${JSON.stringify(values.name)})`);
+    if (typeof values.description === "string" && values.description.length > 1024) fail(`${where}: description must be at most 1024 characters as the runtime reads it`);
+  }
   const repeated = keys.find((key, index) => keys.indexOf(key) !== index);
   if (repeated !== undefined) fail(`${where}: frontmatter key "${repeated}" appears twice; a runtime keeps only one of them`);
   for (const key of keys) {

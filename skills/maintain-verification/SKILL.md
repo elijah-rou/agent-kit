@@ -24,7 +24,7 @@ Edit only the verification skill's own directory (its `SKILL.md`, `features/`, a
 
 0. **Locate the target.** Find the skill under `.agents/skills/verify-*/`. With several candidates, ask which one, recommending the one whose surface the user's request names. With none, stop and point to `create-verification`.
 
-1. **Index hygiene.** Read `features/README.md` and list its sibling files. Fix missing, extra, duplicate, or dead entries, check that each feature file has its four sections, check that the control CLI has exactly one drive target per feature file, and check that every agent runtime the user works with here can discover the skill: each one that does not read `.agents/skills/` has a discovery symlink resolving to the skill's `SKILL.md`. Add a missing symlink or repair a broken one as part of this step.
+1. **Index hygiene.** Read `features/README.md` and list its sibling files. Fix missing, extra, duplicate, or dead entries, check that each feature file has its four sections, check that the control CLI has exactly one drive target per feature file and every subcommand and Dev loop lever `create-verification` step 2 requires for this product (a missing one is a harness gap, step 5), and check that every agent runtime the user works with here can discover the skill: each one that does not read `.agents/skills/` has a discovery symlink resolving to the skill's `SKILL.md`. Add a missing symlink or repair a broken one as part of this step.
 
 2. **Source wave.** Spawn one read-only subagent per feature file, concurrently, using a role or type without write or shell-mutation tools. Each explains how the feature works from source, flags likely drift with `file:line` citations, and returns one live-verification recipe. Children never drive the app, never edit files, and never publish. Return shape: feature summary, source entry points, likely drift or `none`, one recipe. If subagents are unavailable, read each feature yourself and say so.
 
@@ -39,13 +39,13 @@ Edit only the verification skill's own directory (its `SKILL.md`, `features/`, a
 
 5. **Triage** each finding:
    - **Doc drift:** the user-POV description is wrong or missing. Fix the map.
-   - **Harness gap:** working behavior the harness cannot drive, or a skill without the control CLI that `create-verification` step 2 defines. Fix the harness to that contract; shipped scripts are executable and their invocation is in the skill body. A new control CLI is proven by driving every feature through it in the live pass.
+   - **Harness gap:** working behavior the harness cannot drive, or a skill without the control CLI that `create-verification` step 2 defines. Fix the harness to that contract; shipped scripts are executable and their invocation is in the skill body. A new control CLI is proven by driving every feature through it in the live pass. A Dev loop lever added or changed here is kept only after it passes `create-verification` step 4's step 9 checks (for `--repeat`, on a feature that passed this pass's live drive in step 4), which prove it works, not only that it runs; a check that step says cannot be proved is reported as a gap. A drive that fails because the seed data lacks a precondition is a harness gap too: add it to Launch's seed steps, or, when the seed cannot provide it, record why in the feature's `Gotchas`.
    - **Product gap:** the app is actually broken. Record it for the user with its evidence; keep it out of the corrections.
 
-6. **Land or stop.** For `changed`, re-read every changed file, recheck the index, sections, drive targets, and symlinks, and commit on one branch. In a repository the user owns, push an `agent/*` branch and open one pull request; otherwise leave the branch for the user. For `clean` or `blocked`, change nothing and report.
+6. **Land or stop.** For `changed`, re-read every changed file, recheck the index, sections, drive targets, levers, and symlinks, and commit on one branch. In a repository the user owns, push an `agent/*` branch and open one pull request; otherwise leave the branch for the user. For `clean` or `blocked`, change nothing and report.
 
 Keep run notes (features covered, unreachable prerequisites, confirmed drift) in a scratch location outside the repository; do not commit them.
 
 ## Reply
 
-Lead with product gaps and anything blocked. Then the outcome, coverage per feature (source and live, with evidence paths), drift fixed, harness fixes and their re-proofs, the index, section, drive-target, and symlink check from step 6, and the branch or pull request if any.
+Lead with product gaps and anything blocked. Then the outcome, coverage per feature (source and live, with evidence paths), drift fixed, harness fixes and their re-proofs, the index, section, drive-target, lever, and symlink check from step 6, and the branch or pull request if any.

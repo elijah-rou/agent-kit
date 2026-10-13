@@ -19,6 +19,7 @@ A user saves a titled note from the browser or the CLI, can cancel an unfinished
 
 Preconditions:
 
+- Drive target: `notes-harness drive create-note`.
 - `notes-harness doctor` passes for this run's instance.
 - No note is titled `Release checklist` or `CLI note`.
 

@@ -21,6 +21,7 @@ A user finds notes by title or body text, opens a result, and can tell "no match
 
 Preconditions:
 
+- Drive target: `notes-harness drive search`.
 - `notes-harness doctor` passes for this run's instance.
 - The seeded `Quarterly plan` note has body text `Draft budget`.
 

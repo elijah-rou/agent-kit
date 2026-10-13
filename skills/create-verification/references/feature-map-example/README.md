@@ -18,6 +18,7 @@ This is an example for a fictional app with a browser and a CLI surface. Copy it
 - Start every recipe from the baseline state unless its preconditions say otherwise.
 - Target elements by role and accessible name, not CSS selectors or position.
 - Treat every command literally; keep quoted names and flags exactly as written.
+- `notes-harness drive <feature-id>` runs a feature's whole recipe and ends with `PASS`, `FAIL`, or `SKIP`; the labeled bullets in each feature file are the steps it takes, for diagnosis.
 - Browser actions go through `notes-harness browser`; terminal actions through `notes-harness cli -- <command>`.
 - Restore seeded data after a mutation. Never delete evidence during cleanup.
 
@@ -37,7 +38,7 @@ Each feature file starts with an H1 title and one paragraph describing the behav
 
 1. `Sub-features`: short IDs, one line each.
 2. `How to get to it (user POV)`: every entry point a user has.
-3. `Driving it with <harness>`: starts with `Preconditions:`, then labeled bullets pairing each user action with an exact command and its observable result.
+3. `Driving it with <harness>`: starts with `Preconditions:`, whose first bullet names the feature's control CLI drive target, then labeled bullets pairing each user action with an exact command and its observable result.
 4. `Gotchas`: traps that waste or invalidate a run.
 
 Keep implementation details out. Name only user paths, stable handles, required state, commands, and observable proof.

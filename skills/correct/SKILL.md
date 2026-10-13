@@ -13,12 +13,12 @@ Change the repository so the next agent cannot make the mistakes the user keeps 
 Read evidence, not memory, and only from this repository and workspace:
 
 - recent commits, reverts (`git log --grep=Revert`), and fix-up commits;
-- review comments on recent pull requests, read-only, and the adversarial-review lines in their testing notes: each accepted finding with its class, fixed or open (`git-workflow`'s pull-request review); a class recorded on two pull requests is a repeat even when both were fixed;
+- review comments on recent pull requests, read-only, and the `## Review record` section of their bodies (squash commit bodies carry it too): each accepted finding with its class, fixed or open; a class recorded on two pull requests is a repeat even when both were fixed;
 - agent instruction files and the current `rules.toml`;
 - code comments that justify a workaround;
 - decision logs under `.audit/`, and entries with `"enforceable": true` in `.agents/learning/sessions/*.json` (the learning loop's backlog for this skill).
 
-Group mistakes into classes. A class counts once it has happened twice. A correction for a rule already in `rules.toml` whose enforcer is only docs counts as a repeat: fix it at a higher level in the same change.
+Group mistakes into classes. A class counts once it has happened twice. A correction for a rule already in `rules.toml` at `level = "docs"` counts as a repeat: fix it at a higher level in the same change.
 
 Completion criterion: a list of classes, each with two or more concrete evidence pointers (commit SHA, PR comment, `file:line`, session ID).
 

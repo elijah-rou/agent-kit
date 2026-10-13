@@ -10,21 +10,23 @@ What bootstrap's `--tools claude` selection installs into the Claude configurati
   its [README](mods/trial-tools/README.md).
 - `statusline.ts`: a quota footer that renders the rate limits Claude supplies on stdin. It never reads
   credentials or calls provider APIs; missing, invalid, or stale data shows `limits: n/a`.
-- The git guard, `agentic/tools/git-guard/cli.ts --claude-hook`: a PreToolUse hook on the Bash tool that
-  applies the git policy Pi's `git-interceptor` applies. See [Git guard](#git-guard).
 
 Everything here runs on Bun. Bootstrap writes the machine-specific `settings.json` (status line command,
-Mods enabled, hooks); model, effort, and permissions stay user choices.
+Mods enabled); model, effort, and permissions stay user choices.
 
 ## Git guard
 
-The hook refuses any git command with `--no-verify`, in every session, and `git push`, `pull`, `merge`,
-`rebase`, `cherry-pick`, `revert`, `am`, `apply`, and `tag` inside a subagent (an event carrying `agent_id`)
-unless its `agent_type` is `autopilot-owner`. The main session may publish. It denies with Claude Code's
-JSON decision, which holds in bypass-permission mode too, and allows by printing nothing. An event it cannot
-read is denied.
+`agentic/tools/git-guard/cli.ts --claude-hook` is a PreToolUse hook that applies the git policy Pi's
+`git-interceptor` applies, to every tool that runs a shell command: Bash, Monitor, and PowerShell (Claude
+Code 2.1.296's tools that execute code and take a command). It refuses skipping git hooks (`--no-verify`,
+`git commit -n`, a `core.hooksPath` override) in every session, and refuses `git push`, `pull`, `merge`,
+`rebase`, `cherry-pick`, `revert`, `am`, `apply`, `tag`, and `gh pr merge` inside a subagent (an event
+carrying `agent_id`) unless its `agent_type` is `autopilot-owner`. The main session may publish. It denies
+with Claude Code's JSON decision, which holds in bypass-permission mode too, and allows by printing nothing.
+An event it cannot read is denied.
 
-Bootstrap wires it into `settings.json` as a PreToolUse entry with a Bash matcher, where `<kit>` is the
+Bootstrap does not wire it yet: that is a pending bootstrap change, and until it lands no Claude Code
+session runs the guard. The change adds this PreToolUse entry to `settings.json`, where `<kit>` is the
 agent-kit checkout:
 
 ```json
@@ -32,11 +34,12 @@ agent-kit checkout:
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|Monitor|PowerShell",
         "hooks": [
           {
             "type": "command",
-            "command": "bun <kit>/agentic/tools/git-guard/cli.ts --claude-hook",
+            "command": "bun --cwd <kit> <kit>/agentic/tools/git-guard/cli.ts --claude-hook",
+            "timeout": 5,
             "onFailure": "block"
           }
         ]
@@ -46,8 +49,24 @@ agent-kit checkout:
 }
 ```
 
-By default Claude Code lets the tool call continue when a hook cannot start, times out, or exits other than 0 or 2;
-`"onFailure": "block"` (Claude Code 2.1.295 or later) turns those failures into a refusal.
+- `--cwd <kit>`: Claude Code starts the hook in the session's project, and Bun would load that project's
+  `bunfig.toml`, whose preload could print before the decision or exit and turn a deny into an allow.
+- `"timeout": 5`: the hook answers in well under a second.
+- `"onFailure": "block"`: by default Claude Code lets the tool call continue when a hook cannot start
+  (for example, `bun` is missing), times out, or exits other than 0 or 2. This setting, honored from Claude
+  Code 2.1.295, turns those failures into a refusal; before 2.1.295 the guard fails open on them.
+
+What the guard does not stop (the same list is in ADR 0001 and the verify-agent-kit `git-guard` feature):
+
+- Commands it cannot see in the text: a program named through a variable, a shell alias or function, a
+  script file, a subcommand supplied on stdin (`xargs git`), a git alias (`git p` for push), PowerShell's
+  `Start-Process`, and other programs that publish (`gh pr create` or `comment`, `gh api`, a script).
+- Hooks disabled another way: editing `.git/hooks` or `.git/config` (or a file it includes), or a
+  `GIT_CONFIG_*` variable exported by an earlier command.
+- Identity it cannot tell: a nested `claude -p` started from a subagent's shell has no `agent_id`, so it is
+  treated as a main session; a child that holds the Agent tool (the built-in `general-purpose`) can launch an
+  `autopilot-owner` grandchild, which may publish; and `agent_id` for teammates is documented but not observed.
+- Other tools: MCP tools that run commands.
 
 ## Check changes
 

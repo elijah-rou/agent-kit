@@ -26,7 +26,7 @@ What is deferred, with the reason:
 
 - **The overlay, the renderer, the role table, `SessionStart` hooks and T3 targets.** They exist to cross providers and harnesses. With one provider, the agent files are the whole mechanism.
 - **Codex and Pi.** `codex/AGENTS.md` and `pi/AGENTS.md` are unchanged, including the Codex model table and their alternate-model reviewer wording.
-- **Open questions 2 and 6** (cross-harness `quick` and `explore`, and usage-limit fallback) do not arise with one provider. Question 4 took its default. Question 1 took its default except `quick`, which the user moved to `high` because it writes files. Question 3 keeps design-checkpoint's candidate-diversity preference, which only applies "where available".
+- **Open questions 2 and 6** (cross-harness `quick` and `explore`, and usage-limit fallback) do not arise with one provider. Question 4 took its default. Question 1 took its default except `quick`, which the user moved to `high` because it writes files. Question 3 kept design-checkpoint's candidate-diversity preference until the user reopened it on 2026-10-13 and removed it: subagents are Claude-only, after a candidate sent to another provider stalled a trial.
 
 Verified on 2026-10-12 with Claude Code 2.1.296 in a scratch project: the four files, copied and also as symlinks, appear in the session's agent list, with `Explore` replacing the built-in. A headless run launched `Explore` on `claude-haiku-5-5` and `review` on `claude-opus-5-5`. Whether `effort` took effect is not visible in the output.
 

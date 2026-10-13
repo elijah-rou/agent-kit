@@ -163,12 +163,25 @@ for (const { root, name, path } of instructionFiles) {
   const lines = block.split("\n");
   // A value is a quoted string closed on its own line or text starting with a letter or digit, with no ---,
   // which a runtime takes as the end of the frontmatter and would drop every key after it.
-  const odd = lines.filter(line => !/^[A-Za-z][A-Za-z0-9_-]*: (?:"[^"]*"|'[^']*'|[A-Za-z0-9].*)$/.test(line) || /\s#/.test(line) || line.includes("---"));
+  const odd = lines.filter(line => !/^[A-Za-z][A-Za-z0-9_-]*: (?:"[^"\\]*"|'[^']*'|[A-Za-z0-9].*)$/.test(line) || /\s#/.test(line) || line.includes("---"));
   if (odd.length > 0) {
     fail(`${where}: every frontmatter line must be a single top-level key: value line, its value a quoted string closed on the line or text starting with a letter or digit, without a # comment or --- (found ${JSON.stringify(odd[0])})`);
     continue;
   }
   const keys = lines.map(line => line.slice(0, line.indexOf(":")));
+  // The runtime parses the block as YAML and, if that throws, falls back to an empty frontmatter, which would
+  // silently drop keys such as disable-model-invocation. Require the block to parse on its own, to exactly these keys.
+  let parsed: unknown;
+  try {
+    parsed = Bun.YAML.parse(block);
+  } catch {
+    parsed = undefined;
+  }
+  const parsedKeys = parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? Object.keys(parsed) : undefined;
+  if (parsedKeys === undefined || parsedKeys.length !== new Set(keys).size || !keys.every(key => parsedKeys.includes(key))) {
+    fail(`${where}: frontmatter must parse as YAML on its own to exactly its key lines; quote a value that contains ": ", ends in ":", or holds a backslash or quote`);
+    continue;
+  }
   const repeated = keys.find((key, index) => keys.indexOf(key) !== index);
   if (repeated !== undefined) fail(`${where}: frontmatter key "${repeated}" appears twice; a runtime keeps only one of them`);
   for (const key of keys) {

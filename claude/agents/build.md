@@ -1,6 +1,6 @@
 ---
 name: build
-description: Implementation, diagnosis, and verification that runs the product, on the strongest model: new code, refactors, bug fixes, configuration, instruction or design edits, and fresh verifiers that drive the real product and record a verdict.
+description: "Implementation, diagnosis, and verification that runs the product, on the strongest model: new code, refactors, bug fixes, configuration, instruction or design edits, and fresh verifiers that drive the real product and record a verdict."
 model: claude-opus-5-5
 effort: high
 disallowedTools: Agent

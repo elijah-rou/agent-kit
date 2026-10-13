@@ -69,6 +69,7 @@ for (const directory of skillDirectories("skills")) {
   if (name !== undefined) shared.add(name);
 }
 for (const directory of skillDirectories("claude/skills")) checkSkill(directory);
+if (existsSync(join(ROOT, ".agents/skills"))) for (const directory of skillDirectories(".agents/skills")) checkSkill(directory);
 
 for (const name of readFileSync(join(ROOT, "codex/skills.txt"), "utf8").split("\n").filter(Boolean)) {
   if (!shared.has(name)) fail(`codex/skills.txt names a missing skill: ${name}`);

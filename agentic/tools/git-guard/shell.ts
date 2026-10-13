@@ -421,6 +421,12 @@ class Reader {
 				this.pos++;
 				this.heredocBodies(pending);
 			} else if (c === this.escape) {
+				if (this.dialect === "powershell" && next === "\r") {
+					// A backtick before \r\n continues the line; before a lone \r, PowerShell's reading is unclear.
+					if (text[this.pos + 2] !== "\n") throw new Unreadable("a backtick before a lone carriage return");
+					this.pos += 3;
+					continue;
+				}
 				if (next !== undefined && next !== "\n") append(next, { quoted: true });
 				this.pos += 2;
 			} else if (c === "'") {
@@ -481,6 +487,8 @@ class Reader {
 				this.pos = end + 2;
 			} else if (c === "#" && word === undefined) {
 				const end = text.indexOf("\n", this.pos);
+				// PowerShell ends a comment at a lone carriage return too, which this reader does not.
+				if (this.dialect === "powershell" && /\r(?!\n)/.test(text.slice(this.pos, end === -1 ? text.length : end + 1))) throw new Unreadable("a comment holds a lone carriage return, which PowerShell reads as a line break");
 				this.pos = end === -1 ? text.length : end;
 			} else if (this.dialect === "posix" && c === "<" && next === "<" && text[this.pos + 2] !== "<") {
 				if (word !== undefined && /^\d+$/.test(word.text)) word = undefined;
@@ -729,7 +737,8 @@ class Reader {
 		}
 		// The environment this command runs with: what its text inherits, then its own assignments.
 		const assignments: string[] = [...base];
-		if (this.dialect === "powershell") this.powerShellAssignment(words, assignments);
+		// PowerShell assignments chain ($a = $b = git push); each pass strips one target.
+		if (this.dialect === "powershell") for (let pass = 0; pass < all.length && this.powerShellAssignment(words, assignments); pass++);
 		const texts = words.map((word) => word.text);
 		let i = 0;
 		// Each pass consumes at least one word, so this ends within words.length passes.
@@ -791,10 +800,11 @@ class Reader {
 	 * pipeline whose output it captures (`$out = git push`). `$env:NAME = <value>` also sets NAME for the
 	 * commands after it, which is recorded as a standalone assignment.
 	 */
-	private powerShellAssignment(words: Word[], assignments: string[]): void {
+	private powerShellAssignment(words: Word[], assignments: string[]): boolean {
 		const first = words[0]?.text ?? "";
-		const variable = /^((?:\[[^\]]+\])*\$(?:\{[^}]*\}|[A-Za-z_][\w]*(?::[A-Za-z_][\w]*)?))(=|\+=|-=|\?\?=)?(.*)$/s.exec(first);
-		if (!variable) return;
+		// A variable, optionally typed, then any member (.p) or index ([0]) accesses.
+		const variable = /^((?:\[[^\]]+\])*\$(?:\{[^}]*\}|[A-Za-z_][\w]*(?::[A-Za-z_][\w]*)?)(?:\.[A-Za-z_][\w]*|\[[^\]]*\])*)(=|\+=|-=|\?\?=)?(.*)$/s.exec(first);
+		if (!variable) return false;
 		const [, name, attachedOperator, attachedRest] = variable;
 		let rest: string;
 		let restQuoted: boolean;
@@ -804,7 +814,7 @@ class Reader {
 			words.splice(0, 1);
 		} else {
 			const operator = /^(=|\+=|-=|\?\?=)(.*)$/s.exec(words[1]?.text ?? "");
-			if (!operator || attachedRest) return;
+			if (!operator || attachedRest) return false;
 			rest = operator[2]!;
 			restQuoted = words[1]!.quoted;
 			words.splice(0, 2);
@@ -812,6 +822,7 @@ class Reader {
 		if (rest) words.unshift({ text: rest, glob: false, quoted: restQuoted });
 		const environment = /^\$(?:env:([A-Za-z_][\w]*)|\{env:([A-Za-z_][\w]*)\})$/i.exec(name!);
 		if (environment) this.found.push({ assignments: [...assignments, `${(environment[1] ?? environment[2])!.toUpperCase()}=${words.map((word) => word.text).join(" ")}`], program: "", args: [], patterned: [] });
+		return true;
 	}
 
 	/** Skips env's options and assignments, reading an -S string as a command; returns the index of its command. */

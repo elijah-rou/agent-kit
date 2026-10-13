@@ -134,6 +134,37 @@ type HookSkip = "flag" | "override" | "config-write" | "skip-variable";
 // Variables hook managers read to skip hooks: husky, pre-commit, lefthook, overcommit.
 const SKIP_VARIABLES = new Set(["HUSKY", "HUSKY_SKIP_HOOKS", "SKIP", "PRE_COMMIT_ALLOW_NO_CONFIG", "LEFTHOOK", "LEFTHOOK_EXCLUDE", "OVERCOMMIT_DISABLE"]);
 const EXPORTERS = new Set(["export", "declare", "typeset", "local", "readonly"]);
+// PowerShell cmdlets (and aliases) that write an item, which for env:NAME sets an environment variable.
+const ENVIRONMENT_WRITERS = new Set(["set-item", "si", "new-item", "ni", "set-content", "sc"]);
+// [Environment]::SetEnvironmentVariable(<name>, ...), with or without System.
+const SET_ENVIRONMENT_VARIABLE = /\[\s*(?:System\.)?Environment\s*\]\s*::\s*SetEnvironmentVariable\s*\(\s*/gi;
+
+/**
+ * The variable an env: path names in a PowerShell item cmdlet's arguments (-Path or -LiteralPath, or the
+ * first positional word), upper-cased; throws Unreadable when the env: path is not a literal name.
+ */
+function environmentProviderName(args: string[]): string | undefined {
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i]!;
+		const value = /^-(path|literalpath|p|pspath|lp)$/i.test(arg) ? args[i + 1] : arg.startsWith("-") ? undefined : arg;
+		if (value === undefined || !/^env:/i.test(value)) continue;
+		const name = /^env:([A-Za-z_][\w]*)$/i.exec(value);
+		if (!name) throw new Unreadable(`its environment path ${value} is not a literal variable name`);
+		return name[1]!.toUpperCase();
+	}
+	return undefined;
+}
+
+/** The variables [Environment]::SetEnvironmentVariable sets in PowerShell text; throws Unreadable when a name is not a literal. */
+function environmentApiNames(command: string): string[] {
+	const names: string[] = [];
+	for (const match of command.matchAll(SET_ENVIRONMENT_VARIABLE)) {
+		const literal = /^(['"])([A-Za-z_][\w]*)\1\s*,/.exec(command.slice(match.index! + match[0].length));
+		if (!literal) throw new Unreadable("it calls SetEnvironmentVariable with a name that is not a literal");
+		names.push(literal[2]!.toUpperCase());
+	}
+	return names;
+}
 
 /**
  * True when a command sets a hook manager's skip variable: in a git command's environment (its own
@@ -145,7 +176,8 @@ function skipVariablesSet(calls: Invocation[]): boolean {
 	return calls.some((call) => {
 		const name = programName(call.program);
 		if (name === "git" || name === "") return call.assignments.some(named);
-		return EXPORTERS.has(name) && call.args.some((arg) => arg.includes("=") && named(arg));
+		if (EXPORTERS.has(name)) return call.args.some((arg) => arg.includes("=") && named(arg));
+		return ENVIRONMENT_WRITERS.has(name) && environmentProviderName(call.args) !== undefined && SKIP_VARIABLES.has(environmentProviderName(call.args)!);
 	});
 }
 
@@ -260,7 +292,8 @@ function findings(command: string, dialect: Dialect): Findings {
 	const calls = invocations(command, dialect);
 	for (const call of calls) checkPatterns(call);
 	const runsGit = calls.some((call) => programName(call.program) === "git");
-	const skip = calls.map(invocationHookSkip).find((found) => found !== undefined) ?? (runsGit && skipVariablesSet(calls) ? "skip-variable" : undefined);
+	const apiSets = dialect === "powershell" && environmentApiNames(command).some((name) => SKIP_VARIABLES.has(name));
+	const skip = calls.map(invocationHookSkip).find((found) => found !== undefined) ?? (runsGit && (skipVariablesSet(calls) || apiSets) ? "skip-variable" : undefined);
 	return {
 		reader: { skip, publication: calls.map(invocationPublication).find((found) => found !== undefined) },
 		pattern: { skip: NO_VERIFY.test(command), publication: patternPublication(command) },

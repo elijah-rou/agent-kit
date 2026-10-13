@@ -412,6 +412,29 @@ describe("round 10", () => {
 	});
 });
 
+// Hand-back review: PowerShell forms reported earlier and dropped, now refused or read.
+describe("round 12", () => {
+	const build: Actor = { kind: "child", role: "build" };
+	const ps = "powershell" as const;
+	test("skip variables set through PowerShell's env: provider and the Environment API", () => {
+		for (const actor of [main, owner]) {
+			for (const command of ["Set-Item env:HUSKY 0; git commit -m x", "Set-Item -Path env:HUSKY -Value 0; git commit -m x", "New-Item -Path env:SKIP -Value lint; git commit -m x", "Set-Content env:LEFTHOOK 0; git commit -m x", "si env:husky 0; git commit -m x", "[Environment]::SetEnvironmentVariable('HUSKY', '0'); git commit -m x", "[System.Environment]::SetEnvironmentVariable(\"SKIP\", 'lint', 'Process'); git commit -m x"]) expect([command, blockReason(command, actor, ps)]).toEqual([command, expect.stringMatching(/hook manager's skip variable/)]);
+		}
+		for (const command of ["[Environment]::SetEnvironmentVariable($name, '0'); git commit -m x", "Set-Item env:$name 0; git commit -m x"]) expect(blockReason(command, main, ps)).toMatch(/could not read this command: .*(not a literal)/);
+		for (const command of ["Set-Item env:PATH 'C:\\bin'; git status", "[Environment]::SetEnvironmentVariable('HUSKY', '0'); npm ci", "Set-Item env:HUSKY 0; npm ci"]) expect([command, blockReason(command, main, ps)]).toEqual([command, undefined]);
+	});
+	test("K1 targets: member, index, and chained assignment", () => {
+		for (const command of ["$o.p = git push origin x", "$o.p.q = git push origin x", "$a[0] = git push origin x", "$a = $b = git push origin x", "$a[0].p += git push origin x"]) expect([command, blockReason(command, build, ps)]).toEqual([command, expect.stringMatching(/git push/)]);
+		expect(blockReason("$o.Name = 'x'; Write-Output $o", main, ps)).toBeUndefined();
+	});
+	test("a backtick before \\r\\n continues the line; before a lone \\r, or a lone \\r in a comment, is unreadable", () => {
+		expect(blockReason("git `\r\npush origin x", build, ps)).toMatch(/git push/);
+		expect(blockReason("git `\rpush origin x", build, ps)).toMatch(/could not read this command: a backtick before a lone carriage return/);
+		expect(blockReason("Write-Output ok # c\rgit push origin x", build, ps)).toMatch(/could not read this command: a comment holds a lone carriage return/);
+		expect(blockReason("Write-Output ok # comment\r\ngit status", build, ps)).toBeUndefined();
+	});
+});
+
 describe("invocations", () => {
 	test("splits quoted words, assignments, and substitutions", () => {
 		expect(invocations(`cd a && FOO=1 git -C "x y" push origin "$(git rev-parse HEAD)" # git merge`, "posix")).toEqual([

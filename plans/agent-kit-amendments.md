@@ -126,12 +126,12 @@ The audit thread needed nine user interventions and ended with six of its eleven
 | L5 | Upkeep: `create-verification` ends by creating a weekly T3 `fixed_time` schedule that runs `/maintain-verification` for that repo. | `create-verification`, `maintain-verification` |
 | L6 | Kit lag (slice 0b): after an agent-kit merge, the landing mode opens the bootstrap pin PR; a session-start check warns when the installed kit is behind. | `babysit-and-ship`, bootstrap |
 | L7 | Intake v1: a daily T3 schedule lists failed CI runs on `main` across owned repos that have a verify skill, and starts the A8 line for each new one. v2, a signed GitHub webhook, waits until T3 Connect remote access is set up and v1 has shown the need. | T3 schedule, a small `agentic` command |
-| L9 | Persist the long-lived token: a bootstrap LaunchAgent sets `CLAUDE_CODE_OAUTH_TOKEN` from the keychain item `claude-code-oauth` at login, like `typesafe-jev`. | bootstrap |
+| L9 | Get the long-lived token into T3's Claude sessions and keep it across reboots. The launchd route reaches T3 but not its Claude children (D8). Find the supported path, set it from the keychain item `claude-code-oauth` at login, and prove it with `claude auth status` inside a T3 session. | bootstrap, T3 |
 | L8 | `claude/CLAUDE.md` and `pi/AGENTS.md`: schedules an invoked mode creates for its own run (tick, watch) are part of the mode and are removed when it ends; upkeep and intake schedules need the user's standing approval (D9). | instructions |
 
 Outer-loop decisions (approved 2026-10-14):
 
-- **D8. Long-lived token for unattended runs:** approved and done 2026-10-14. The token is in the macOS keychain item `claude-code-oauth` (tested with `claude -p`), and `launchctl setenv CLAUDE_CODE_OAUTH_TOKEN` exposes it to GUI apps launched afterwards, T3 included, until reboot. Slice 3 makes that persistent: a bootstrap LaunchAgent sets it from the keychain at login, following the `typesafe-jev` pattern.
+- **D8. Long-lived token for unattended runs:** approved. The token is in the macOS keychain item `claude-code-oauth` (tested with `claude -p`). `launchctl setenv CLAUDE_CODE_OAUTH_TOKEN` reached T3's own processes after the 01:57 restart, but T3 does not pass it to the Claude sessions it spawns: `claude auth status` in a T3 session still reports `claude.ai`, so sessions can still expire. L9 must find the path T3 supports (a T3 provider environment setting, or Claude Code's settings `env`) and prove it with `claude auth status` inside a T3 session.
 - **D9. Standing approval for upkeep and intake schedules:** approved, as an exception to "Do not silently create schedules". L8 writes it into the instructions.
 - **D10. Intake scope:** approved: owned repos with a verify skill.
 

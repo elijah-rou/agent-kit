@@ -2,7 +2,7 @@
 
 A briefing, not a lab notebook. A reviewer who has the diff should learn, in under a minute, why the change exists, what it leaves out, what it could break, how it was proved, and how to undo it. Short sentences, few identifiers. The squash commit body is the PR body, so keep it under about 40 lines.
 
-Use these `##` sections, in order. Drop a section only when it has nothing to say; Scope, Verification, and Revert are always present.
+Use these `##` sections, in order. Drop a section only when it has nothing to say; Scope, Verification, and Revert are always present, and so is Review record once an adversarial review has run.
 
 - `## Why`: the problem and the approach, in one to three sentences.
 - `## What changed`: one to three bullets. Name a symbol or path only when it carries the change. Name both sides of a rename.
@@ -11,8 +11,17 @@ Use these `##` sections, in order. Drop a section only when it has nothing to sa
 - `## Blast Radius`: one or two sentences on who or what the change touches, and why that is safe or risky. If trunk is red, the cost of leaving it red.
 - `## Verification`: one to three bullets, each a real command or journey and its observed outcome. For performance, one primary number with its unit, `before -> after`. Link longer evidence instead of pasting it.
 - `## Revert`: how to undo it and what that costs: usually reverting the squash commit, plus any data, migration, or configuration step a plain revert would not undo.
+- `## Review record`: the adversarial review's record (`git-workflow`'s pull-request review), which `correct` reads to find repeated mistake classes. For each review round, the reviewer's `reviewed by <model ID>` line, then one bullet per accepted finding: `<class>: fixed|open: <one line>`. Add a round's lines when the round ends, and keep earlier rounds. It is exempt from the bullet and length limits.
 
-Attach screenshots or video only when they prove a claim. Leave out full SHAs, file-by-file checklists, and agent narration.
+```markdown
+## Review record
+
+reviewed by <model ID>, round 1
+- <class>: fixed: <what was wrong, one line>
+- <class>: open: <what is left, one line>
+```
+
+Attach screenshots or video only when they prove a claim. Leave out full SHAs, file-by-file checklists, and agent narration; the review record is a record, not narration.
 
 ## Titles, size, and stacks
 

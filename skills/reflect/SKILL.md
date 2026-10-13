@@ -1,6 +1,6 @@
 ---
 name: reflect
-description: After a substantial session, review its transcript through three lenses (judgment, tooling, divergent), synthesize findings into Accepted, Rejected, and Backlog, route anything enforceable to the correct backlog, and, only after the user approves, apply skill edits and write the session's learning file `.agents/learning/sessions/<session-id>.json`. Use when the user invokes reflect. Not for trivial or off-topic sessions.
+description: After a substantial session, review its transcript through three lenses (judgment, tooling, divergent), synthesize findings into Accepted, Rejected, and Backlog, route anything enforceable to the correct backlog, and, only after the user approves, apply skill edits and write the session's learning files `.agents/learning/sessions/<session-id>.json` (this repository's, and agent-kit's for kit-wide learnings). Use when the user invokes reflect. Not for trivial or off-topic sessions.
 disable-model-invocation: true
 ---
 
@@ -34,20 +34,20 @@ Spawn one synthesizer subagent with `references/synthesizer.md` and the three ou
 
 ## 4. Route enforceable items to Backlog
 
-Check every Accepted row yourself. Anything a lint, type, test, script, hook, or (where the repository evaluates one) Cedar policy could enforce moves to Backlog, marked enforceable. Those items feed `correct`; skill prose is only for what no mechanism can enforce.
+Check every Accepted row yourself. Anything a lint, type, test, script, hook, or (where the repository evaluates one) Cedar policy could enforce moves to Backlog, marked enforceable. So does a judgment lesson no lint can check but a pull-request reviewer can, by pointing at the violating line: it is enforceable as a review rule (a `rules.toml` row at level `review`, applied by `pr-review`). Those items feed `correct`; skill prose is only for what neither a mechanism nor a reviewer can enforce.
 
 ## 5. Get approval before any edit
 
-Present the synthesizer's full output to the user. The user picks which rows to apply and may change their routing. Write nothing, not even the learning file, until the user answers. If the user is away, stop here and leave the output in the report's "needs you" part.
+Present the synthesizer's full output to the user. The user picks which rows to apply and may change their routing. Write nothing, not even a learning file, until the user answers. If the user is away, stop here and leave the output in the report's "needs you" part.
 
 ## 6. Apply approved rows
 
 - A small edit to an existing skill: make it directly.
 - A substantive edit, a description change, or a new skill: draft it as a reviewed change and run the skill validator on every touched skill.
 - Never edit a pinned or installed skill checkout. Global skill changes are a proposed change on a branch of the skill library's repository; repository skills live under `.agents/skills/`.
-- A `global` learning is about the kit, not this repository. Propose it on a branch of the skill library's repository (agent-kit): any approved skill edit, plus an entry in agent-kit's own `.agents/learning/sessions/<session-id>.json` in section 7's format, with its `enforceable` flag, so a `correct` run in agent-kit picks up the enforceable ones. Never write it into this repository's learning file.
+- A `global` learning is about the kit, not this repository. Propose it on a branch of the skill library's repository (agent-kit): any approved skill edit, plus an entry in agent-kit's own `.agents/learning/sessions/<session-id>.json` in section 7's format, with its `enforceable` flag, so a `correct` run in agent-kit picks up the enforceable ones. Never write it into this repository's learning file, unless this repository is agent-kit.
 
-## 7. Write the session learning file
+## 7. Write the session learning files
 
 Write the approved `repo` items from Accepted and Backlog, and nothing rejected, to this repository's `.agents/learning/sessions/<session-id>.json` as a JSON array; `global` items go to agent-kit's file of the same name (section 6):
 

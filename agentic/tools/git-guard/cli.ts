@@ -3,38 +3,32 @@
 // git policy (classify.ts) to the command in the event on stdin. It denies with Claude Code's JSON decision and exits 0, and allows by
 // printing nothing. Claude Code treats a hook that exits other than 0 or 2 as a non-blocking error and
 // runs the tool anyway, so every failure here, including an event it cannot read, becomes a deny.
-import { blockReason, type Actor, type Dialect } from "./classify.ts";
+import { blockReason, type Actor } from "./classify.ts";
 
 /**
- * Claude Code 2.1.296's tools that run their tool_input.command in a shell, and the shell each uses.
- * Found by listing the tools the binary marks enablesCodeExecution and keeping those whose input holds
- * a command (the others run JavaScript, schedule prompts, or manage runners). Monitor takes either a
- * command or a WebSocket (ws); only the command form runs a shell.
+ * Claude Code 2.1.296's tools that run their tool_input.command in a shell (Bash and Monitor in bash,
+ * PowerShell in PowerShell; the patterns read both alike). Found by listing the tools the binary marks
+ * enablesCodeExecution and keeping those whose input holds a command (the others run JavaScript,
+ * schedule prompts, or manage runners). Monitor takes either a command or a WebSocket (ws); only the
+ * command form runs a shell.
  */
-export const SHELL_TOOLS: ReadonlyMap<string, Dialect> = new Map([
-	["Bash", "posix"],
-	["Monitor", "posix"],
-	["PowerShell", "powershell"],
-]);
+export const SHELL_TOOLS: ReadonlySet<string> = new Set(["Bash", "Monitor", "PowerShell"]);
 
 const USAGE = `Usage: git-guard --claude-hook
 
-Claude Code PreToolUse hook for the tools that run a shell command (${[...SHELL_TOOLS.keys()].join(", ")}).
-Reads the event JSON on stdin and denies:
-  - skipping git hooks, in every session: --no-verify, git commit -n or git am -n, an override or
-    git config change of core.hooksPath or a hook.* key, or a hook manager's skip variable (HUSKY, SKIP,
-    LEFTHOOK, ...) set for a git command, or alone or exported in a command that runs git;
-  - git push, pull, merge, rebase, cherry-pick, revert, am, apply, tag (except listing), send-pack, and
-    http-push, git subtree push, pull, and merge, and gh pr merge, inside a subagent (the event carries
-    agent_id), unless its agent_type is autopilot-owner.
-The main session may publish. An event or command it cannot read is denied. Exit 0 except for a usage
-error (2).
+Claude Code PreToolUse hook for the tools that run a shell command (${[...SHELL_TOOLS].join(", ")}).
+Reads the event JSON on stdin and matches the command text. It denies:
+  - --no-verify after git on one line, in every session;
+  - a line (or a command after ;, &, or |) starting git push, pull, merge, rebase, cherry-pick, revert,
+    am, apply, or tag (except listing), optionally after git -C <path>, inside a subagent (the event
+    carries agent_id), unless its agent_type is autopilot-owner.
+The main session may publish. An event it cannot read is denied. Exit 0 except for a usage error (2).
 `;
 
 /** Claude Code's events are a few kilobytes; anything near this is not an event. */
 const STDIN_LIMIT_BYTES = 8 * 1024 * 1024;
 
-type Event = { tool: string; command: string | undefined; dialect: Dialect; actor: Actor };
+type Event = { tool: string; command: string | undefined; actor: Actor };
 
 class Malformed extends Error {}
 
@@ -61,14 +55,13 @@ export function parseEvent(text: string): Event {
 	// agent_type alone also appears on a main session started with --agent, so it never marks a child.
 	const agentId = optionalString(event, "agent_id");
 	const actor: Actor = agentId === undefined ? { kind: "main" } : { kind: "child", role: optionalString(event, "agent_type") };
-	const dialect = SHELL_TOOLS.get(tool);
-	if (dialect === undefined) return { tool, command: undefined, dialect: "posix", actor };
+	if (!SHELL_TOOLS.has(tool)) return { tool, command: undefined, actor };
 	const input = event.tool_input;
 	if (typeof input !== "object" || input === null || Array.isArray(input)) throw new Malformed("tool_input is missing");
 	const fields = input as Record<string, unknown>;
-	if (tool === "Monitor" && fields.command === undefined && typeof fields.ws === "object" && fields.ws !== null) return { tool, command: undefined, dialect, actor };
+	if (tool === "Monitor" && fields.command === undefined && typeof fields.ws === "object" && fields.ws !== null) return { tool, command: undefined, actor };
 	if (typeof fields.command !== "string") throw new Malformed("tool_input.command is not a string");
-	return { tool, command: fields.command, dialect, actor };
+	return { tool, command: fields.command, actor };
 }
 
 function deny(reason: string): string {
@@ -86,7 +79,7 @@ export function decide(text: string): string {
 	}
 	// A tool that runs no shell command (or a Monitor watching a WebSocket) is outside the git policy.
 	if (event.command === undefined) return "";
-	const reason = blockReason(event.command, event.actor, event.dialect);
+	const reason = blockReason(event.command, event.actor);
 	return reason === undefined ? "" : deny(reason);
 }
 

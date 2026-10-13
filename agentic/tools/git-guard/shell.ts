@@ -639,7 +639,7 @@ class Reader {
 	}
 
 	/** Strips redirections, assignments, keywords, and wrappers, follows the strings they run, and returns the command left. */
-	unwrap(all: Word[], stdin: StdinText[]): Invocation | undefined {
+	unwrap(all: Word[], stdin: StdinText[], base: string[] = this.inherited): Invocation | undefined {
 		const words: Word[] = [];
 		for (let i = 0; i < all.length; i++) {
 			const word = all[i]!;
@@ -653,7 +653,7 @@ class Reader {
 		}
 		const texts = words.map((word) => word.text);
 		// The environment this command runs with: what its text inherits, then its own assignments.
-		const assignments: string[] = [...this.inherited];
+		const assignments: string[] = [...base];
 		let i = 0;
 		// Each pass consumes at least one word, so this ends within words.length passes.
 		while (i < texts.length) {
@@ -691,7 +691,7 @@ class Reader {
 			}
 		}
 		// A command of assignments alone still sets them in the shell, which the policy reads.
-		if (i >= texts.length) return assignments.length > this.inherited.length ? { assignments, program: "", args: [], patterned: [] } : undefined;
+		if (i >= texts.length) return assignments.length > base.length ? { assignments, program: "", args: [], patterned: [] } : undefined;
 		const programWord = words[i]!;
 		if (programWord.glob && programWord.text !== "[" && programWord.text !== "[[") throw new Unreadable(`its program name ${programWord.text} holds an unquoted glob or brace pattern`);
 		// zsh expands =name in command position to the path of name.
@@ -789,9 +789,16 @@ class Reader {
 			}
 			// -File <script> [args]: the rest is the script's.
 			if (kind === "file") return;
-			// A value option consumes the next word, unless that word itself names -Command, -EncodedCommand,
-			// or -File: then it is read as that option, which fails closed.
-			if (kind === "value" && !(dash(args[i + 1]) && ["command", "encoded", "file"].includes(powerShellParameter(args[i + 1]!.replace(/^[-/]+/, "").toLowerCase()) ?? ""))) i++;
+			// A value option consumes the next word. When that word also names -Command, -EncodedCommand, or
+			// -File (`-wd /c`, `-wd -c`), pwsh takes it as the value, but a reader that chose either meaning
+			// could be wrong about the rest, so the command is unreadable.
+			if (kind === "value") {
+				const next = args[i + 1];
+				if (dash(next) && ["command", "encoded", "file"].includes(powerShellParameter(next!.replace(/^[-/]+/, "").toLowerCase()) ?? "")) {
+					throw new Unreadable(`its PowerShell option ${arg} takes ${next} as a value, which also names an option that runs a command`);
+				}
+				i++;
+			}
 		}
 	}
 
@@ -801,8 +808,9 @@ class Reader {
 			if (!FIND_EXEC.has(args[i]!)) continue;
 			const end = args.findIndex((arg, at) => at > i && (arg === ";" || arg === "+"));
 			const command = args.slice(i + 1, end === -1 ? args.length : end);
-			const invocation = this.unwrap(command.map((text) => ({ text, glob: false, quoted: false })), []);
-			if (invocation) this.found.push({ ...invocation, assignments: [...carry, ...invocation.assignments] });
+			// The command runs with find's environment, so it starts from find's assignments.
+			const invocation = this.unwrap(command.map((text) => ({ text, glob: false, quoted: false })), [], carry);
+			if (invocation) this.found.push(invocation);
 			i = end === -1 ? args.length : end;
 		}
 	}

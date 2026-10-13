@@ -281,8 +281,10 @@ describe("round 5", () => {
 		expectDeny("pwsh -in -c 'git push origin x'", build, /could not read this command: its PowerShell option -in is ambiguous/, "powershell");
 		expectDeny("pwsh -in -c 'git commit -n -m x'", main, /could not read this command/, "powershell");
 		expectDeny("pwsh -co 'git push origin x'", build, /ambiguous/, "powershell");
-		for (const command of ["pwsh -inp Text -c 'git push origin x'", "pwsh -if Text -c 'git push origin x'", "pwsh -i -c 'git push origin x'", "pwsh -ExecutionPolicy -Command 'git push origin x'", "pwsh -wd -c 'git push origin x'", "pwsh -CustomPipeName p -Command 'git push origin x'", "pwsh -custom p -Command 'git push origin x'", "pwsh -nop -noni -Command 'git push origin x'", "pwsh -com 'git push origin x'"]) expectDeny(command, build, /git push/, "powershell");
-		expectDeny("pwsh -ep -e ZwBpAHQAIABwAHUAcwBoAA==", build, /git push/, "powershell");
+		for (const command of ["pwsh -inp Text -c 'git push origin x'", "pwsh -if Text -c 'git push origin x'", "pwsh -i -c 'git push origin x'", "pwsh -CustomPipeName p -Command 'git push origin x'", "pwsh -custom p -Command 'git push origin x'", "pwsh -nop -noni -Command 'git push origin x'", "pwsh -com 'git push origin x'"]) expectDeny(command, build, /git push/, "powershell");
+		// A value option whose next word also names an option that runs a command is unreadable.
+		for (const command of ["pwsh -ExecutionPolicy -Command 'git push origin x'", "pwsh -wd -c 'git push origin x'", "pwsh -ep -e ZwBpAHQAIABwAHUAcwBoAA==", "pwsh -wd /c -c 'git push origin x'", "pwsh -wd -c -c 'git push origin x'"]) expectDeny(command, build, /could not read this command: its PowerShell option .* takes .* as a value/, "powershell");
+		expectDeny("pwsh -wd /f -c 'git commit -n -m x'", main, /could not read this command: its PowerShell option/, "powershell");
 		expectAllow("pwsh -wd C:\\src -File build.ps1", build, "powershell");
 	});
 	test("G2: a single quote inside a double-quoted ${...} holding } or \" is unreadable", () => {
@@ -296,6 +298,11 @@ describe("round 5", () => {
 			for (const command of ["$env:HUSKY = '0'; git commit -m x", "$env:SKIP='lint'; git commit -m x", "$env:lefthook = 0\ngit push origin x"]) expectDeny(command, actor, /hook manager's skip variable/, "powershell");
 			for (const command of ["HUSKY=0 sh -c 'git commit -m x'", "HUSKY=0 eval git commit -m x", "SKIP=lint bash <<'EOF'\ngit commit -m x\nEOF", "HUSKY=0 env -S 'git commit -m x'", "LEFTHOOK=0 find . -maxdepth 0 -exec git commit -m x \\;", "SKIP=lint watch -n 1 git commit -m x", "HUSKY=0 flock /tmp/l -c 'git commit -m x'"]) expectDeny(command, actor, /hook manager's skip variable/);
 			for (const command of ["declare -x HUSKY=0; git commit -m x", "typeset -x SKIP=lint; git commit -m x", "local SKIP=lint; git commit -m x", "readonly HUSKY=0; git commit -m x"]) expectDeny(command, actor, /hook manager's skip variable/);
+		}
+		// The carry through every program the reader follows into.
+		for (const actor of [main, owner]) {
+			for (const command of ["HUSKY=0 find . -maxdepth 0 -exec sh -c 'git commit -m x' \\;", "HUSKY=0 pwsh -c 'git commit -m x'", "HUSKY=0 pwsh -EncodedCommand ZwBpAHQAIABjAG8AbQBtAGkAdAA=", "HUSKY=0 cmd /c git commit -m x", "HUSKY=0 wsl git commit -m x", "HUSKY=0 pwsh -c \"Invoke-Expression 'git commit -m x'\"", "SKIP=lint git submodule foreach 'git commit -m x'"]) expectDeny(command, actor, /hook manager's skip variable/);
+			expectDeny("$env:HUSKY = '0'; Invoke-Expression 'git commit -m x'", actor, /hook manager's skip variable/, "powershell");
 		}
 		for (const command of ["HUSKY=0 sh -c 'npm ci'; git status", "$env:HUSKY = '0'; npm ci"]) expectAllow(command, main, command.startsWith("$") ? "powershell" : "posix");
 	});

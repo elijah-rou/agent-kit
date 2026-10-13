@@ -97,7 +97,18 @@ The audit thread needed nine user interventions and ended with six of its eleven
 | A5 | A user guide and a help entry ("which skill fits") | `docs/guide/`, `poteto-help` | Builds on PR #34 |
 | A6 | An independent comment pass | `no-comments` | Gap 5 of the PR #34 analysis |
 | A7 | Program budget: stop spawning at about 70% of the budget and land what is verified; two retries, then replan | `orchestrate.md` | |
-| A8 | Outer loop: triage, reproduce, fix, verify, fed by a T3 webhook schedule | `automations/benny` | Supersedes the deferred Hermes design; last, only after A1 to A3 run cleanly |
+| A8 | One outer loop: a CI failure on `main` of an owned repo posts a signed GitHub webhook to a T3 `schedule_task`, which runs triage, then reproduce, then a fix PR, landing through the normal mode. Only trusted triggers (CI on the user's branches, a label the user applies); every stage can stop the line and hands evidence on; workers are read-only except the fixer. | `automations/benny` (stage design), guide `07-overnight.md` (earn trust first) | interview-tutor `main` failed 7 runs in a row with no owner. Slack/phone intake, Bugbot, cloud execution, and Hermes stay deferred |
+
+## Outer loop (what pstack depends on outside the chat)
+
+| Layer | pstack uses | Load-bearing for pstack | Here |
+|---|---|---|---|
+| Wake | `/loop` for Autonomous run, autopilot ticks, the Shipping watch | Yes | T3 `watch_pull_request` for PR waits; ticks as T3 `schedule_task` bound to the thread, not in-session cron (A1, A2) |
+| Durable execution | Cursor cloud agents and Projects, so runs continue with the laptop closed | Yes, for overnight runs | Laptop-local T3. Watchdog that notifies (A2) now; cloud execution only if stalls recur after it |
+| Scheduled upkeep | `maintain-verification-skill` daily automation | Yes, verdicts depend on it | T3 `fixed_time` schedule (A3) |
+| Event intake | `benny`: Slack report, triage, reproduce, draft PR, Linear | No, team-shaped | One GitHub-driven loop (A8) |
+| Review bots | Bugbot, agentic security review, triaged by Babysit | No, the verification swarm is primary | `pr-review` role; skip |
+| Forge | Origin, optional | No | `gh` |
 
 ## 6. Gaps in both systems
 
@@ -137,7 +148,7 @@ Each slice is one PR or a short stack. It is verified with `verify-agent-kit`, a
 6. **Catch-up and guide:** A4, A5, PR #34 reworked into the guide.
 7. **Scheduled upkeep:** A3, A6.
 8. **Removals and Jev:** R3, J1, J2.
-9. **Outer loop:** A8, only after slices 3 and 7 have run cleanly for a week.
+9. **Outer loop:** A8, only after A1 to A3 have run cleanly for a week, and only for repos with a verify skill.
 
 ## Notes from slice 0a review
 

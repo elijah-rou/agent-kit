@@ -4,7 +4,7 @@ Read before spawning workers for an unattended program. If one agent can finish 
 
 ## Roles
 
-- **One coordinator** per program. It frames the run, writes briefs, accepts results, and is the only agent that publishes, except an autopilot-full owner (`babysit-and-ship`): it pushes its own `agent/*` branch, and opens and merges only its own pull request, merging only after the coordinator's clean verdict.
+- **One coordinator** per program. It frames the run, writes briefs, accepts results, and is the only agent that publishes, except an autopilot-full owner, which carries its own pull request through the merge as `babysit-and-ship`'s `autopilot-full.md` defines (see Children).
 - **One owner per pull request.** It builds and babysits that PR. A takeover is explicit and recorded in the PR body.
 - **The root is the only writer of branch structure:** rebases, retargets, and stack order. The one exception is an autopilot-full owner rebasing its own branch onto trunk.
 - **Verifiers** are fresh agents that did not write the code. A worker may self-report; a verifier's verdict overrides it.
@@ -13,8 +13,8 @@ Read before spawning workers for an unattended program. If one agent can finish 
 
 - Brief each child with its objective, workspace, authority boundary, decisions already made, acceptance check, expected output, and when to stop and escalate.
 - Each child works in its own worktree and branch; one writer per checkout.
-- Tell each child it does not push, merge, deploy, or post, and do not hand children credentials that could. The exception is an autopilot-full owner, which pushes its own `agent/*` branch, and opens and merges only its own pull request after the coordinator's clean verdict; it still never deploys or touches another branch or pull request.
-- Before fanning out several writers that build containers or run heavy jobs, check the resources they share: free disk, and the usage budget or rate limit the agents draw on. Launch only as many as those allow, and queue the rest.
+- Tell each child it does not push, merge, deploy, or post, and do not hand children credentials that could. The exception is an autopilot-full owner, which carries its own pull request through the merge as `babysit-and-ship`'s `autopilot-full.md` defines: it pushes its own `agent/*` branch, opens its pull request after the first push, answers bot threads on it, and merges it only after the coordinator's clean verdict. It never deploys, messages people, or touches another branch or pull request.
+- Before fanning out several writers that build containers or run heavy jobs, check the resources they share: free disk, and the usage budget or rate limit the agents draw on. Launch only as many as those allow, and queue the rest. If the usage budget cannot be read, start two, and add more only after those report without hitting a limit; on 2026-10-12 five at once exhausted it.
 - Child reports are evidence, not acceptance. Check their artifacts before relying on them.
 
 ## Shared state

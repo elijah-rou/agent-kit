@@ -19,7 +19,7 @@ Each owner is a child launched with the `autopilot-owner` role, the only child r
 5. Report code-ready with the head SHA. Then babysit to green (sections 2 to 4 of `babysit-and-ship`, with `agentic watch-pr --pr <n>`), and report merge-ready with the head SHA. Where those sections say to report a rebase and stop, or that babysitting never merges, this lifecycle overrides them for the owner's own PR.
 6. Never record or publish a verdict, and never merge before you say the verdict is clean.
 
-Run owners in parallel when their PRs touch disjoint files; serialize only work that genuinely overlaps. Owners do not stack: sequenced work is merge, then branch.
+Run owners in parallel when their PRs touch disjoint files, and serialize work that genuinely overlaps. Shared resources also bound how many run at once: before launching owners that build containers or run heavy jobs, run the fan-out check in `background-run`'s coordination reference, and queue the rest. Owners do not stack: sequenced work is merge, then branch.
 
 ## 3. Verify every round
 

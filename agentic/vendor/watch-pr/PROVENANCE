@@ -1,13 +1,17 @@
 upstream_repo: https://github.com/cursor/plugins
 upstream_path: pstack/skills/poteto-mode/scripts/watch-pr
-commit: 9f451cf875ad1239912762f67741e8e5ba6ac0f1
+commit: ff8f83da30af53de945acd0e1dc10a7b21a3187f
 license: MIT, Copyright (c) 2026 Lauren Tan; see LICENSE (copied from pstack/LICENSE)
 
 The key: value lines above are read by agentic/tools/upstream-drift. Keep them first in this
 file.
 
-Copied from a local checkout of cursor/plugins with HEAD at the commit above. Every upstream
-file in the directory was copied unchanged except as listed.
+Copied from a local checkout of cursor/plugins at the commit above. Every upstream file in the
+directory was copied unchanged except as listed.
+
+History: first vendored at 9f451cf875ad1239912762f67741e8e5ba6ac0f1; resynced to the commit above,
+cursor/plugins#484, which pages review threads instead of reading only the first 100 (changed
+fakes.test-helper.ts, github.test.ts, github.ts, policy.test.ts, policy.ts, types.ts).
 
 Changes from upstream:
 - watch-pr (the executable shim): removed `import { ensureDependenciesInstalled } from

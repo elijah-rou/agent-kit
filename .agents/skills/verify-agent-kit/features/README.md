@@ -4,7 +4,7 @@ This directory is the maintained source for verifying what agent-kit does for th
 
 ## Baseline preconditions
 
-- Only the driven checkout's entry points run: its `agentic/bin/agentic`, `agentic/tools/jev/cli.ts`, `claude/statusline.ts`, and `claude/mods/trial-tools`. The `agentic` installed on `PATH` is never used.
+- Only the driven checkout's entry points run: its `agentic/bin/agentic`, `agentic/tools/jev/cli.ts`, `agentic/tools/git-guard/cli.ts`, `claude/statusline.ts`, and `claude/mods/trial-tools`. The `agentic` installed on `PATH` is never used.
 - To verify a pull request, the kit runs from a checkout of the base branch and drives the head's worktree through `--checkout`.
 - `scripts/verify-kit launch` created this run and printed its `RUN_ID`, and `scripts/verify-kit doctor RUN_ID` ends with `DOCTOR PASS`. Every drive refuses a checkout that moved since launch.
 - The run directory `$TMPDIR/verify-agent-kit/<RUN_ID>/` holds this run's `XDG_STATE_HOME` (`state/`), orch store (`orch/`), and two scratch git repositories: `fixture/`, and `fixture-optout/`, which holds `.agents/jev-opt-out`. No drive writes to the user's real task-route ledger or to any repository's verdict ledger.
@@ -36,6 +36,7 @@ Each feature file starts with an H1 title and one paragraph describing the behav
 - [Pull request state](./pr-state.md): reading a pull request's feedback, checks, and readiness, and watching it.
 - [Skill catalog](./skill-catalog.md): the skills and subagent roles each runtime receives, and repository skill discovery.
 - [Claude Code surface](./claude-surface.md): the quota status line and the trial-tools Mod.
+- [Git guard](./git-guard.md): the PreToolUse hook (not yet wired by bootstrap) that refuses skipping git hooks everywhere and git publication from subagents other than an `autopilot-owner`, and what it over-refuses.
 
 ## Not mapped yet
 

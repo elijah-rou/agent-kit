@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // Control CLI for the verify-agent-kit skill. It drives an agent-kit checkout's own entry points (the
-// agentic CLI, the prompt-routing hook, the skill exports, the Claude Code Mod and status line) the way
+// agentic CLI, the prompt-routing hook, the git guard hook, the skill exports, the Claude Code Mod and status line) the way
 // the runtimes call them, with every writable store redirected into a per-run directory. The kit that
 // runs need not be the checkout it drives: a verifier runs trunk's kit with --checkout <head>, so a pull
 // request never supplies its own verifier.
@@ -19,7 +19,7 @@ const RUN_ID = /^ak-\d{8}-\d{6}-\d+$/;
 // Versioned so a kit from before the kit-binding check refuses runs this kit launched.
 const MARKER = "verify-kit run v2";
 const STEP_TIMEOUT_MS = 180_000;
-const FEATURES = ["task-route", "merge-gate", "pr-state", "skill-catalog", "claude-surface"] as const;
+const FEATURES = ["task-route", "merge-gate", "pr-state", "skill-catalog", "claude-surface", "git-guard"] as const;
 type Feature = (typeof FEATURES)[number];
 type Outcome = { state: "PASS" | "FAIL" | "SKIP"; detail?: string };
 type RunInfo = { marker: string; runId: string; checkout: string; revision: string; tree: string; kit: string; kitRevision: string; kitTree: string; dirty: boolean; startedAt: string };
@@ -100,6 +100,7 @@ Examples:
   ${CLI} drive ak-20261012-213000-4242 pr-state --merged-pr 22
   ${CLI} drive ak-20261012-213000-4242 skill-catalog
   ${CLI} drive ak-20261012-213000-4242 claude-surface
+  ${CLI} drive ak-20261012-213000-4242 git-guard
 `,
 	cleanup: `Usage: ${CLI} cleanup RUN_ID
 
@@ -741,6 +742,114 @@ function driveClaudeSurface(run: RunInfo, rec: Recorder): void {
 	rec.check(git(["status", "--porcelain=v1", "-uall"], run.checkout) === before, "driving the Mod leaves the checkout's tracked and untracked files unchanged");
 }
 
+/** A Claude Code PreToolUse event for a tool, from the main session or from a subagent. */
+function preToolUseEvent(runId: string, cwd: string, input: Record<string, unknown>, agent?: { id: string; type?: string }, tool = "Bash"): string {
+	return JSON.stringify({
+		session_id: `${runId}-git-guard`,
+		transcript_path: "/dev/null",
+		cwd,
+		permission_mode: "bypassPermissions",
+		hook_event_name: "PreToolUse",
+		tool_name: tool,
+		tool_input: { description: "verify-agent-kit git-guard case", ...input },
+		tool_use_id: "toolu_verify_agent_kit",
+		...(agent ? { agent_id: agent.id, ...(agent.type === undefined ? {} : { agent_type: agent.type }) } : {}),
+	});
+}
+
+/** A scratch git repository whose bunfig.toml preloads a script that prints, as an ordinary Bun project's might. */
+function guardProject(run: RunInfo): string {
+	const project = join(runDir(run.runId), "git-guard-project");
+	mkdirSync(project, { recursive: true });
+	git(["init", "-q", "-b", "main"], project);
+	writeFileSync(join(project, "preload.ts"), 'console.log("project preload ran");\n');
+	writeFileSync(join(project, "bunfig.toml"), 'preload = ["./preload.ts"]\n');
+	return project;
+}
+
+function driveGitGuard(run: RunInfo, rec: Recorder): void {
+	const project = guardProject(run);
+	const hookCli = join(run.checkout, "agentic/tools/git-guard/cli.ts");
+	// The documented command: --cwd keeps Bun from loading the project's bunfig.toml.
+	const hook = ["bun", "--cwd", run.checkout, hookCli];
+	const worker = { id: "a-verify-worker", type: "general-purpose" };
+	const owner = { id: "a-verify-owner", type: "autopilot-owner" };
+	const event = (command: string, agent?: { id: string; type?: string }, tool?: string) => preToolUseEvent(run.runId, project, { command }, agent, tool);
+	const skip = /skipping git hooks/;
+	const cases: { id: string; stdin: string; deny?: RegExp }[] = [
+		{ id: "main-push", stdin: event("git push origin main") },
+		{ id: "main-no-verify", stdin: event("git commit --allow-empty --no-verify -m probe"), deny: skip },
+		{ id: "main-commit-n", stdin: event("git commit -nm probe"), deny: skip },
+		{ id: "subagent-push", stdin: event("git push origin agent/x", worker), deny: /child publication\/integration command: git push/ },
+		{ id: "subagent-rebase", stdin: event("cd sub && git -C . rebase origin/main", worker), deny: /child publication\/integration command: git rebase/ },
+		{ id: "subagent-absolute-git", stdin: event("/usr/bin/git push", worker), deny: /child publication\/integration command: git push/ },
+		{ id: "subagent-gh-merge", stdin: event("gh pr merge 28 --squash", worker), deny: /child publication\/integration command: gh pr merge/ },
+		{ id: "subagent-monitor-push", stdin: event("git push origin agent/x", worker, "Monitor"), deny: /child publication\/integration command: git push/ },
+		{ id: "subagent-local", stdin: event("git commit -m local", worker) },
+		{ id: "subagent-not-git", stdin: event("ls -la", worker) },
+		{ id: "subagent-write", stdin: preToolUseEvent(run.runId, project, { file_path: join(project, "x.sh"), content: "git push --no-verify" }, worker, "Write") },
+		{ id: "main-heredoc-no-verify", stdin: event("git commit -m \"$(cat <<'EOF'\nDon't skip hooks\nEOF\n)\" --no-verify"), deny: skip },
+		{ id: "main-redirected-commit-n", stdin: event("2>/dev/null git commit -n -m x"), deny: skip },
+		{ id: "main-hooks-path", stdin: event("git config core.hooksPath .githooks"), deny: /changing core.hooksPath or a hook.\* key with git config.*ask the user/ },
+		{ id: "main-mention", stdin: event("git commit -m \"docs: explain why --no-verify is refused\""), deny: /may only mention the flag.*git commit -F <file>/ },
+		{ id: "main-commit-file", stdin: event("git commit -F .git/COMMIT_MSG_DRAFT") },
+		{ id: "main-unreadable", stdin: event("git commit -m \"unterminated"), deny: /could not read this command/ },
+		{ id: "subagent-redirected-push", stdin: event(">/dev/null git push origin x", worker), deny: /child publication\/integration command: git push/ },
+		{ id: "subagent-env-split", stdin: event("env -S'git push origin x'", worker), deny: /child publication\/integration command: git push/ },
+		{ id: "subagent-subtree-push", stdin: event("git subtree push --prefix=d origin x", worker), deny: /child publication\/integration command: git subtree push/ },
+		{ id: "subagent-powershell-escape", stdin: event("git pu`sh origin x", worker, "PowerShell"), deny: /child publication\/integration command: git push/ },
+		{ id: "main-arithmetic", stdin: event("echo \"$(( 1 << 2 ))\"") },
+		{ id: "subagent-arithmetic-subshell", stdin: event("out=$((git push origin agent/x) 2>&1)", worker), deny: /child publication\/integration command: git push/ },
+		{ id: "main-hook-key-override", stdin: event("git -c hook.pre-commit.enabled=false commit -m wip"), deny: skip },
+		{ id: "main-hook-key-write", stdin: event("git config hook.pre-commit.enabled false"), deny: /hook.\* key with git config.*ask the user/ },
+		{ id: "main-am-n", stdin: event("git am -n < 0001-fix.patch"), deny: skip },
+		{ id: "main-heredoc-to-sh", stdin: event("cat <<'EOF' | sh\ngit commit -n -m x\nEOF"), deny: skip },
+		{ id: "subagent-printf-to-sh", stdin: event("printf '%s\\n' 'git push origin x' | sh", worker), deny: /could not read this command: .*feeds a shell/ },
+		{ id: "main-script-reads-data", stdin: event("printf '{\"k\":\"v\"}' | /bin/sh script.sh") },
+		{ id: "main-case-patterns", stdin: event("case \"$v\" in *A*) echo a;; *B*) echo b;; esac") },
+		{ id: "subagent-case-in-substitution", stdin: event("echo \"$(case $x in a) git push;; esac)\"", worker), deny: /child publication\/integration command: git push/ },
+		{ id: "subagent-eval-dash-c", stdin: event("eval git -C repo push origin x", worker), deny: /child publication\/integration command: git push/ },
+		{ id: "subagent-case-comment", stdin: event("case \"$1\" in\n  # it's the release branch\n  release) git push origin release ;;\n  *) echo skip ;;\nesac", worker), deny: /child publication\/integration command: git push/ },
+		{ id: "main-remove-section", stdin: event("git config remove-section hook.lint"), deny: /hook.\* key with git config.*ask the user/ },
+		{ id: "main-husky-skip", stdin: event("HUSKY=0 git commit -m x"), deny: /hook manager's skip variable/ },
+		{ id: "main-exported-skip", stdin: event("export SKIP=lint && git commit -m x"), deny: /hook manager's skip variable/ },
+		{ id: "main-skip-without-git", stdin: event("SKIP=lint pre-commit run --all-files") },
+		{ id: "subagent-pwsh-ambiguous", stdin: event("pwsh -in -c 'git push origin x'", worker, "PowerShell"), deny: /could not read this command: its PowerShell option -in is ambiguous/ },
+		{ id: "subagent-quote-in-parameter", stdin: event("echo \"${x:-'}\"'}\" ; command git push origin x ; echo \"' #\"", worker), deny: /could not read this command: a single quote inside a double-quoted/ },
+		{ id: "main-skip-into-sh", stdin: event("HUSKY=0 sh -c 'git commit -m x'"), deny: /hook manager's skip variable/ },
+		{ id: "main-powershell-env-skip", stdin: event("$env:HUSKY = '0'; git commit -m x", undefined, "PowerShell"), deny: /hook manager's skip variable/ },
+		{ id: "subagent-pwsh-value-names-command", stdin: event("pwsh -wd /c -c 'git push origin x'", worker, "PowerShell"), deny: /could not read this command: its PowerShell option -wd takes \/c as a value/ },
+		{ id: "main-skip-into-find-exec", stdin: event("HUSKY=0 find . -maxdepth 0 -exec sh -c 'git commit -m x' \\;"), deny: /hook manager's skip variable/ },
+		{ id: "subagent-powershell-capture", stdin: event("$out = git push origin agent/x 2>&1", worker, "PowerShell"), deny: /child publication\/integration command: git push/ },
+		{ id: "subagent-subtree-prefix", stdin: event("git subtree -P dist push origin gh-pages", worker), deny: /child publication\/integration command: git subtree push/ },
+		{ id: "main-unset-hooks-path", stdin: event("git config --unset core.hooksPath"), deny: /hook.\* key with git config.*ask the user/ },
+		{ id: "subagent-merge-base", stdin: event("git merge-base HEAD origin/main", worker) },
+		{ id: "subagent-tag-list", stdin: event("git tag -l", worker) },
+		{ id: "owner-push", stdin: event("git push --force-with-lease=agent/x:abc origin agent/x", owner) },
+		{ id: "owner-no-verify", stdin: event("git commit --no-verify -m x", owner), deny: skip },
+		{ id: "malformed", stdin: "not json", deny: /could not read the PreToolUse event/ },
+	];
+	const exposed = rec.step("hook-project-bunfig-without-cwd", ["bun", hookCli, "--claude-hook"], { cwd: project, input: event("git commit --no-verify -m x") });
+	rec.check(exposed.stdout.startsWith("project preload ran"), "project-bunfig: without --cwd, the project's preload prints before the decision, so the fixture bites");
+	const before = sh(["git", "rev-parse", "--verify", "-q", "HEAD"], { cwd: project }).stdout.trim();
+	for (const c of cases) {
+		const result = rec.step(`hook-${c.id}`, [...hook, "--claude-hook"], { cwd: project, input: c.stdin });
+		rec.check(result.status === 0, `${c.id}: the hook exits 0 (got ${result.status})`);
+		if (c.deny === undefined) {
+			rec.check(result.stdout.trim() === "", `${c.id}: the hook allows by printing nothing (got "${result.stdout.trim()}")`);
+			continue;
+		}
+		const decision = parseJson(result.stdout) as { hookSpecificOutput?: Record<string, unknown> } | undefined;
+		const output = decision?.hookSpecificOutput;
+		rec.check(decision !== undefined && Object.keys(decision).length === 1 && output?.hookEventName === "PreToolUse" && output.permissionDecision === "deny", `${c.id}: the hook prints exactly Claude Code's PreToolUse deny decision (got "${result.stdout.trim()}")`);
+		rec.check(typeof output?.permissionDecisionReason === "string" && c.deny.test(output.permissionDecisionReason), `${c.id}: the deny reason matches ${c.deny} (got ${JSON.stringify(output?.permissionDecisionReason)})`);
+	}
+	const usage = rec.step("hook-usage", hook, { cwd: project });
+	rec.check(usage.status === 2 && usage.stdout.trim() === "", `the hook without --claude-hook is a usage error, exit 2 with no decision (got ${usage.status})`);
+	// The hook reads text and runs nothing: the scratch repository has no commit afterwards, as before.
+	rec.check(before === "" && sh(["git", "rev-parse", "--verify", "-q", "HEAD"], { cwd: project }).stdout.trim() === "", "the hook ran none of the commands: the scratch project still has no commit");
+}
+
 function drive(runId: string | undefined, feature: string | undefined, options: Options): Outcome {
 	const run = loadRun(runId);
 	if (!FEATURES.includes(feature as Feature)) throw new Usage(`unknown feature "${feature ?? ""}"; choose one of ${FEATURES.join(", ")}`);
@@ -755,6 +864,7 @@ function drive(runId: string | undefined, feature: string | undefined, options: 
 				case "pr-state": drivePrState(run, rec, options); break;
 				case "skill-catalog": driveSkillCatalog(run, rec); break;
 				case "claude-surface": driveClaudeSurface(run, rec); break;
+				case "git-guard": driveGitGuard(run, rec); break;
 			}
 			const after = bound(run);
 			if (after) rec.check(false, after);

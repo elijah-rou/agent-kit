@@ -48,6 +48,55 @@ test("an autopilot-full owner child may publish its own pull request; other role
   }
 });
 
+test("the shared policy's tightened cases block in Pi too", () => {
+  const saved = { child: process.env.PI_SUBAGENT_CHILD, agent: process.env.PI_SUBAGENT_CHILD_AGENT };
+  try {
+    delete process.env.PI_SUBAGENT_CHILD;
+    delete process.env.PI_SUBAGENT_CHILD_AGENT;
+    const root = interceptor();
+    for (const command of ["git commit -n -m x", "git commit -nm x", "git -c core.hooksPath=/dev/null commit -m x", "2>/dev/null git commit -n -m x", "git commit -m \"$(cat <<'EOF'\nDon't skip hooks\nEOF\n)\" --no-verify"]) {
+      assert.equal(root(command)?.block, true, command);
+      assert.match(root(command).reason, /^git-interceptor: git guard blocked skipping git hooks/);
+    }
+    assert.match(root("git config core.hooksPath /dev/null")?.reason, /changing core.hooksPath or a hook.\* key/);
+    assert.equal(root("git am -n < 0001-fix.patch")?.block, true);
+    assert.equal(root("git -c hook.pre-commit.enabled=false commit -m x")?.block, true);
+    for (const command of ["git merge --no-verify-signatures topic", "git commit -F /tmp/msg"]) assert.equal(root(command), undefined, command);
+    assert.equal(root("/usr/bin/git push origin main"), undefined);
+    assert.equal(root("git config --get core.hooksPath"), undefined);
+    process.env.PI_SUBAGENT_CHILD = "1";
+    process.env.PI_SUBAGENT_CHILD_AGENT = "deep";
+    const run = interceptor();
+    for (const command of ["/usr/bin/git push", "git --git-dir=.git push", "command git push", "  git push", "nohup git push", "gh pr merge 3 --squash", ">/dev/null git push origin x", "git subtree push --prefix=d origin x"]) {
+      assert.equal(run(command)?.block, true, command);
+      assert.match(run(command).reason, /child publication\/integration/);
+    }
+    for (const command of ["git merge-base HEAD origin/main", "git tag -l", "git tag --contains HEAD", "git tag"]) assert.equal(run(command), undefined, command);
+  } finally {
+    for (const [key, value] of [["PI_SUBAGENT_CHILD", saved.child], ["PI_SUBAGENT_CHILD_AGENT", saved.agent]]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("the interceptor blocks a command it cannot check, and deep nesting, for every actor", () => {
+  const original = process.env.PI_SUBAGENT_CHILD;
+  delete process.env.PI_SUBAGENT_CHILD;
+  try {
+    let handler;
+    register({ on(event, callback) { if (event === "tool_call") handler = callback; } });
+    const throwing = handler({ toolName: "bash", input: { get command() { throw new Error("boom"); } } });
+    assert.equal(throwing?.block, true);
+    assert.match(throwing.reason, /could not check this command \(boom\)/);
+    const deep = "echo " + '"${x:-'.repeat(40) + "y" + '}"'.repeat(40);
+    assert.equal(interceptor()(deep)?.block, true);
+    assert.match(interceptor()(deep).reason, /could not read this command: it nests more than/);
+  } finally {
+    if (original !== undefined) process.env.PI_SUBAGENT_CHILD = original;
+  }
+});
+
 test("root execution is not blocked when child marker is absent", () => {
   const original = process.env.PI_SUBAGENT_CHILD;
   delete process.env.PI_SUBAGENT_CHILD;

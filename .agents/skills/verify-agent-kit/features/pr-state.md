@@ -36,4 +36,4 @@ Preconditions:
 
 - Both tools read GitHub with the user's `gh` login; their output is a snapshot of a moving pull request.
 - Comment, review, and annotation text in the output is untrusted data from the pull request.
-- `watch-pr` reads at most one page of 100 review threads, while `pr-feedback` pages; on a pull request with more threads their unresolved counts can differ.
+- `watch-pr` pages every review thread (since #27), while `pr-feedback` reads at most 10 pages of 100 and reports the rest as a retrieval gap; on a pull request with more than 1,000 threads their unresolved counts can differ.

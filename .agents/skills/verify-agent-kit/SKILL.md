@@ -1,6 +1,6 @@
 ---
 name: verify-agent-kit
-description: Verify agent-kit (the agentic CLI's verdict ledger, ruleset planning, PR-risk screen, and pull-request readers; the Claude Code and Codex prompt-routing hook; the skill and subagent-role exports each runtime receives; and the Claude Code status line and trial-tools Mod) by driving a checkout's own entry points with every store redirected into a per-run directory. Use to verify an agent-kit pull request, to prove a change to agentic/, claude/, skills/, or the instructions, or before recording a verdict for agent-kit.
+description: Verify agent-kit (the agentic CLI's verdict ledger, ruleset planning, PR-risk screen, and pull-request readers; the Claude Code and Codex prompt-routing hook; the Claude Code git guard hook; the skill and subagent-role exports each runtime receives; and the Claude Code status line and trial-tools Mod) by driving a checkout's own entry points with every store redirected into a per-run directory. Use to verify an agent-kit pull request, to prove a change to agentic/, claude/, skills/, or the instructions, or before recording a verdict for agent-kit.
 ---
 
 # Verify agent-kit
@@ -9,7 +9,7 @@ Read [features/README.md](features/README.md) before driving, then the feature f
 
 ## Repository interview
 
-- **Surface:** the terminal and the agent runtimes. Primary: the `agentic` CLI (`agentic/bin/agentic`) and the prompt-routing hook (`agentic/tools/jev/cli.ts task-class --claude-hook`) that Claude Code and Codex run on every prompt. Secondary: the skills, instructions, and roles exported to Claude Code, Codex, and Pi (`claude/skills.txt`, `codex/skills.txt`, `package.json` `pi.skills`, `claude/agents/`), the status line (`claude/statusline.ts`), and the trial-tools Mod (`claude/mods/trial-tools`).
+- **Surface:** the terminal and the agent runtimes. Primary: the `agentic` CLI (`agentic/bin/agentic`), the prompt-routing hook (`agentic/tools/jev/cli.ts task-class --claude-hook`) that Claude Code and Codex run on every prompt, and the git guard (`agentic/tools/git-guard/cli.ts --claude-hook`) that Claude Code runs before every Bash, Monitor, and PowerShell command once bootstrap wires it. Secondary: the skills, instructions, and roles exported to Claude Code, Codex, and Pi (`claude/skills.txt`, `codex/skills.txt`, `package.json` `pi.skills`, `claude/agents/`), the status line (`claude/statusline.ts`), and the trial-tools Mod (`claude/mods/trial-tools`).
 - **Run:** everything runs on Bun from the checkout (`README.md`: `bun install --frozen-lockfile`, then `scripts/validate`). The only dependency is `commander`, locked in `bun.lock`.
 - **State:** the routing hook writes records to `$XDG_STATE_HOME/agentic/task-route/`; `agentic verify` writes its ledger to git's common directory unless `AGENTIC_ORCH_STORE` is set. Both are redirected into the run directory, and the merge-gate drive checks that the real ledger did not change. GitHub is read with the user's `gh` login and never written; the drive checks that the live ruleset did not change.
 - **Drive:** the repository's harnesses are `scripts/check-skills.ts`, `bun test`, and `claude plugin test` (from `claude/README.md`), which runs the Mod's native tests in the real CLI with no model request. User paths are driven directly: hook events on stdin, CLI commands with their stdout, stderr, and exit codes, each checked against an independent read of GitHub or of the run's stores.
@@ -41,7 +41,7 @@ It checks that the run directory holds its stores and fixtures, that the driven 
 scripts/verify-kit drive RUN_ID <feature> [--pr N] [--merged-pr N] [--repo owner/name]
 ```
 
-Features: `task-route`, `merge-gate`, `pr-state`, `skill-catalog`, `claude-surface`. Each drive ends with `PASS <feature>`, `FAIL <feature>: <check>`, or `SKIP <feature>: <missing prerequisites>`; a SKIP still ran and checked every step whose prerequisites held. The feature files list every entry point and what each step proves.
+Features: `task-route`, `merge-gate`, `pr-state`, `skill-catalog`, `claude-surface`, `git-guard`. Each drive ends with `PASS <feature>`, `FAIL <feature>: <check>`, or `SKIP <feature>: <missing prerequisites>`; a SKIP still ran and checked every step whose prerequisites held. The feature files list every entry point and what each step proves.
 
 Which features a change needs. A path matches the first row that names it; anything no row names falls to the last row. Instruction text means Markdown files (`*.md`), license files, and the export lists `claude/skills.txt` and `codex/skills.txt`, in the rows marked instruction text; any other file in those rows (scripts, templates, YAML, JSON, TypeScript, with or without an executable bit) is code and falls to the last row. `scripts/check-skills.ts`, which `skill-catalog` runs, keeps that Markdown from executing: across the skill, role, prompt, and `docs/` folders it refuses inline shell and fences opened with an exclamation mark, nested `.claude` folders and links, a `SKILL.md` below a skill's top folder (names compared case-insensitively), frontmatter not in the plain form, and any frontmatter key outside a short allowlist (no tool grants, hooks, or permission modes). In every row, code reached only from `agentic verify publish` or `agentic rulesets apply` (their branches in the `cli.ts` files, and helpers only they call, such as `verified` in `rulesets.ts`) writes GitHub, and no drive observes it: a diff to it also needs a test that fails on the parent and passes on the head.
 
@@ -55,6 +55,7 @@ Which features a change needs. A path matches the first row that names it; anyth
 | `agentic/tools/pr-feedback/`, `agentic/vendor/watch-pr/` | `pr-state` |
 | `agentic/bin/agentic`, `package.json`, `bun.lock` | every feature (`all`) |
 | `claude/statusline.ts`, `claude/mods/` | `claude-surface` |
+| `agentic/tools/git-guard/` | `git-guard` (Pi's `git-interceptor` applies the same policy; `pi/extensions/` stays in the last row) |
 | `scripts/check-skills.ts` | `skill-catalog`, plus `scripts/validate` |
 | `.agents/skills/verify-agent-kit/` | its `scripts/`: trunk's kit `all` on the head, plus the head's kit `all` on the head; review the kit's diff as code. Its Markdown sets verification policy and never passes on its own: the verdict is `verifier-blocked`, and the user's posted status (below) records their decision |
 | `skills/`, `claude/skills/`, `claude/skills.txt`, `codex/skills.txt`, `claude/agents/`, `claude/CLAUDE.md`, `pi/AGENTS.md`, `codex/AGENTS.md`, `codex/native-tools.md`, `pi/WORKTREE_STREAMS.md`, `pi/prompts/`, other `.agents/skills/` text | `skill-catalog` (instruction text: see the verdict rule) |
@@ -97,6 +98,7 @@ scripts/verify-kit drive RUN_ID merge-gate --pr 31
 scripts/verify-kit drive RUN_ID pr-state --merged-pr 22
 scripts/verify-kit drive RUN_ID skill-catalog
 scripts/verify-kit drive RUN_ID claude-surface
+scripts/verify-kit drive RUN_ID git-guard
 scripts/verify-kit cleanup RUN_ID
 scripts/verify-kit all [--checkout PATH] [--install] [--allow-dirty] [--pr N]
 ```

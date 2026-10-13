@@ -100,12 +100,14 @@ for (const entry of readdirSync(join(ROOT, "claude/agents")).filter(name => name
   const path = `claude/agents/${entry}`;
   const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(readFileSync(join(ROOT, path), "utf8"))?.[1];
   if (!frontmatter) { fail(`${path}: missing frontmatter`); continue; }
-  const field = (key: string) => new RegExp(`^${key}:\\s*(.+)$`, "m").exec(frontmatter)?.[1]?.trim();
+  const field = (key: string) => new RegExp(`^${key}:[ \\t]*(.+)$`, "m").exec(frontmatter)?.[1]?.trim();
   const name = field("name"), model = field("model"), effort = field("effort");
   if (!name || !field("description")) fail(`${path}: needs name and description`);
   if (!model || !ROLE_MODELS.has(model)) fail(`${path}: model must be one of ${[...ROLE_MODELS].join(", ")}`);
   if (!effort || !EFFORTS.has(effort)) fail(`${path}: effort must be one of ${[...EFFORTS].join(", ")}`);
-  if (!(field("disallowedTools") ?? "").split(/[\s,]+/).includes("Agent")) fail(`${path}: list Agent in disallowedTools; children do not launch children`);
+  // An exact comma-separated list of tool names, so quoting, flow collections, or a rule such as Read(Agent) cannot
+  // stand in for denying the Agent tool.
+  if (!/^disallowedTools: (?:[A-Z][A-Za-z]*, )*Agent(?:, [A-Z][A-Za-z]*)*$/m.test(frontmatter)) fail(`${path}: write disallowedTools as a comma-separated list of tool names that includes Agent; children do not launch children`);
   if (name && roles.has(name)) fail(`${path}: a second role file named ${name}`);
   if (name) roles.add(name);
 }
@@ -146,7 +148,7 @@ for (const { root, name, path } of instructionFiles) {
   const text = readFileSync(path, "utf8");
   // YAML reads a lone carriage return or a Unicode line separator as a line break, and other control characters
   // change how it parses, so instruction Markdown uses LF line endings and no control characters but tab.
-  if (/[\x00-\x08\x0b-\x1f\x7f\u0085\u2028\u2029]/.test(text)) fail(`${where}: use LF line endings and no control characters (no carriage returns, form feeds, or Unicode line separators), so a runtime reads the same lines this checker does`);
+  if (/[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029\ufffe\uffff]/.test(text)) fail(`${where}: use LF line endings and no control characters (no carriage returns, form feeds, or Unicode line separators), so a runtime reads the same lines this checker does`);
   if (INLINE_SHELL.test(text) || FENCED_SHELL.test(text)) fail(`${where}: inline shell (!\`...\` or a fence opened with !) runs before the model reads the file; put the command in a script and name the script, or to document the syntax, separate the ! from the backtick`);
   const opening = text.replace(/^\uFEFF/, "");
   if (/^---\s*\n/.test(opening) && !PLAIN_FRONTMATTER.test(text)) fail(`${where}: write frontmatter in the plain form (no byte-order mark, no trailing spaces after ---, LF line endings) so this checker reads every key`);

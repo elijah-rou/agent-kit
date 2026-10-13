@@ -9,6 +9,10 @@ file.
 Copied from a local checkout of cursor/plugins with HEAD at the commit above. Every upstream
 file in the directory was copied unchanged except as listed.
 
+Rechecked on 2026-10-13: the copied files match upstream at the commit above, at 11713c6, and at
+997ffc7 (orch.ts apart from the change below). The upstream path last changed in df58112, before
+the commit above.
+
 Changes from upstream:
 - orch.ts: removed `import { ensureDependenciesInstalled } from "../bootstrap.ts";` and the
   `ensureDependenciesInstalled();` call. Upstream bootstrap.ts lives outside this directory and

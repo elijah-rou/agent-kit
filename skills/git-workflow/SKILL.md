@@ -31,7 +31,7 @@ Repository conventions take precedence where they differ.
 ## Pull requests and reviews
 
 - A pull request has a short summary, the key decisions, and testing specific to the change.
-- Before opening a pull request, or marking a draft ready, whose diff changes code, configuration, or agent instructions, and again after a later push that changes its behavior, run the adversarial review in `references/pr-review.md` and resolve its blocking findings.
+- Before opening a pull request, or marking a draft ready, whose diff changes code, configuration, or agent instructions, and again after a later push that changes its behavior, run the adversarial review in `references/pr-review.md` (the `pr-review` role where the harness defines one) and resolve its blocking findings.
 - Read a pull request's state, unresolved review threads, and checks on its head commit with `agentic pr-feedback <pr>`, rather than assembling `gh` queries.
 - Do not end a turn promising to report when CI finishes unless something will wake you: a background command, a monitor, or the harness's notification. Otherwise wait for CI, or tell the user they must prompt you again.
 - In public review replies, mention verification only when it is unusual, failed, materially relevant, or requested. Let reviewers resolve their own threads unless asked.

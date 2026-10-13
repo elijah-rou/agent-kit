@@ -115,7 +115,7 @@ The audit thread needed nine user interventions and ended with six of its eleven
 
 - **D1. Merge authority:** drop the forge `merge-gate`; agents check the ledger before each merge, and the user's words start the merging mode (X1, P1).
 - **D2. Jev:** keep it and enable it, then judge it on measured performance (J1, J2). Reading taken: routing leaves shadow; PR-risk stays but only advises.
-- **D3. git guard parser:** drop `shell.ts`, keep the regexes (X7).
+- **D3. git guard parser:** drop `shell.ts`, keep the regexes (X7). Refined 2026-10-14 (option b) once the lost denies were listed: add targeted patterns for `-n` on commit and am, hook-manager skip variables, `core.hooksPath` and `hook.*` writes, a child's `gh pr merge`, and git by absolute path. Wrapper forms stay documented gaps.
 - **D4. Codex:** remove now (R3).
 - **D5. Repo baseline:** a local git repository is mandatory; a remote and everything that needs one is case by case.
 - **D6. Local gate:** an agent-run step; no `pre-push` hook for now.
@@ -126,7 +126,7 @@ The audit thread needed nine user interventions and ended with six of its eleven
 Each slice is one PR or a short stack. It is verified with `verify-agent-kit`, and agent-kit's own changes land through the rules the previous slice set.
 
 0. **Make `main` live (O1).**
-   - 0a: bump bootstrap's pin to `14659cb`, the last commit before #28. At `23142b7`, Pi's `git-interceptor.ts` loads #28's shell parser on install and refuses commands Pi runs today (`curl … | sh`, `bash -l`, `git commit -n`). D3 drops that parser.
+   - 0a (done: bootstrap #28 merged and installed): bump bootstrap's pin to `14659cb`, the last commit before #28. At `23142b7`, Pi's `git-interceptor.ts` loads #28's shell parser on install and refuses commands Pi runs today (`curl … | sh`, `bash -l`, `git commit -n`). D3 drops that parser.
    - 0c: X7 in agent-kit (drop `shell.ts`, keep the regex classifier), then pin past it. 0b must not ship before 0c, or the automatic bump would switch the parser on in Pi.
    - 0b: the post-merge bump and the lag warning.
 1. **Control:** P1, P2, P3, X5, O2, X4, X1, X2, X3.

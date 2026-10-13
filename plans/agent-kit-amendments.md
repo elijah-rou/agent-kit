@@ -123,11 +123,11 @@ The audit thread needed nine user interventions and ended with six of its eleven
 | L7 | Intake v1: a daily T3 schedule lists failed CI runs on `main` across owned repos that have a verify skill, and starts the A8 line for each new one. v2, a signed GitHub webhook, waits until T3 Connect remote access is set up and v1 has shown the need. | T3 schedule, a small `agentic` command |
 | L8 | `claude/CLAUDE.md` and `pi/AGENTS.md`: schedules an invoked mode creates for its own run (tick, watch) are part of the mode and are removed when it ends; upkeep and intake schedules need the user's standing approval (D9). | instructions |
 
-Open decisions for the outer loop:
+Outer-loop decisions (approved 2026-10-14):
 
-- **D8. Long-lived token for unattended runs.** A credential change only the user can make. Unverified: whether T3's Claude provider picks up the token; test it on one run first.
-- **D9. Standing approval for upkeep and intake schedules,** as an exception to "Do not silently create schedules".
-- **D10. Intake scope:** which repos L7 watches. Default proposal: owned repos with a verify skill.
+- **D8. Long-lived token for unattended runs:** approved. The user runs `claude setup-token`; agents never handle the token. Unverified: whether T3's Claude provider picks it up; the first unattended run tests it.
+- **D9. Standing approval for upkeep and intake schedules:** approved, as an exception to "Do not silently create schedules". L8 writes it into the instructions.
+- **D10. Intake scope:** approved: owned repos with a verify skill.
 
 ## 6. Gaps in both systems
 

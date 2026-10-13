@@ -394,6 +394,24 @@ describe("round 9", () => {
 	});
 });
 
+// Final pass: PowerShell forms every earlier head misread, refused.
+describe("round 10", () => {
+	const build: Actor = { kind: "child", role: "build" };
+	test("an @\"...\"@ here-string must be read up to its own footer", () => {
+		expect(blockReason("$m = @\"\n$(Write-Output \u2019')\n\"@\ngit --no-pager push origin x\n# ')\"", build, "powershell")).toMatch(/could not read this command/);
+		expect(blockReason("$m = @\"\nBuilt at $(Get-Date)\n\"@\nWrite-Output $m", build, "powershell")).toBeUndefined();
+	});
+	test("a lone carriage return in PowerShell is unreadable", () => {
+		expect(blockReason("Write-Output ok\rgit push origin x", build, "powershell")).toMatch(/could not read this command: a lone carriage return/);
+		expect(blockReason("Write-Output ok\r\ngit status", build, "powershell")).toBeUndefined();
+	});
+	test("curly quotes in PowerShell are unreadable; POSIX commands with them are unaffected", () => {
+		expect(blockReason("Write-Output \u201cx\"; git --no-pager push origin x # \"", build, "powershell")).toMatch(/could not read this command: it holds a curly quote/);
+		expect(blockReason("echo \u201chello\u201d \u2018x\u2019; git status", build)).toBeUndefined();
+		expect(blockReason("git commit -m \"it\u2019s done\"", main)).toBeUndefined();
+	});
+});
+
 describe("invocations", () => {
 	test("splits quoted words, assignments, and substitutions", () => {
 		expect(invocations(`cd a && FOO=1 git -C "x y" push origin "$(git rev-parse HEAD)" # git merge`, "posix")).toEqual([

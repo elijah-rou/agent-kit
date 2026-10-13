@@ -136,6 +136,8 @@ class Reader {
 	 */
 	constructor(private readonly text: string, private readonly dialect: Dialect, private readonly depth: number, private readonly found: Invocation[], private readonly inherited: string[] = []) {
 		if (depth > NESTING_LIMIT) throw new Unreadable(`it nests more than ${NESTING_LIMIT} levels of substitution, subshell, or shell string`);
+		// PowerShell's tokenizer reads curly quotes as quotes, which this reader does not.
+		if (dialect === "powershell" && /[\u2018-\u201B\u201C-\u201E]/.test(text)) throw new Unreadable("it holds a curly quote, which PowerShell reads as a quote");
 		this.escape = dialect === "posix" ? "\\" : "`";
 	}
 
@@ -452,8 +454,12 @@ class Reader {
 				const end = /\r?\n"@/.exec(text.slice(this.pos + 2));
 				if (!end) throw new Unreadable('a PowerShell @" here-string is never closed');
 				if (text.slice(this.pos + 2, this.pos + 2 + end.index).includes('"')) throw new Unreadable('a PowerShell @" here-string holds a "');
-				append(c);
+				// The footer's " is where the double-quote reader must stop; anywhere else, it misread the body.
+				const footerQuote = this.pos + 2 + end.index + end[0].length - 2;
 				this.pos++;
+				const body = this.doubleQuoted();
+				if (this.pos !== footerQuote + 1) throw new Unreadable('a PowerShell @" here-string is not read up to its closing "@');
+				append(`@${body}`, { quoted: true });
 			} else if (this.dialect === "powershell" && c === "@" && next === "'" && /^@'[ \t]*\r?\n/.test(text.slice(this.pos))) {
 				// @'...'@ is a literal here-string. @"..."@ is read by the double-quote reader, which follows its $( ).
 				append(this.literalHereString(), { quoted: true });
@@ -490,6 +496,8 @@ class Reader {
 				const operator = /^(;;&|;;|;&|&&|\|\||\|&|;|&|\|)/.exec(text.slice(this.pos))![0];
 				this.pos += operator.length;
 				if (cases > 0 && operator.startsWith(";") && operator.length > 1) expectPattern = true;
+			} else if (this.dialect === "powershell" && c === "\r" && next !== "\n") {
+				throw new Unreadable("a lone carriage return, which PowerShell reads as a line break");
 			} else if (c === " " || c === "\t" || c === "\r") {
 				endWord();
 				this.pos++;

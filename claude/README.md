@@ -24,7 +24,8 @@ a hook manager's skip variable (`HUSKY`, `HUSKY_SKIP_HOOKS`, `SKIP`, `PRE_COMMIT
 `LEFTHOOK`, `LEFTHOOK_EXCLUDE`, `OVERCOMMIT_DISABLE`) in a command that runs git, set on the git command, on
 a program the guard follows into that runs it (`sh -c`, `eval`, `env`, a here document fed to a shell, and
 the other wrappers), as a standalone assignment, through `export`, `declare`, `typeset`, `local`, or
-`readonly`, or with PowerShell's `$env:NAME =`) in every session, and refuses `git push`, `pull`, `merge`,
+`readonly`, or with PowerShell's `$env:NAME =`, `Set-Item`, `New-Item`, or `Set-Content` on `env:NAME`, or
+`[Environment]::SetEnvironmentVariable`) in every session, and refuses `git push`, `pull`, `merge`,
 `rebase`, `cherry-pick`, `revert`, `am`, `apply`, `tag` (except listing or verifying tags), `send-pack`,
 `http-push`, `git subtree push`, `pull`, and `merge`, and `gh pr merge` inside a subagent (an event carrying
 `agent_id`) unless its `agent_type` is `autopilot-owner`. The main session may publish. It denies with
@@ -57,8 +58,9 @@ What it refuses that it need not (the same list is in ADR 0001 and the verify-ag
   redirection; a PowerShell assignment whose value is read as a program, so a quoted value naming a shell
   (`$m = 'Switch the hook to /bin/sh'`) reads as starting that shell; an `@"..."@` here-string whose body
   holds a `"`, or that the double-quote reader does not read up to its own closing `"@`; a lone carriage
-  return in PowerShell, which it reads as a line break; and any curly quote in a PowerShell command, which its
-  tokenizer reads as a quote. The
+  return in PowerShell, which it reads as a line break; any curly quote in a PowerShell command, which its
+  tokenizer reads as a quote; an `env:` path or `SetEnvironmentVariable` name that is not a literal; a
+  backtick before a lone carriage return; and a lone carriage return in a PowerShell comment. The
   reason asks for a plainer command; a shell given a script operand reads its input as data and passes.
 
 Bootstrap does not wire it yet: that is a pending bootstrap change, and until it lands no Claude Code

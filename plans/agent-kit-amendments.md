@@ -4,8 +4,8 @@
 
 - Track: interview
 - Intended outcome: approved (decisions D1 to D7, 2026-10-14)
-- Slice plan: draft
-- Current slice: not started
+- Slice plan: approved
+- Current slice: 0 (0a done, 0c in PR #37)
 - User checkpoints: none beyond landing each slice's PRs
 
 ## Authority
@@ -49,6 +49,10 @@ The audit thread needed nine user interventions and ended with six of its eleven
 | O6 | Scheduled ticks never repeat an unchanged ask. After three ticks with no change, the tick stops and sends one notification. | 12 identical hourly asks in the PTY thread |
 | O7 | Evidence hygiene: verification evidence, logs, and commit metadata never hold account identifiers or secrets. Evidence is scanned before it is committed. | Apple ID in 10 evidence files; a TypeSafe key and an Instagram token pasted into chats |
 | O8 | Out-of-scope review findings become follow-up issues, not fix passes on the PR. | #25 grew from a policy line into hardening a YAML parser |
+| O9 | Credential intake: when a run needs a secret, the agent asks for it through T3 `request_secret` or names a keychain item for the user to fill; it never asks for a value in chat. | A TypeSafe key, an Instagram token, and a Claude token were pasted into chats |
+| O10 | Worktree and disk cleanup: a cleanup pass (pstack `worktree-cleanup`) lists merged or abandoned worktrees and stale containers, removes the ones the run created, and asks once for the rest. First use: the six worktrees the audit run left under `~/.t3/worktrees/agent-kit/`. | 16 worktrees left in icloud-photos-cli; Docker disk full twice |
+| O11 | Harness parity: `spike` (PR #35) ships to Pi as well as Claude Code; after R3, decide whether `design-control-loop` moves to Claude Code or goes. | `spike` is Claude-only; `design-control-loop` ships only to Pi and Codex |
+| O12 | CI after the one allowed rerun: diagnose and fix, or classify as environment with evidence; never stop to ask the user what to do about CI. | "I need you to decide on CI for PR #15" |
 
 ## 2. Changes pstack's guidance suggests
 
@@ -97,6 +101,7 @@ The audit thread needed nine user interventions and ended with six of its eleven
 | A5 | A user guide and a help entry ("which skill fits") | `docs/guide/`, `poteto-help` | Builds on PR #34 |
 | A6 | An independent comment pass | `no-comments` | Gap 5 of the PR #34 analysis |
 | A7 | Program budget: stop spawning at about 70% of the budget and land what is verified; two retries, then replan | `orchestrate.md` | |
+| A9 | Replay evaluation: after slices 1 to 3, rerun the audit thread's opening request on a scratch repo without a verify skill and measure user interventions, review rounds, and wall-clock time against the original (9 interventions, 16.6 h). | pstack `eval` playbook | The evals harness is parked, so this is the acceptance check |
 | A8 | One outer loop: a CI failure on `main` of an owned repo posts a signed GitHub webhook to a T3 `schedule_task`, which runs triage, then reproduce, then a fix PR, landing through the normal mode. Only trusted triggers (CI on the user's branches, a label the user applies); every stage can stop the line and hands evidence on; workers are read-only except the fixer. | `automations/benny` (stage design), guide `07-overnight.md` (earn trust first) | interview-tutor `main` failed 7 runs in a row with no owner. Slack/phone intake, Bugbot, cloud execution, and Hermes stay deferred |
 
 ## Outer loop (what pstack depends on outside the chat)
@@ -121,6 +126,7 @@ The audit thread needed nine user interventions and ended with six of its eleven
 | L5 | Upkeep: `create-verification` ends by creating a weekly T3 `fixed_time` schedule that runs `/maintain-verification` for that repo. | `create-verification`, `maintain-verification` |
 | L6 | Kit lag (slice 0b): after an agent-kit merge, the landing mode opens the bootstrap pin PR; a session-start check warns when the installed kit is behind. | `babysit-and-ship`, bootstrap |
 | L7 | Intake v1: a daily T3 schedule lists failed CI runs on `main` across owned repos that have a verify skill, and starts the A8 line for each new one. v2, a signed GitHub webhook, waits until T3 Connect remote access is set up and v1 has shown the need. | T3 schedule, a small `agentic` command |
+| L9 | Persist the long-lived token: a bootstrap LaunchAgent sets `CLAUDE_CODE_OAUTH_TOKEN` from the keychain item `claude-code-oauth` at login, like `typesafe-jev`. | bootstrap |
 | L8 | `claude/CLAUDE.md` and `pi/AGENTS.md`: schedules an invoked mode creates for its own run (tick, watch) are part of the mode and are removed when it ends; upkeep and intake schedules need the user's standing approval (D9). | instructions |
 
 Outer-loop decisions (approved 2026-10-14):
@@ -161,9 +167,9 @@ Each slice is one PR or a short stack. It is verified with `verify-agent-kit`, a
    - 0b: the post-merge bump and the lag warning.
 1. **Control:** P1, P2, P3, X5, O2, X4, X1, X2, X3.
 2. **Review economy:** X6, O8, P4.
-3. **Liveness and coordination:** A1, A2, L1 to L4, O4, O5, O6, P5, A7.
-4. **Repo baseline and local gate:** G2b, G3, O7.
-5. **Greenfield flow:** G2a, P6, landing PR #35 (`spike`).
+3. **Liveness and coordination:** A1, A2, L1 to L4, L9, O4, O5, O6, O10, P5, A7. Then A9.
+4. **Repo baseline and local gate:** G2b, G3, O7, O9, O12.
+5. **Greenfield flow:** G2a, P6, landing PR #35 (`spike`), O11.
 6. **Catch-up and guide:** A4, A5, PR #34 reworked into the guide.
 7. **Scheduled upkeep:** A3, L5, L6, L8, A6.
 8. **Removals and Jev:** R3, J1, J2.
@@ -177,4 +183,3 @@ Each slice is one PR or a short stack. It is verified with `verify-agent-kit`, a
 
 - Tuning Jev's thresholds before J2 has a week of data.
 - Per-role model routing in the style of `setup-pstack`. Roles keep fixing their own models. Revisit if the `quick` and `Explore` roles stay unused after #33 goes live.
-- `design-control-loop` changes. Decide after R3.

@@ -36,7 +36,7 @@ Each feature file starts with an H1 title and one paragraph describing the behav
 - [Pull request state](./pr-state.md): reading a pull request's feedback, checks, and readiness, and watching it.
 - [Skill catalog](./skill-catalog.md): the skills and subagent roles each runtime receives, and repository skill discovery.
 - [Claude Code surface](./claude-surface.md): the quota status line and the trial-tools Mod.
-- [Git guard](./git-guard.md): the PreToolUse hook (not yet wired by bootstrap) that matches command text to refuse `--no-verify` everywhere and git publication from subagents other than an `autopilot-owner`, and what it over-refuses and misses.
+- [Git guard](./git-guard.md): the PreToolUse hook (not yet wired by bootstrap) that matches command text to refuse skipping hooks (`--no-verify`, `commit -n`, skip variables, `core.hooksPath` and `hook.*` changes) everywhere and git publication and `gh pr merge` from subagents other than an `autopilot-owner`, and what it over-refuses and misses.
 
 ## Not mapped yet
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { blockReason, mayPublish, publicationCommand, skipsHooks, type Actor } from "./classify.ts";
+import { blockReason, hookSkip, mayPublish, publicationCommand, type Actor } from "./classify.ts";
 
 const main: Actor = { kind: "main" };
 const child: Actor = { kind: "child", role: "build" };
@@ -12,12 +12,12 @@ const SKIPPING = ["git commit --no-verify -m x", "git push --no-verify", "cd rep
 // Commands the removed shell reader refused because it could not read them; none has a pattern match.
 const ONCE_UNREADABLE = ["printf 'echo hi\\n' | sh", "curl -s https://example.invalid/x.sh | sh", "bash <(echo hi)", "source <(echo hi)", "bash -l", "exec zsh", "zsh -s < /dev/null", "echo 'open", "echo $(ls", "cat <<EOF\nno end", "pwsh -in -c 'Write-Output x'", "Write-Output ok\rWrite-Output again", "$m = 'Switch the hook to /bin/sh'; git commit -m $m"];
 
-describe("skipsHooks", () => {
+describe("hookSkip", () => {
 	test("finds --no-verify after a git on the same line, even in a mention", () => {
-		for (const command of SKIPPING) expect([command, skipsHooks(command)]).toEqual([command, true]);
+		for (const command of SKIPPING) expect([command, hookSkip(command)]).toEqual([command, "no-verify"]);
 	});
 	test("ignores --no-verify without a git before it on its line, and --no-verify-signatures", () => {
-		for (const command of ["git commit -m x", "echo --no-verify", "npm test --no-verify", "git commit -m x\necho --no-verify", "git commit -am x", "git merge --no-verify-signatures topic", "git pull --no-verify-signatures", "git commit -F /tmp/msg"]) expect([command, skipsHooks(command)]).toEqual([command, false]);
+		for (const command of ["git commit -m x", "echo --no-verify", "npm test --no-verify", "git commit -m x\necho --no-verify", "git commit -am x", "git merge --no-verify-signatures topic", "git pull --no-verify-signatures", "git commit -F /tmp/msg"]) expect([command, hookSkip(command)]).toEqual([command, undefined]);
 	});
 });
 
@@ -75,5 +75,55 @@ describe("blockReason", () => {
 	test("the patterns refuse what they match even when the text is unbalanced", () => {
 		expect(blockReason("git commit -m \"unterminated --no-verify", main)).toMatch(/skipping git hooks/);
 		expect(blockReason("echo 'open; git push origin x", child)).toMatch(/git push/);
+	});
+});
+
+describe("patterns for what the shell reader alone used to find", () => {
+	const actors = [main, child, unnamed, owner];
+	const refusedForAll = (commands: string[], reason: RegExp) => {
+		for (const command of commands) for (const actor of actors) expect([command, actor, blockReason(command, actor)]).toEqual([command, actor, expect.stringMatching(reason)]);
+	};
+	const allowedForAll = (commands: string[]) => {
+		for (const command of commands) for (const actor of actors) expect([command, actor, blockReason(command, actor)]).toEqual([command, actor, undefined]);
+	};
+	// git am integrates, so a child other than an owner is refused it as integration, never as skipping hooks.
+	const amAllowed = (commands: string[]) => {
+		for (const command of commands) {
+			for (const actor of [main, owner]) expect([command, blockReason(command, actor)]).toEqual([command, undefined]);
+			for (const actor of [child, unnamed]) expect([command, blockReason(command, actor)]).toEqual([command, expect.stringMatching(/^git guard blocked child publication\/integration command: git am\./)]);
+		}
+	};
+	test("git commit -n and git am -n, alone or bundled in short flags, are refused for every actor, mentions included", () => {
+		refusedForAll(["git commit -n -m x", "git commit -nm x", "git commit -anm x", "git commit -s -n -m x", "git am -n patch", "git am -3n patch", "git -C repo commit -n -m x", "git add . && git commit -n -m x", "/usr/bin/git commit -nm x", "git commit -m \"fix -n handling\""], /skipping git hooks with -n.*fix what a hook reports.*git commit -F <file>/);
+		allowedForAll(["git commit -m x", "git commit -am local", "git commit -mn", "git log -n 3", "git add . && git commit -m x && git log -n 3", "git commit -m x; head -n 5 log", "git commit --no-edit"]);
+		amAllowed(["git am patch", "git am -3 patch", "git am -k -s patch"]);
+	});
+	test("a hook manager's skip variable assigned before git on the same line is refused for every actor", () => {
+		refusedForAll(["HUSKY=0 git commit -m x", "HUSKY_SKIP_HOOKS=1 git commit -m x", "SKIP=lint git commit -m x", "PRE_COMMIT_ALLOW_NO_CONFIG=1 git commit -m x", "LEFTHOOK=0 git push", "LEFTHOOK_EXCLUDE=lint git commit -m x", "OVERCOMMIT_DISABLE=1 git commit -m x", "FOO=1 HUSKY=0 git commit -m x", "HUSKY=0 FOO=1 git commit -m x", "cd repo && SKIP='lint,test' git commit -m x", "export HUSKY=0 && git commit -m x", "export HUSKY=0; git push", "HUSKY=0 /usr/bin/git commit -m x"], /skipping git hooks with a hook manager's skip variable.*git commit -F <file>/);
+		allowedForAll(["HUSKY=0 npm install", "SKIP=1 make", "MYSKIP=1 git commit -m x", "HUSKYX=1 git commit -m x", "git commit -m x"]);
+	});
+	test("setting or unsetting core.hooksPath or a hook.* key through git -c, --config-env, or git config is refused for every actor", () => {
+		refusedForAll(["git -c core.hooksPath=/dev/null commit -m x", "git -c core.hookspath=/dev/null push", "git -c 'core.hooksPath=/dev/null' commit -m x", "git -C repo -c hook.pre-commit.command=true commit -m x", "git -c user.name=x -c hook.lint.enabled=false commit -m y", "git --config-env=core.hooksPath=EMPTY commit -m x", "git --config-env core.hooksPath=EMPTY commit -m x", "git config core.hooksPath /dev/null", "git config --global core.hooksPath ''", "git config --unset core.hooksPath", "git config unset core.hooksPath", "git config set core.hooksPath /tmp/none", "git config --add hook.lint.command true", "git config hook.lint.enabled false", "git config --remove-section hook.lint", "git -C repo config core.hooksPath x", "/usr/bin/git config core.hooksPath x"], /skipping git hooks by setting or unsetting core.hooksPath or a hook.\* key.*git commit -F <file>/);
+		allowedForAll(["git config user.name x", "git config core.hooksPath", "git config --get core.hooksPath", "git config get core.hooksPath", "git config --list", "git config --get-regexp '^hook\\.'", "git -c user.name=x commit -m y", "git commit -c HEAD"]);
+	});
+	test("gh pr merge is refused for every child but an owner", () => {
+		for (const command of ["gh pr merge 3", "gh pr merge 3 --squash", "gh pr merge -R owner/repo 3", "cd repo && gh pr merge 3 --auto", "/opt/homebrew/bin/gh pr merge 3"]) {
+			for (const actor of [child, unnamed]) expect([command, blockReason(command, actor)]).toEqual([command, expect.stringMatching(/child publication\/integration command: gh pr merge.*commit locally.*git commit -F <file>.*without gh in front/)]);
+			for (const actor of [main, owner]) expect([command, blockReason(command, actor)]).toEqual([command, undefined]);
+		}
+		for (const command of ["gh pr view 3", "gh pr checks 3", "gh pr view 3 --json mergeable", "gh pr diff 3"]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
+	});
+	test("git called by an absolute path is read as git by the publication and --no-verify patterns", () => {
+		for (const [command, name] of [["/usr/bin/git push origin x", "git push"], ["/opt/homebrew/bin/git -C repo rebase main", "git rebase"], ["cd repo && /usr/bin/git merge topic", "git merge"], ["/usr/local/bin/git tag v1", "git tag"]] as const) {
+			expect([command, blockReason(command, child)]).toEqual([command, expect.stringContaining(`child publication/integration command: ${name}.`)]);
+			for (const actor of [main, owner]) expect([command, blockReason(command, actor)]).toEqual([command, undefined]);
+		}
+		refusedForAll(["/usr/bin/git commit --no-verify -m x", "make && /usr/bin/git push --no-verify"], /skipping git hooks with --no-verify/);
+		for (const command of ["/usr/bin/git status", "/usr/bin/git merge-base a b", "/usr/bin/git tag -l", "ls /usr/bin/git", "echo /usr/bin/git push"]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
+	});
+	test("shells, plain commits, patches, config, and a child's reads stay allowed", () => {
+		allowedForAll(["printf 'echo hi\\n' | sh", "bash -l", "exec zsh", "echo \"unterminated", "git commit -m x", "git config user.name x"]);
+		amAllowed(["git am patch"]);
+		for (const command of ["gh pr view 3", "git merge-base a b"]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
 	});
 });

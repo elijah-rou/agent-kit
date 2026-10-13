@@ -17,11 +17,15 @@ export const SHELL_TOOLS: ReadonlySet<string> = new Set(["Bash", "Monitor", "Pow
 const USAGE = `Usage: git-guard --claude-hook
 
 Claude Code PreToolUse hook for the tools that run a shell command (${[...SHELL_TOOLS].join(", ")}).
-Reads the event JSON on stdin and matches the command text. It denies:
-  - --no-verify after git on one line, in every session;
-  - a line (or a command after ;, &, or |) starting git push, pull, merge, rebase, cherry-pick, revert,
-    am, apply, or tag (except listing), optionally after git -C <path>, inside a subagent (the event
-    carries agent_id), unless its agent_type is autopilot-owner.
+Reads the event JSON on stdin and matches the command text; git and gh match by name or absolute path.
+It denies, in every session:
+  - --no-verify after git on one line;
+  - -n, alone or among short flags, on git commit or git am;
+  - a hook manager's skip variable (HUSKY, SKIP, LEFTHOOK, and the like) assigned on a line that runs git;
+  - core.hooksPath or a hook.* key set or unset with git -c, --config-env, or git config.
+Inside a subagent (the event carries agent_id), unless its agent_type is autopilot-owner, it also denies a
+line (or a command after ;, &, or |) starting git push, pull, merge, rebase, cherry-pick, revert, am,
+apply, or tag (except listing), optionally after git -C <path>, or gh pr merge.
 The main session may publish. An event it cannot read is denied. Exit 0 except for a usage error (2).
 `;
 

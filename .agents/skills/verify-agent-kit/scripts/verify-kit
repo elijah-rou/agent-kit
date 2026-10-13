@@ -776,11 +776,23 @@ function driveGitGuard(run: RunInfo, rec: Recorder): void {
 	const owner = { id: "a-verify-owner", type: "autopilot-owner" };
 	const event = (command: string, agent?: { id: string; type?: string }, tool?: string) => preToolUseEvent(run.runId, project, { command }, agent, tool);
 	const skip = /skipping git hooks/;
+	const hooksKey = /skipping git hooks by setting or unsetting core\.hooksPath or a hook\.\* key/;
 	const cases: { id: string; stdin: string; deny?: RegExp }[] = [
 		{ id: "main-push", stdin: event("git push origin main") },
 		{ id: "main-no-verify", stdin: event("git commit --allow-empty --no-verify -m probe"), deny: skip },
 		{ id: "main-mention", stdin: event("git commit -m \"docs: explain why --no-verify is refused\""), deny: /skipping git hooks with --no-verify.*only mentions the flag.*git commit -F <file>/ },
 		{ id: "main-commit-file", stdin: event("git commit -F .git/COMMIT_MSG_DRAFT") },
+		{ id: "main-commit-n", stdin: event("git commit --allow-empty -nm probe"), deny: /skipping git hooks with -n/ },
+		{ id: "main-n-mention", stdin: event("git commit -m \"fix -n handling\""), deny: /skipping git hooks with -n.*only mentions it.*git commit -F <file>/ },
+		{ id: "main-skip-variable", stdin: event("HUSKY=0 git commit --allow-empty -m probe"), deny: /skipping git hooks with a hook manager's skip variable/ },
+		{ id: "main-hooks-override", stdin: event("git -c core.hooksPath=/dev/null commit --allow-empty -m probe"), deny: hooksKey },
+		{ id: "main-hooks-config", stdin: event("git config core.hooksPath /dev/null"), deny: hooksKey },
+		{ id: "main-hooks-unset", stdin: event("git config --unset core.hooksPath"), deny: hooksKey },
+		{ id: "main-hooks-read", stdin: event("git config --get core.hooksPath") },
+		{ id: "main-config-user", stdin: event("git config user.name probe") },
+		{ id: "main-absolute-no-verify", stdin: event("/usr/bin/git commit --allow-empty --no-verify -m probe"), deny: skip },
+		{ id: "main-am", stdin: event("git am patch") },
+		{ id: "main-gh-merge", stdin: event("gh pr merge 3 --squash") },
 		{ id: "main-pipe-to-sh", stdin: event("printf 'echo hi\\n' | sh") },
 		{ id: "main-shell-no-input", stdin: event("bash -l") },
 		{ id: "main-unclosed-quote", stdin: event("echo \"unterminated") },
@@ -790,6 +802,9 @@ function driveGitGuard(run: RunInfo, rec: Recorder): void {
 		{ id: "subagent-monitor-push", stdin: event("git push origin agent/x", worker, "Monitor"), deny: /child publication\/integration command: git push/ },
 		{ id: "subagent-powershell-push", stdin: event("git push origin agent/x", worker, "PowerShell"), deny: /child publication\/integration command: git push/ },
 		{ id: "subagent-mention", stdin: event("rg \"error|git push\" docs/", worker), deny: /child publication\/integration command: git push.*only mentions the command.*git commit -F <file>/ },
+		{ id: "subagent-gh-merge", stdin: event("gh pr merge 3 --squash", worker), deny: /child publication\/integration command: gh pr merge.*without gh in front/ },
+		{ id: "subagent-gh-view", stdin: event("gh pr view 3", worker) },
+		{ id: "subagent-absolute-push", stdin: event("/usr/bin/git push origin agent/x", worker), deny: /child publication\/integration command: git push/ },
 		{ id: "subagent-merge-base", stdin: event("git merge-base HEAD origin/main", worker) },
 		{ id: "subagent-tag-list", stdin: event("git tag -l", worker) },
 		{ id: "subagent-local", stdin: event("git commit -m local", worker) },
@@ -797,11 +812,14 @@ function driveGitGuard(run: RunInfo, rec: Recorder): void {
 		{ id: "subagent-write", stdin: preToolUseEvent(run.runId, project, { file_path: join(project, "x.sh"), content: "git push --no-verify" }, worker, "Write") },
 		{ id: "owner-push", stdin: event("git push --force-with-lease=agent/x:abc origin agent/x", owner) },
 		{ id: "owner-no-verify", stdin: event("git commit --no-verify -m x", owner), deny: skip },
+		{ id: "owner-commit-n", stdin: event("git commit -nm x", owner), deny: /skipping git hooks with -n/ },
+		{ id: "owner-gh-merge", stdin: event("gh pr merge 3 --squash", owner) },
 		{ id: "malformed", stdin: "not json", deny: /could not read the PreToolUse event/ },
 	];
 	const exposed = rec.step("hook-project-bunfig-without-cwd", ["bun", hookCli, "--claude-hook"], { cwd: project, input: event("git commit --no-verify -m x") });
 	rec.check(exposed.stdout.startsWith("project preload ran"), "project-bunfig: without --cwd, the project's preload prints before the decision, so the fixture bites");
 	const before = sh(["git", "rev-parse", "--verify", "-q", "HEAD"], { cwd: project }).stdout.trim();
+	const configBefore = readFileSync(join(project, ".git", "config"), "utf8");
 	for (const c of cases) {
 		const result = rec.step(`hook-${c.id}`, [...hook, "--claude-hook"], { cwd: project, input: c.stdin });
 		rec.check(result.status === 0, `${c.id}: the hook exits 0 (got ${result.status})`);
@@ -818,6 +836,7 @@ function driveGitGuard(run: RunInfo, rec: Recorder): void {
 	rec.check(usage.status === 2 && usage.stdout.trim() === "", `the hook without --claude-hook is a usage error, exit 2 with no decision (got ${usage.status})`);
 	// The hook reads text and runs nothing: the scratch repository has no commit afterwards, as before.
 	rec.check(before === "" && sh(["git", "rev-parse", "--verify", "-q", "HEAD"], { cwd: project }).stdout.trim() === "", "the hook ran none of the commands: the scratch project still has no commit");
+	rec.check(readFileSync(join(project, ".git", "config"), "utf8") === configBefore, "the hook ran none of the git config commands: the scratch project's .git/config is unchanged");
 }
 
 function drive(runId: string | undefined, feature: string | undefined, options: Options): Outcome {

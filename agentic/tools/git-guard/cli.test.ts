@@ -78,6 +78,20 @@ describe("git-guard --claude-hook", () => {
 			expect(denied(hook(bash("git commit --allow-empty --no-verify -m probe", agent)))).toMatch(/skipping git hooks with --no-verify/);
 		}
 	});
+	test("git commit -n, a skip variable, and a hooks override are refused everywhere", () => {
+		for (const agent of [{}, { id: "a1", type: "build" }, { id: "a1", type: "autopilot-owner" }]) {
+			expect(denied(hook(bash("git commit -nm probe", agent)))).toMatch(/skipping git hooks with -n/);
+			expect(denied(hook(bash("HUSKY=0 git commit -m probe", agent)))).toMatch(/skipping git hooks with a hook manager's skip variable/);
+			expect(denied(hook(bash("git -c core.hooksPath=/dev/null commit -m probe", agent)))).toMatch(/skipping git hooks by setting or unsetting core.hooksPath/);
+			expect(denied(hook(bash("/usr/bin/git commit --no-verify -m probe", agent)))).toMatch(/skipping git hooks with --no-verify/);
+		}
+	});
+	test("a subagent may not merge a pull request with gh or publish through git's absolute path; an owner may", () => {
+		expect(denied(hook(bash("gh pr merge 3 --squash", { id: "a1", type: "build" })))).toMatch(/child publication\/integration command: gh pr merge/);
+		expect(denied(hook(bash("/usr/bin/git push origin agent/x", { id: "a1", type: "build" })))).toMatch(/child publication\/integration command: git push/);
+		for (const command of ["gh pr merge 3 --squash", "/usr/bin/git push origin agent/x"]) allowed(hook(bash(command, { id: "a1", type: "autopilot-owner" })));
+		for (const command of ["gh pr view 3", "git merge-base a b", "git config user.name x"]) allowed(hook(bash(command, { id: "a1", type: "build" })));
+	});
 	test("local git and non-git commands pass in a subagent", () => {
 		for (const command of ["git status", "git commit -m local", "ls -la", "bun test"]) allowed(hook(bash(command, { id: "a1", type: "build" })));
 	});

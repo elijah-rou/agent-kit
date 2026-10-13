@@ -72,6 +72,31 @@ test("the shared patterns' refusals and narrowings hold in Pi", () => {
   }
 });
 
+test("Pi refuses -n, skip variables, hooks overrides, gh pr merge, and git by absolute path", () => {
+  const saved = { child: process.env.PI_SUBAGENT_CHILD, agent: process.env.PI_SUBAGENT_CHILD_AGENT };
+  try {
+    delete process.env.PI_SUBAGENT_CHILD;
+    delete process.env.PI_SUBAGENT_CHILD_AGENT;
+    const root = interceptor();
+    for (const [command, reason] of [["git commit -nm x", /skipping git hooks with -n/], ["SKIP=lint git commit -m x", /skip variable/], ["git config core.hooksPath /dev/null", /core\.hooksPath or a hook\.\* key/], ["/usr/bin/git commit --no-verify -m x", /--no-verify/]]) {
+      assert.equal(root(command)?.block, true, command);
+      assert.match(root(command).reason, reason, command);
+    }
+    for (const command of ["gh pr merge 3", "/usr/bin/git push origin main", "git config user.name x"]) assert.equal(root(command), undefined, command);
+    process.env.PI_SUBAGENT_CHILD = "1";
+    process.env.PI_SUBAGENT_CHILD_AGENT = "deep";
+    const run = interceptor();
+    assert.match(run("gh pr merge 3")?.reason, /child publication\/integration command: gh pr merge/);
+    assert.match(run("/usr/bin/git push origin agent/x")?.reason, /child publication\/integration command: git push/);
+    for (const command of ["gh pr view 3", "git merge-base a b"]) assert.equal(run(command), undefined, command);
+  } finally {
+    for (const [key, value] of [["PI_SUBAGENT_CHILD", saved.child], ["PI_SUBAGENT_CHILD_AGENT", saved.agent]]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("the interceptor blocks a command it cannot check, for every actor", () => {
   const original = process.env.PI_SUBAGENT_CHILD;
   delete process.env.PI_SUBAGENT_CHILD;

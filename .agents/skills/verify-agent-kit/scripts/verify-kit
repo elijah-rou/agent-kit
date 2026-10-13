@@ -742,40 +742,61 @@ function driveClaudeSurface(run: RunInfo, rec: Recorder): void {
 	rec.check(git(["status", "--porcelain=v1", "-uall"], run.checkout) === before, "driving the Mod leaves the checkout's tracked and untracked files unchanged");
 }
 
-/** A Claude Code PreToolUse event for the Bash tool, from the main session or from a subagent. */
-function preToolUseEvent(runId: string, cwd: string, command: string, agent?: { id: string; type?: string }): string {
+/** A Claude Code PreToolUse event for a tool, from the main session or from a subagent. */
+function preToolUseEvent(runId: string, cwd: string, input: Record<string, unknown>, agent?: { id: string; type?: string }, tool = "Bash"): string {
 	return JSON.stringify({
 		session_id: `${runId}-git-guard`,
 		transcript_path: "/dev/null",
 		cwd,
 		permission_mode: "bypassPermissions",
 		hook_event_name: "PreToolUse",
-		tool_name: "Bash",
-		tool_input: { command, description: "verify-agent-kit git-guard case" },
+		tool_name: tool,
+		tool_input: { description: "verify-agent-kit git-guard case", ...input },
 		tool_use_id: "toolu_verify_agent_kit",
 		...(agent ? { agent_id: agent.id, ...(agent.type === undefined ? {} : { agent_type: agent.type }) } : {}),
 	});
 }
 
+/** A scratch git repository whose bunfig.toml preloads a script that prints, as an ordinary Bun project's might. */
+function guardProject(run: RunInfo): string {
+	const project = join(runDir(run.runId), "git-guard-project");
+	mkdirSync(project, { recursive: true });
+	git(["init", "-q", "-b", "main"], project);
+	writeFileSync(join(project, "preload.ts"), 'console.log("project preload ran");\n');
+	writeFileSync(join(project, "bunfig.toml"), 'preload = ["./preload.ts"]\n');
+	return project;
+}
+
 function driveGitGuard(run: RunInfo, rec: Recorder): void {
-	const fixture = join(runDir(run.runId), "fixture");
+	const project = guardProject(run);
 	const hookCli = join(run.checkout, "agentic/tools/git-guard/cli.ts");
+	// The documented command: --cwd keeps Bun from loading the project's bunfig.toml.
+	const hook = ["bun", "--cwd", run.checkout, hookCli];
 	const worker = { id: "a-verify-worker", type: "general-purpose" };
 	const owner = { id: "a-verify-owner", type: "autopilot-owner" };
+	const event = (command: string, agent?: { id: string; type?: string }, tool?: string) => preToolUseEvent(run.runId, project, { command }, agent, tool);
+	const skip = /skipping git hooks/;
 	const cases: { id: string; stdin: string; deny?: RegExp }[] = [
-		{ id: "main-push", stdin: preToolUseEvent(run.runId, fixture, "git push origin main") },
-		{ id: "main-no-verify", stdin: preToolUseEvent(run.runId, fixture, "git commit --allow-empty --no-verify -m probe"), deny: /--no-verify/ },
-		{ id: "subagent-push", stdin: preToolUseEvent(run.runId, fixture, "git push origin agent/x", worker), deny: /child publication\/integration command: git push/ },
-		{ id: "subagent-rebase", stdin: preToolUseEvent(run.runId, fixture, "cd sub && git -C . rebase origin/main", worker), deny: /child publication\/integration command: git rebase/ },
-		{ id: "subagent-local", stdin: preToolUseEvent(run.runId, fixture, "git commit -m local", worker) },
-		{ id: "owner-push", stdin: preToolUseEvent(run.runId, fixture, "git push --force-with-lease=agent/x:abc origin agent/x", owner) },
-		{ id: "owner-no-verify", stdin: preToolUseEvent(run.runId, fixture, "git commit --no-verify -m x", owner), deny: /--no-verify/ },
-		{ id: "subagent-not-git", stdin: preToolUseEvent(run.runId, fixture, "ls -la", worker) },
+		{ id: "main-push", stdin: event("git push origin main") },
+		{ id: "main-no-verify", stdin: event("git commit --allow-empty --no-verify -m probe"), deny: skip },
+		{ id: "main-commit-n", stdin: event("git commit -nm probe"), deny: skip },
+		{ id: "subagent-push", stdin: event("git push origin agent/x", worker), deny: /child publication\/integration command: git push/ },
+		{ id: "subagent-rebase", stdin: event("cd sub && git -C . rebase origin/main", worker), deny: /child publication\/integration command: git rebase/ },
+		{ id: "subagent-absolute-git", stdin: event("/usr/bin/git push", worker), deny: /child publication\/integration command: git push/ },
+		{ id: "subagent-gh-merge", stdin: event("gh pr merge 28 --squash", worker), deny: /child publication\/integration command: gh pr merge/ },
+		{ id: "subagent-monitor-push", stdin: event("git push origin agent/x", worker, "Monitor"), deny: /child publication\/integration command: git push/ },
+		{ id: "subagent-local", stdin: event("git commit -m local", worker) },
+		{ id: "subagent-not-git", stdin: event("ls -la", worker) },
+		{ id: "subagent-write", stdin: preToolUseEvent(run.runId, project, { file_path: join(project, "x.sh"), content: "git push --no-verify" }, worker, "Write") },
+		{ id: "owner-push", stdin: event("git push --force-with-lease=agent/x:abc origin agent/x", owner) },
+		{ id: "owner-no-verify", stdin: event("git commit --no-verify -m x", owner), deny: skip },
 		{ id: "malformed", stdin: "not json", deny: /could not read the PreToolUse event/ },
 	];
-	const before = sh(["git", "rev-parse", "--verify", "-q", "HEAD"], { cwd: fixture }).stdout.trim();
+	const exposed = rec.step("hook-project-bunfig-without-cwd", ["bun", hookCli, "--claude-hook"], { cwd: project, input: event("git commit --no-verify -m x") });
+	rec.check(exposed.stdout.startsWith("project preload ran"), "project-bunfig: without --cwd, the project's preload prints before the decision, so the fixture bites");
+	const before = sh(["git", "rev-parse", "--verify", "-q", "HEAD"], { cwd: project }).stdout.trim();
 	for (const c of cases) {
-		const result = rec.step(`hook-${c.id}`, ["bun", hookCli, "--claude-hook"], { cwd: fixture, input: c.stdin });
+		const result = rec.step(`hook-${c.id}`, [...hook, "--claude-hook"], { cwd: project, input: c.stdin });
 		rec.check(result.status === 0, `${c.id}: the hook exits 0 (got ${result.status})`);
 		if (c.deny === undefined) {
 			rec.check(result.stdout.trim() === "", `${c.id}: the hook allows by printing nothing (got "${result.stdout.trim()}")`);
@@ -786,10 +807,10 @@ function driveGitGuard(run: RunInfo, rec: Recorder): void {
 		rec.check(decision !== undefined && Object.keys(decision).length === 1 && output?.hookEventName === "PreToolUse" && output.permissionDecision === "deny", `${c.id}: the hook prints exactly Claude Code's PreToolUse deny decision (got "${result.stdout.trim()}")`);
 		rec.check(typeof output?.permissionDecisionReason === "string" && c.deny.test(output.permissionDecisionReason), `${c.id}: the deny reason matches ${c.deny} (got ${JSON.stringify(output?.permissionDecisionReason)})`);
 	}
-	const usage = rec.step("hook-usage", ["bun", hookCli], { cwd: fixture });
+	const usage = rec.step("hook-usage", hook, { cwd: project });
 	rec.check(usage.status === 2 && usage.stdout.trim() === "", `the hook without --claude-hook is a usage error, exit 2 with no decision (got ${usage.status})`);
 	// The hook reads text and runs nothing: the scratch repository has no commit afterwards, as before.
-	rec.check(before === "" && sh(["git", "rev-parse", "--verify", "-q", "HEAD"], { cwd: fixture }).stdout.trim() === "", "the hook ran none of the commands: the fixture repository still has no commit");
+	rec.check(before === "" && sh(["git", "rev-parse", "--verify", "-q", "HEAD"], { cwd: project }).stdout.trim() === "", "the hook ran none of the commands: the scratch project still has no commit");
 }
 
 function drive(runId: string | undefined, feature: string | undefined, options: Options): Outcome {

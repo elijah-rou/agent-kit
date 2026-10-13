@@ -136,11 +136,16 @@ describe("patterns for what the shell reader alone used to find", () => {
 		refusedForAll(["git commit -m \"$(cat <<'EOF'\nDon't skip hooks\nEOF\n)\" --no-verify", "git commit -m x \\\n  --no-verify", "git commit -m 'first\nsecond' --no-verify", "git commit -m \"Title\n\nRefuse --no-verify\"", "/usr/bin/git -C repo commit -m \"a\nb\" --no-verify"], /skipping git hooks with --no-verify.*git commit -F <file>/);
 		allowedForAll(["git commit -m x\necho --no-verify", "git commit -m \"a\nb\"\necho --no-verify", "git commit -m x # it's\necho it's --no-verify", "echo \"git\nx\" --no-verify"]);
 	});
+	test("a -C path that mixes quoted and bare parts is still one word", () => {
+		expect(blockReason('git -C "a"/c push', child)).toMatch(/git push/);
+		expect(blockReason("git -C 'my repo'/sub commit -n -m x", child)).toMatch(/-n/);
+	});
 	test("many quoted -C options are read in linear time", () => {
 		const options = ' -C "x"'.repeat(40);
 		const started = performance.now();
 		for (const command of [`git${options} status`, `git${options} commit -m x`, `git${options} config user.name x`, `git${options} --no-verify-signatures`]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
 		expect(blockReason(`git${options} push`, child)).toMatch(/git push/);
+		expect(blockReason(`git${' -C "a b"/c'.repeat(40)} push`, child)).toMatch(/git push/);
 		expect(performance.now() - started).toBeLessThan(500);
 	});
 	test("shells, plain commits, patches, config, and a child's reads stay allowed", () => {

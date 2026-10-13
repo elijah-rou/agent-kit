@@ -25,7 +25,7 @@ const program = (name: string) => String.raw`(?:(?:/[^\s/;&|<>()'"]*)*/)?${name}
 const GIT = program("git");
 // git's -C <path> options, the only options the patterns skip before a subcommand. A path is quoted or
 // bare, never both, so a run of options reads one way and cannot backtrack exponentially.
-const GIT_DASH_C = String.raw`(?:\s+-C\s+(?:'[^']*'|"[^"]*"|[^\s'"]\S*))*`;
+const GIT_DASH_C = String.raw`(?:\s+-C\s+(?:'[^']*'|"[^"]*"|[^\s'"])+)*`;
 // One word: quoted, or up to whitespace or a separator.
 const WORD = String.raw`(?:'[^'\n]*'|"[^"\n]*"|[^\s;&|'"]+)`;
 // An assignment's value: quoted parts and unquoted characters, read to the whole value (up to whitespace,

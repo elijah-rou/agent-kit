@@ -4,16 +4,17 @@ Read before spawning workers for an unattended program. If one agent can finish 
 
 ## Roles
 
-- **One coordinator** per program. It frames the run, writes briefs, accepts results, and is the only agent that publishes.
+- **One coordinator** per program. It frames the run, writes briefs, accepts results, and is the only agent that publishes, except an autopilot-full owner (`babysit-and-ship`): it pushes its own `agent/*` branch, and opens and merges only its own pull request, merging only after the coordinator's clean verdict.
 - **One owner per pull request.** It builds and babysits that PR. A takeover is explicit and recorded in the PR body.
-- **The root is the only writer of branch structure:** rebases, retargets, and stack order.
+- **The root is the only writer of branch structure:** rebases, retargets, and stack order. The one exception is an autopilot-full owner rebasing its own branch onto trunk.
 - **Verifiers** are fresh agents that did not write the code. A worker may self-report; a verifier's verdict overrides it.
 
 ## Children
 
 - Brief each child with its objective, workspace, authority boundary, decisions already made, acceptance check, expected output, and when to stop and escalate.
 - Each child works in its own worktree and branch; one writer per checkout.
-- Tell each child it does not push, merge, deploy, or post, and do not hand children credentials that could.
+- Tell each child it does not push, merge, deploy, or post, and do not hand children credentials that could. The exception is an autopilot-full owner, which pushes its own `agent/*` branch, and opens and merges only its own pull request after the coordinator's clean verdict; it still never deploys or touches another branch or pull request.
+- Before fanning out several writers that build containers or run heavy jobs, check the resources they share: free disk, and the usage budget or rate limit the agents draw on. Launch only as many as those allow, and queue the rest.
 - Child reports are evidence, not acceptance. Check their artifacts before relying on them.
 
 ## Shared state

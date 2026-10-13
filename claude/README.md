@@ -60,7 +60,8 @@ What it refuses that it need not (the same list is in ADR 0001 and the verify-ag
   holds a `"`, or that the double-quote reader does not read up to its own closing `"@`; a lone carriage
   return in PowerShell, which it reads as a line break; any curly quote in a PowerShell command, which its
   tokenizer reads as a quote; an `env:` path or `SetEnvironmentVariable` name that is not a literal; a
-  backtick before a lone carriage return; and a lone carriage return in a PowerShell comment. The
+  backtick before a lone carriage return; a backtick continuing a line from inside a word; and a lone
+  carriage return in a PowerShell comment. The
   reason asks for a plainer command; a shell given a script operand reads its input as data and passes.
 
 Bootstrap does not wire it yet: that is a pending bootstrap change, and until it lands no Claude Code

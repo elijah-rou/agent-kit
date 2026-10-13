@@ -125,7 +125,10 @@ The audit thread needed nine user interventions and ended with six of its eleven
 
 Each slice is one PR or a short stack. It is verified with `verify-agent-kit`, and agent-kit's own changes land through the rules the previous slice set.
 
-0. **Make `main` live (O1).** 0a: bump bootstrap's pin to current `main` now. 0b: the post-merge bump and the lag warning. Everything else depends on it.
+0. **Make `main` live (O1).**
+   - 0a: bump bootstrap's pin to `14659cb`, the last commit before #28. At `23142b7`, Pi's `git-interceptor.ts` loads #28's shell parser on install and refuses commands Pi runs today (`curl … | sh`, `bash -l`, `git commit -n`). D3 drops that parser.
+   - 0c: X7 in agent-kit (drop `shell.ts`, keep the regex classifier), then pin past it. 0b must not ship before 0c, or the automatic bump would switch the parser on in Pi.
+   - 0b: the post-merge bump and the lag warning.
 1. **Control:** P1, P2, P3, X5, O2, X4, X1, X2, X3.
 2. **Review economy:** X6, O8, P4.
 3. **Liveness and coordination:** A1, A2, O4, O5, O6, P5, A7.
@@ -133,8 +136,12 @@ Each slice is one PR or a short stack. It is verified with `verify-agent-kit`, a
 5. **Greenfield flow:** G2a, P6, landing PR #35 (`spike`).
 6. **Catch-up and guide:** A4, A5, PR #34 reworked into the guide.
 7. **Scheduled upkeep:** A3, A6.
-8. **Removals and Jev:** R3, X7, J1, J2.
+8. **Removals and Jev:** R3, J1, J2.
 9. **Outer loop:** A8, only after slices 3 and 7 have run cleanly for a week.
+
+## Notes from slice 0a review
+
+- Correction records (#32) live under `$(git rev-parse --git-common-dir)/agentic/corrections/`. In a linked worktree that path is outside the working directory, so Claude Code may prompt on each write. Check this in slice 1, and move the path or allow it.
 
 ## Not doing
 

@@ -24,8 +24,15 @@ function preventsEditorHang(cmd: string): boolean {
 export default function (pi: ExtensionAPI) {
 	pi.on("tool_call", event => {
 		if (event.toolName !== "bash") return;
-		const cmd = command(event.input);
-		const reason = blockReason(cmd, actor());
+		let cmd: string;
+		let reason: string | undefined;
+		try {
+			cmd = command(event.input);
+			reason = blockReason(cmd, actor());
+		} catch (error) {
+			// A guard that fails must refuse, never let the command through unchecked.
+			return { block: true, reason: `git-interceptor could not check this command (${(error as Error).message}), so it refused it` };
+		}
 		if (reason) return { block: true, reason: `git-interceptor: ${reason}` };
 		if (preventsEditorHang(cmd)) return { block: true, reason: "git-interceptor blocked interactive git editor; pass -m/--no-edit or set GIT_EDITOR=true" };
 	});

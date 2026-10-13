@@ -80,6 +80,23 @@ test("the shared policy's tightened cases block in Pi too", () => {
   }
 });
 
+test("the interceptor blocks a command it cannot check, and deep nesting, for every actor", () => {
+  const original = process.env.PI_SUBAGENT_CHILD;
+  delete process.env.PI_SUBAGENT_CHILD;
+  try {
+    let handler;
+    register({ on(event, callback) { if (event === "tool_call") handler = callback; } });
+    const throwing = handler({ toolName: "bash", input: { get command() { throw new Error("boom"); } } });
+    assert.equal(throwing?.block, true);
+    assert.match(throwing.reason, /could not check this command \(boom\)/);
+    const deep = "echo " + '"${x:-'.repeat(40) + "y" + '}"'.repeat(40);
+    assert.equal(interceptor()(deep)?.block, true);
+    assert.match(interceptor()(deep).reason, /could not read this command: it nests more than/);
+  } finally {
+    if (original !== undefined) process.env.PI_SUBAGENT_CHILD = original;
+  }
+});
+
 test("root execution is not blocked when child marker is absent", () => {
   const original = process.env.PI_SUBAGENT_CHILD;
   delete process.env.PI_SUBAGENT_CHILD;

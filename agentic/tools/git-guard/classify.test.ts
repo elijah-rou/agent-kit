@@ -11,7 +11,7 @@ const owner: Actor = { kind: "child", role: "autopilot-owner" };
 const PUBLISHING = ["git push origin main", "git pull --ff-only", "git merge topic", "git rebase main", "git cherry-pick HEAD~1", "git revert HEAD", "git am < patch", "git apply fix.diff", "git tag v1", "git -C /tmp/repo push", "git -C '/tmp/a b' -C sub rebase origin/main", "git status && git push", "make; git push", "true || git pull", "echo x | git am", "git add .\ngit push"];
 // Forms the patterns missed, which the command reader now catches.
 const PUBLISHING_HIDDEN = ["/usr/bin/git push", "GIT_DIR=x git push", "git --git-dir=x push", "git --git-dir x push", "git -c user.name=x push", "git --no-pager -C x push", "command git push", "  git push", "if true; then git push; fi", "{ git push; }", "time git push", "nohup git push &", "env -i FOO=1 git push", "sudo -u me git push", "xargs -n1 git push", "timeout 30 git pull", "(git merge topic)", 'echo "$(git push)"', "echo `git push`", 'bash -lc "git push"', "sh -c 'git rebase main'", "eval git push", "env -S 'git push'", "git.exe push", "/opt/homebrew/bin/GIT push", "gh pr merge 3 --squash", "gh -R owner/repo pr merge 3", "gh --repo=owner/repo pr merge"];
-const LOCAL = ["git status --short", "git diff --check", "git log -1", "git show HEAD", "git commit -m local", "git commit -am local", "git fetch origin", "git branch -a", "git stash push", "ls -la", "echo git push", "gh pr view 1", "gh pr checks 1", "npm run push", "git config push.default", "git help push", "git status # then git push", "git config core.hooksPath", "git config --get core.hooksPath", "git config --unset core.hooksPath", "x=1; git status"];
+const LOCAL = ["git status --short", "git diff --check", "git log -1", "git show HEAD", "git commit -m local", "git commit -am local", "git fetch origin", "git branch -a", "git stash push", "ls -la", "echo git push", "gh pr view 1", "gh pr checks 1", "npm run push", "git config push.default", "git help push", "git status # then git push", "git config core.hooksPath", "git config --get core.hooksPath", "x=1; git status"];
 const SKIPPING = ["git commit --no-verify -m x", "git push --no-verify", "cd repo && git -C x commit -m y --no-verify", "ls; git commit --no-verify"];
 const SKIPPING_HIDDEN = ["git commit -n -m x", "git commit -nm x", "git commit -anm x", "git -C repo commit -n", "/usr/bin/git commit -n", "git commit --no-veri -m x", "git -c core.hooksPath=/dev/null commit -m x", "git -c Core.HooksPath=x commit", "git --config-env=core.hooksPath=HOOKS commit", "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m x", 'bash -c "git commit -n -m x"'];
 const HOOKS_PATH_WRITES = ["git config core.hooksPath /dev/null", "git config --global core.hooksPath /dev/null", "git config set core.hooksPath x", "git config core.hooksPath .githooks"];
@@ -310,6 +310,41 @@ describe("round 5", () => {
 		expectDeny("X='git push origin x' | pwsh", build, /could not read this command: it feeds a shell/);
 		expectDeny("eval -- git push origin x", build, /git push/);
 		expectDeny("cat <<EOF\n${x:-'$(git push origin x)'}\nEOF", build, /git push/);
+	});
+});
+
+// Round-8 audit cases (each allowed wrongly on 5becd47), and the rare forms the reader now reads.
+describe("round 8", () => {
+	const build: Actor = { kind: "child", role: "build" };
+	const expectDeny = (command: string, actor: Actor, reason: RegExp, dialect: "posix" | "powershell" = "posix") => expect([command, blockReason(command, actor, dialect)]).toEqual([command, expect.stringMatching(reason)]);
+	const expectAllow = (command: string, actor: Actor = main, dialect: "posix" | "powershell" = "posix") => expect([command, blockReason(command, actor, dialect)]).toEqual([command, undefined]);
+	test("K1: a PowerShell assignment's right side is read as a pipeline", () => {
+		for (const command of ["$out = git push origin agent/x 2>&1", "$x += git push origin x", "[string]$x = git push origin x", "$script:x = git push origin x", "${x} = git push origin x", "$x=git push origin x", "$x ??= git push origin x", "$out = git push origin x | Out-String"]) expectDeny(command, build, /git push/, "powershell");
+		expectDeny("$null = git commit --no-verify -m wip", main, /skipping git hooks/, "powershell");
+		expectDeny("$env:HUSKY = '0'; $r = git commit -m wip", main, /hook manager's skip variable/, "powershell");
+		expectDeny("$env:HUSKY = '0'; git commit -m wip", main, /hook manager's skip variable/, "powershell");
+		for (const command of ["$x = Get-Date", "$x = 5; $y = $x + 1", "$env:HUSKY = '0'; npm ci", "$out = git status"]) expectAllow(command, build, "powershell");
+	});
+	test("K2: git subtree options before the action", () => {
+		for (const [command, action] of [["git subtree -P dist push origin gh-pages", "push"], ["git subtree --prefix=dist push origin gh-pages", "push"], ["git subtree -P lib pull origin main", "pull"], ["git subtree --prefix=lib pull origin main", "pull"], ["git subtree -P lib -m msg merge abc", "merge"], ["git subtree --prefix=lib --message=msg merge abc", "merge"]] as const) expectDeny(command, build, new RegExp(`git subtree ${action}`));
+		for (const command of ["git subtree -P lib split -b out", "git subtree --prefix=lib split"]) expectAllow(command, build);
+	});
+	test("folds: submodule options, wsl -e words, unsetting core.hooksPath", () => {
+		for (const command of ["git submodule --quiet foreach 'git push origin HEAD'", "git submodule -q foreach --recursive 'git push origin HEAD'"]) expectDeny(command, build, /git push/);
+		expectDeny("wsl -e bash -c 'git push origin x'", build, /git push/, "powershell");
+		expectDeny("wsl --exec git push origin x", build, /git push/, "powershell");
+		for (const actor of [main, owner]) for (const command of ["git config --unset core.hooksPath", "git config --unset-all core.hooksPath", "git config unset core.hooksPath"]) expectDeny(command, actor, /hook.\* key with git config.*ask the user/);
+	});
+	test("rare forms: [[ =~ ]] patterns, comments in array literals, PowerShell here-strings", () => {
+		for (const command of ["[[ $v =~ ^v([0-9]+) ]] && echo ok", "if [[ $v =~ (a|b) ]]; then echo y; fi", "arr=(\n  a # it's\n  b\n)\necho ${arr[@]}"]) expectAllow(command);
+		expectDeny("[[ -n $x ]] && git push origin x", build, /git push/);
+		expectDeny("[[ $(git push origin x) ]]", build, /git push/);
+		expectAllow("$x = @'\nit's here\n'@\nWrite-Output $x", build, "powershell");
+		expectDeny("$x = @\"\n$(git push origin x)\n\"@", build, /git push/, "powershell");
+	});
+	test("deep nesting of quotes and expansions is unreadable, not a crash", () => {
+		const deep = "echo " + '"${x:-'.repeat(40) + "y" + '}"'.repeat(40);
+		for (const actor of [main, build]) expectDeny(deep, actor, /could not read this command: it nests more than/);
 	});
 });
 

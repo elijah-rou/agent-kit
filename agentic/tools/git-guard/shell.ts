@@ -124,6 +124,8 @@ type ShellInput = { kind: "stdin"; dialect: Dialect } | { kind: "output-as-scrip
 
 class Reader {
 	private pos = 0;
+	// Open double quotes and ${...} expansions read by this reader, which recurse into each other.
+	private frames = 0;
 	private readonly escape: string;
 
 	/**
@@ -224,6 +226,7 @@ class Reader {
 	 * inside. Inside double quotes, a single quote in ${...} is an ordinary character and does not quote.
 	 */
 	private parameter(inDoubleQuotes = false): string {
+		this.enterFrame();
 		const start = this.pos;
 		this.pos += 2;
 		let depth = 0;
@@ -240,11 +243,19 @@ class Reader {
 				depth++;
 			} else if (c === "}") {
 				this.pos++;
-				if (depth === 0) return this.text.slice(start, this.pos);
+				if (depth === 0) {
+					this.frames--;
+					return this.text.slice(start, this.pos);
+				}
 				depth--;
 			} else this.pos++;
 		}
 		throw new Unreadable("a ${ parameter expansion is never closed");
+	}
+
+	/** Counts a double quote or ${...} opening inside another; refuses nesting past the limit instead of exhausting the stack. */
+	private enterFrame(): void {
+		if (++this.frames > NESTING_LIMIT * 3) throw new Unreadable(`it nests more than ${NESTING_LIMIT * 3} levels of quotes and parameter expansions`);
 	}
 
 	/**
@@ -261,6 +272,39 @@ class Reader {
 		this.pos = end + 1;
 	}
 
+	/** Reads [[ ... ]] from `pos` as text, following its quotes and substitutions, up to the ]] that ends it. */
+	private conditional(): string {
+		const start = this.pos;
+		this.pos += 2;
+		while (this.pos < this.text.length) {
+			const c = this.text[this.pos]!;
+			if (c === "]" && this.text[this.pos + 1] === "]" && /[\s]/.test(this.text[this.pos - 1] ?? "") && /^(\s|$|[;&|)])/.test(this.text.slice(this.pos + 2, this.pos + 3) || "")) {
+				this.pos += 2;
+				return this.text.slice(start, this.pos);
+			}
+			if (c === "\\") this.pos += 2;
+			else if (c === "'") this.singleQuoted();
+			else if (c === '"') this.doubleQuoted();
+			else if (c === "`") this.backtick();
+			else if (c === "$" && this.text[this.pos + 1] === "(") this.dollarParen();
+			else if (c === "$" && this.text[this.pos + 1] === "{") this.parameter();
+			else this.pos++;
+		}
+		throw new Unreadable("a [[ conditional is never closed with ]]");
+	}
+
+	/** Reads a PowerShell here-string, @'...'@ (literal) or @"..."@ (expandable), from `pos`; returns its body. */
+	private hereString(quote: string): string {
+		const close = new RegExp(`\\r?\\n${quote}@`);
+		const rest = this.text.slice(this.pos + 2);
+		const end = close.exec(rest);
+		if (!end) throw new Unreadable(`a PowerShell @${quote} here-string is never closed`);
+		const body = rest.slice(0, end.index).replace(/^[ \t]*\r?\n/, "");
+		this.pos += 2 + end.index + end[0].length;
+		if (quote === '"') this.substitutionsIn(body);
+		return body;
+	}
+
 	/** Reads an array assignment's ( ... ) from `pos` as text, following its quotes and substitutions. */
 	private arrayLiteral(): string {
 		const start = this.pos;
@@ -272,7 +316,11 @@ class Reader {
 				return this.text.slice(start, this.pos);
 			}
 			if (c === "\\") this.pos += 2;
-			else if (c === "'") this.singleQuoted();
+			else if (c === "#" && /[\s(]/.test(this.text[this.pos - 1] ?? "")) {
+				// A comment inside a multi-line array literal runs to the end of its line.
+				const end = this.text.indexOf("\n", this.pos);
+				this.pos = end === -1 ? this.text.length : end;
+			} else if (c === "'") this.singleQuoted();
 			else if (c === '"') this.doubleQuoted();
 			else if (c === "`") this.backtick();
 			else if (c === "$" && this.text[this.pos + 1] === "(") this.dollarParen();
@@ -391,6 +439,11 @@ class Reader {
 				this.pos += 2;
 				this.nestedHere();
 				append(c === "<" ? PROCESS_SUBSTITUTION : ">(...)");
+			} else if (this.dialect === "posix" && c === "[" && next === "[" && word === undefined && words.every((before) => KEYWORDS.has(before.text)) && /^\[\[\s/.test(text.slice(this.pos))) {
+				// [[ ... ]] is a conditional: its ( ) and =~ patterns are not subshells or programs.
+				append(this.conditional());
+			} else if (this.dialect === "powershell" && c === "@" && (next === "'" || next === '"') && /^@['"][ \t]*\r?\n/.test(text.slice(this.pos))) {
+				append(this.hereString(next), { quoted: true });
 			} else if (this.dialect === "posix" && c === "(" && word !== undefined && ARRAY_ASSIGNMENT.test(word.text)) {
 				append(this.arrayLiteral());
 			} else if (this.dialect === "posix" && c === "(" && next === "(" && word === undefined && this.arithmeticEnd(this.pos) !== -1) {
@@ -542,6 +595,7 @@ class Reader {
 
 	/** Reads "..." from the opening quote at `pos`, following its substitutions. */
 	private doubleQuoted(): string {
+		this.enterFrame();
 		let out = "";
 		this.pos++;
 		while (this.pos < this.text.length && this.text[this.pos] !== '"') {
@@ -568,6 +622,7 @@ class Reader {
 		}
 		if (this.pos >= this.text.length) throw new Unreadable("a double quote is never closed");
 		this.pos++;
+		this.frames--;
 		return out;
 	}
 
@@ -651,9 +706,10 @@ class Reader {
 			if (word.text === `${REDIRECTION}<<<` && i + 1 < all.length) stdin.push({ text: all[i + 1]!.text });
 			i++;
 		}
-		const texts = words.map((word) => word.text);
 		// The environment this command runs with: what its text inherits, then its own assignments.
 		const assignments: string[] = [...base];
+		if (this.dialect === "powershell") this.powerShellAssignment(words, assignments);
+		const texts = words.map((word) => word.text);
 		let i = 0;
 		// Each pass consumes at least one word, so this ends within words.length passes.
 		while (i < texts.length) {
@@ -709,6 +765,31 @@ class Reader {
 		return { assignments, program, args, patterned };
 	}
 
+	/**
+	 * Strips a PowerShell assignment, `<variable> <op> <pipeline>`, from the front of `words`, leaving the
+	 * pipeline whose output it captures (`$out = git push`). `$env:NAME = <value>` also sets NAME for the
+	 * commands after it, which is recorded as a standalone assignment.
+	 */
+	private powerShellAssignment(words: Word[], assignments: string[]): void {
+		const first = words[0]?.text ?? "";
+		const variable = /^((?:\[[^\]]+\])*\$(?:\{[^}]*\}|[A-Za-z_][\w]*(?::[A-Za-z_][\w]*)?))(=|\+=|-=|\?\?=)?(.*)$/s.exec(first);
+		if (!variable) return;
+		const [, name, attachedOperator, attachedRest] = variable;
+		let rest: string;
+		if (attachedOperator) {
+			rest = attachedRest!;
+			words.splice(0, 1);
+		} else {
+			const operator = /^(=|\+=|-=|\?\?=)(.*)$/s.exec(words[1]?.text ?? "");
+			if (!operator || attachedRest) return;
+			rest = operator[2]!;
+			words.splice(0, 2);
+		}
+		if (rest) words.unshift({ text: rest, glob: false, quoted: false });
+		const environment = /^\$env:([A-Za-z_][\w]*)$/i.exec(name!);
+		if (environment) this.found.push({ assignments: [...assignments, `${environment[1]!.toUpperCase()}=${words.map((word) => word.text).join(" ")}`], program: "", args: [], patterned: [] });
+	}
+
 	/** Skips env's options and assignments, reading an -S string as a command; returns the index of its command. */
 	private skipEnv(words: string[], start: number, assignments: string[]): number {
 		let i = start;
@@ -750,18 +831,26 @@ class Reader {
 			const flag = args.findIndex((arg) => /^\/[ck]$/i.test(arg));
 			if (flag !== -1) this.nestedString(args.slice(flag + 1).join(" "), "posix", carry);
 		} else if (name === "wsl") {
-			let at = skipOptions(args, 0, WSL_VALUED);
-			if (args[at] === "--") at++;
-			if (at < args.length) this.nestedString(args.slice(at).join(" "), "posix", carry);
+			// wsl [options] <command line> runs the line through the Linux shell; with -e or --exec it runs the
+			// words as a command directly, so they are read as words and not joined.
+			const at = skipOptions(args, 0, WSL_VALUED);
+			const exec = args.slice(0, at).some((arg) => arg === "-e" || arg === "--exec");
+			const start = args[at] === "--" ? at + 1 : at;
+			if (start >= args.length) return;
+			if (exec) {
+				const invocation = this.unwrap(args.slice(start).map((text) => ({ text, glob: false, quoted: true })), [], carry);
+				if (invocation) this.found.push(invocation);
+			} else this.nestedString(args.slice(start).join(" "), "posix", carry);
 		} else if (name === "find") {
 			this.followFindExec(args, carry);
 		} else if (name === "git") {
-			// git submodule foreach [--recursive] <command> runs its command through a shell in each submodule.
-			const at = args.findIndex((arg, i) => arg === "foreach" && args[i - 1] === "submodule");
-			if (at !== -1) {
-				const command = skipOptions(args, at + 1, new Set());
-				if (command < args.length) this.nestedString(args.slice(command).join(" "), "posix", carry);
-			}
+			// git submodule [--quiet] foreach [--recursive] <command> runs its command through a shell in each submodule.
+			const submodule = args.indexOf("submodule");
+			if (submodule === -1) return;
+			const foreach = skipOptions(args, submodule + 1, new Set());
+			if (args[foreach] !== "foreach") return;
+			const command = skipOptions(args, foreach + 1, new Set());
+			if (command < args.length) this.nestedString(args.slice(command).join(" "), "posix", carry);
 		}
 	}
 

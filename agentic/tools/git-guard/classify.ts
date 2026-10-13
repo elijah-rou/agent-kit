@@ -25,6 +25,15 @@ const NO_VERIFY = /(^|[;&|\n]\s*)git\s+[^\n]*--no-verify(?![\w-])/;
 const PUBLICATION = /(?:^|[;&|\n]\s*)git(?:\s+-C\s+(?:'[^']*'|"[^"]*"|\S+))*\s+(push|pull|merge|rebase|cherry-pick|revert|am|apply|tag)(?![\w-])/g;
 const PUBLICATION_SUBCOMMANDS = new Set(["push", "pull", "merge", "rebase", "cherry-pick", "revert", "am", "apply", "tag", "send-pack", "http-push"]);
 const SUBTREE_PUBLICATION = new Set(["push", "pull", "merge"]);
+// git subtree options, which may come before its action, that take the next word as their value.
+const SUBTREE_VALUED = new Set(["-P", "--prefix", "-m", "--message", "-b", "--branch", "--annotate", "--onto"]);
+
+/** Index of the first word that is not an option or an option's value; `--opt=value` carries its own value. */
+function skipOptions(args: string[], valued: Set<string>): number {
+	let i = 0;
+	while (i < args.length && args[i]!.startsWith("-") && args[i] !== "-") i += valued.has(args[i]!) ? 2 : 1;
+	return i;
+}
 // `git tag` options: those that make it list or verify tags, those that create or delete one, and
 // those that take the next word as their value.
 const TAG_LISTS = new Set(["-l", "--list", "--contains", "--no-contains", "--points-at", "--merged", "--no-merged", "-v", "--verify"]);
@@ -82,8 +91,8 @@ function assignsHookKey(assignment: string): boolean {
 }
 
 /**
- * True when a `git config` call writes a hook key. Reading one passes, and so does unsetting
- * core.hooksPath, which restores the default hooks directory; unsetting a hook.* key removes a hook.
+ * True when a `git config` call writes a hook key. Reading one passes; setting, unsetting, or removing
+ * or renaming its section writes it.
  */
 function writesHookKey(args: string[]): boolean {
 	const positional: string[] = [];
@@ -103,7 +112,8 @@ function writesHookKey(args: string[]): boolean {
 	if (keyAt === -1) return false;
 	const key = positional[keyAt]!.toLowerCase();
 	if (sectionWrite) return true;
-	if (unsets) return key !== HOOKS_PATH;
+	// Unsetting a hook key writes too: in a husky repository, unsetting core.hooksPath turns its hooks off.
+	if (unsets) return true;
 	if (reads || CONFIG_READ_ACTIONS.has(positional[0] ?? "")) return false;
 	// `git config <key>` alone reads it; a value after the key, or a section command, writes it.
 	return keyAt + 1 < positional.length || positional[0] === "set" || args.some((arg) => /^--(add|replace-all|remove-section|rename-section)$/.test(arg));
@@ -136,9 +146,7 @@ function skipVariablesSet(calls: Invocation[]): boolean {
 	return calls.some((call) => {
 		const name = programName(call.program);
 		if (name === "git" || name === "") return call.assignments.some(named);
-		if (EXPORTERS.has(name)) return call.args.some((arg) => arg.includes("=") && named(arg));
-		const environment = /^\$env:([A-Za-z_][A-Za-z0-9_]*)(?:=|$)/i.exec(call.program);
-		return environment !== null && SKIP_VARIABLES.has(environment[1]!.toUpperCase());
+		return EXPORTERS.has(name) && call.args.some((arg) => arg.includes("=") && named(arg));
 	});
 }
 
@@ -188,7 +196,10 @@ function invocationPublication(invocation: Invocation): string | undefined {
 	if (name === "git") {
 		const { subcommand, args } = gitCall(invocation);
 		if (subcommand === undefined) return undefined;
-		if (subcommand === "subtree" && SUBTREE_PUBLICATION.has(args[0] ?? "")) return `git subtree ${args[0]}`;
+		if (subcommand === "subtree") {
+			const action = args[skipOptions(args, SUBTREE_VALUED)];
+			return action !== undefined && SUBTREE_PUBLICATION.has(action) ? `git subtree ${action}` : undefined;
+		}
 		if (subcommand === "tag" && tagReads(args)) return undefined;
 		return PUBLICATION_SUBCOMMANDS.has(subcommand) ? `git ${subcommand}` : undefined;
 	}

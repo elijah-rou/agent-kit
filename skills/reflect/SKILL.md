@@ -45,10 +45,11 @@ Present the synthesizer's full output to the user. The user picks which rows to 
 - A small edit to an existing skill: make it directly.
 - A substantive edit, a description change, or a new skill: draft it as a reviewed change and run the skill validator on every touched skill.
 - Never edit a pinned or installed skill checkout. Global skill changes are a proposed change on a branch of the skill library's repository; repository skills live under `.agents/skills/`.
+- A `global` learning is about the kit, not this repository. Propose it as a change on a branch of the skill library's repository (agent-kit), never as an entry in this repository's learning file.
 
 ## 7. Write the session learning file
 
-Write the approved Accepted and Backlog items, and nothing rejected, to `.agents/learning/sessions/<session-id>.json` as a JSON array:
+Write the approved `repo` items from Accepted and Backlog, and nothing rejected, to `.agents/learning/sessions/<session-id>.json` as a JSON array:
 
 ```json
 [
@@ -61,7 +62,7 @@ Write the approved Accepted and Backlog items, and nothing rejected, to `.agents
 ]
 ```
 
-- `kind`: `repo` for this repository, `global` for every repository.
+- `kind`: always `repo`. The file holds only this repository's items; `global` ones go to agent-kit (section 6).
 - `enforceable`: `true` for Backlog items routed to `correct`.
 - This session writes only its own file. Never edit another session's file or merge files; merging session files into repository learnings is a separate step, and the user reviews its combined results.
 
@@ -69,4 +70,4 @@ Parse the file back after writing it.
 
 ## Reply
 
-Short list, no preamble: edits applied (path and one line each), proposed global changes (branch), the learning file path and entry counts by `kind` and `enforceable`, and dropped findings with the synthesizer's reason.
+Short list, no preamble: edits applied (path and one line each), proposed global changes (branch), the learning file path and entry counts by `enforceable`, and dropped findings with the synthesizer's reason.

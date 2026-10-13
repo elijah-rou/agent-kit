@@ -1,23 +1,36 @@
 #!/usr/bin/env bun
-// Claude Code's PreToolUse hook for the Bash tool: applies the shared git policy (classify.ts) to the
-// command in the event on stdin. It denies with Claude Code's JSON decision and exits 0, and allows by
+// Claude Code's PreToolUse hook for the tools that run a shell command (SHELL_TOOLS): applies the shared
+// git policy (classify.ts) to the command in the event on stdin. It denies with Claude Code's JSON decision and exits 0, and allows by
 // printing nothing. Claude Code treats a hook that exits other than 0 or 2 as a non-blocking error and
 // runs the tool anyway, so every failure here, including an event it cannot read, becomes a deny.
-import { blockReason, type Actor } from "./classify.ts";
+import { blockReason, type Actor, type Dialect } from "./classify.ts";
+
+/**
+ * Claude Code 2.1.296's tools that run their tool_input.command in a shell, and the shell each uses.
+ * Found by listing the tools the binary marks enablesCodeExecution and keeping those whose input holds
+ * a command (the others run JavaScript, schedule prompts, or manage runners). Monitor takes either a
+ * command or a WebSocket (ws); only the command form runs a shell.
+ */
+export const SHELL_TOOLS: ReadonlyMap<string, Dialect> = new Map([
+	["Bash", "posix"],
+	["Monitor", "posix"],
+	["PowerShell", "powershell"],
+]);
 
 const USAGE = `Usage: git-guard --claude-hook
 
-Claude Code PreToolUse hook for the Bash tool. Reads the event JSON on stdin and denies:
-  - any git command with --no-verify, in every session;
-  - git push, pull, merge, rebase, cherry-pick, revert, am, apply, and tag inside a subagent (the event
-    carries agent_id), unless its agent_type is autopilot-owner.
+Claude Code PreToolUse hook for the tools that run a shell command (${[...SHELL_TOOLS.keys()].join(", ")}).
+Reads the event JSON on stdin and denies:
+  - skipping git hooks (--no-verify, git commit -n, a core.hooksPath override), in every session;
+  - git push, pull, merge, rebase, cherry-pick, revert, am, apply, and tag, and gh pr merge, inside a
+    subagent (the event carries agent_id), unless its agent_type is autopilot-owner.
 The main session may publish. An event it cannot read is denied. Exit 0 except for a usage error (2).
 `;
 
 /** Claude Code's events are a few kilobytes; anything near this is not an event. */
 const STDIN_LIMIT_BYTES = 8 * 1024 * 1024;
 
-type Event = { tool: string; command: string | undefined; actor: Actor };
+type Event = { tool: string; command: string | undefined; dialect: Dialect; actor: Actor };
 
 class Malformed extends Error {}
 
@@ -40,15 +53,18 @@ export function parseEvent(text: string): Event {
 	const event = parsed as Record<string, unknown>;
 	const tool = optionalString(event, "tool_name");
 	if (tool === undefined) throw new Malformed("tool_name is missing");
-	// agent_id marks a subagent or teammate; agent_type alone also appears on a main session started with --agent.
+	// agent_id marks a subagent (observed) or an in-process teammate (documented, not observed here);
+	// agent_type alone also appears on a main session started with --agent, so it never marks a child.
 	const agentId = optionalString(event, "agent_id");
 	const actor: Actor = agentId === undefined ? { kind: "main" } : { kind: "child", role: optionalString(event, "agent_type") };
-	if (tool !== "Bash") return { tool, command: undefined, actor };
+	const dialect = SHELL_TOOLS.get(tool);
+	if (dialect === undefined) return { tool, command: undefined, dialect: "posix", actor };
 	const input = event.tool_input;
-	if (typeof input !== "object" || input === null) throw new Malformed("tool_input is missing");
-	const command = (input as Record<string, unknown>).command;
-	if (typeof command !== "string") throw new Malformed("tool_input.command is not a string");
-	return { tool, command, actor };
+	if (typeof input !== "object" || input === null || Array.isArray(input)) throw new Malformed("tool_input is missing");
+	const fields = input as Record<string, unknown>;
+	if (tool === "Monitor" && fields.command === undefined && typeof fields.ws === "object" && fields.ws !== null) return { tool, command: undefined, dialect, actor };
+	if (typeof fields.command !== "string") throw new Malformed("tool_input.command is not a string");
+	return { tool, command: fields.command, dialect, actor };
 }
 
 function deny(reason: string): string {
@@ -64,9 +80,9 @@ export function decide(text: string): string {
 		if (!(error instanceof Malformed)) throw error;
 		return deny(`git guard could not read the PreToolUse event (${error.message}), so it refused the command. Check the hook wiring in settings.json`);
 	}
-	// The hook is wired to Bash only; any other tool is outside the git policy.
+	// A tool that runs no shell command (or a Monitor watching a WebSocket) is outside the git policy.
 	if (event.command === undefined) return "";
-	const reason = blockReason(event.command, event.actor);
+	const reason = blockReason(event.command, event.actor, event.dialect);
 	return reason === undefined ? "" : deny(reason);
 }
 

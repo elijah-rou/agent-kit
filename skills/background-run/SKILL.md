@@ -19,6 +19,8 @@ Run unattended only when all four hold:
 3. Every stage proves its work and can stop the line when the work misses the bar.
 4. Repeated failures from earlier transcripts have become checks, tools, or skills.
 
+Record the check so it leaves a trace: it is the first row this run writes to the log section 2 names (`show-me-your-work`), preceded only by a `start` row or the row quoting a mode the user invoked. Phase `trust`; `decision` is `unattended` or `supervised`; `why` takes each condition by number as held or failed, with the fact that decides it; `evidence` gives a pointer per condition, such as a past run's log, the verification skill's path, a check's command, or a transcript turn; `result` is `4 of 4 held` or names the failed conditions. A condition with no evidence failed.
+
 If any fails, say which, and run supervised: the user watches the first iterations. Do not quietly run unattended anyway.
 
 ## 2. Frame the run
@@ -30,7 +32,7 @@ Before the first iteration, write down:
 - **Rigor:** the gates each unit passes. A one-way door inside the run goes through `design-checkpoint` before anything depends on it.
 - **Authority:** the standing default in the instructions, plus `autopilot-stack`, `ship`, or `autopilot-full` only if the user invoked it for this run ("going to bed, land the stack"). `babysit-and-ship` defines the three modes and the preconditions to check before relying on one. The invocation gets its own log row with the user's words as evidence and lasts this run only.
 - **Workspace:** a fresh worktree off the named base, with one writer.
-- **Log:** `.audit/<task-slug>.tsv`, kept as `show-me-your-work` describes, with a first row recording the framing.
+- **Log:** `.audit/<task-slug>.tsv`, kept as `show-me-your-work` describes, with the trust row from section 1 and then a row recording the framing.
 
 Present the framing once. Reversible work proceeds without waiting for an answer.
 

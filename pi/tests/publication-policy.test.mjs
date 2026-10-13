@@ -48,6 +48,33 @@ test("an autopilot-full owner child may publish its own pull request; other role
   }
 });
 
+test("the shared policy's tightened cases block in Pi too", () => {
+  const saved = { child: process.env.PI_SUBAGENT_CHILD, agent: process.env.PI_SUBAGENT_CHILD_AGENT };
+  try {
+    delete process.env.PI_SUBAGENT_CHILD;
+    delete process.env.PI_SUBAGENT_CHILD_AGENT;
+    const root = interceptor();
+    for (const command of ["git commit -n -m x", "git commit -nm x", "git -c core.hooksPath=/dev/null commit -m x", "git config core.hooksPath /dev/null"]) {
+      assert.equal(root(command)?.block, true, command);
+      assert.match(root(command).reason, /skipping git hooks/);
+    }
+    assert.equal(root("/usr/bin/git push origin main"), undefined);
+    assert.equal(root("git config --get core.hooksPath"), undefined);
+    process.env.PI_SUBAGENT_CHILD = "1";
+    process.env.PI_SUBAGENT_CHILD_AGENT = "deep";
+    const run = interceptor();
+    for (const command of ["/usr/bin/git push", "git --git-dir=.git push", "command git push", "  git push", "nohup git push", "gh pr merge 3 --squash"]) {
+      assert.equal(run(command)?.block, true, command);
+      assert.match(run(command).reason, /child publication\/integration/);
+    }
+  } finally {
+    for (const [key, value] of [["PI_SUBAGENT_CHILD", saved.child], ["PI_SUBAGENT_CHILD_AGENT", saved.agent]]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("root execution is not blocked when child marker is absent", () => {
   const original = process.env.PI_SUBAGENT_CHILD;
   delete process.env.PI_SUBAGENT_CHILD;

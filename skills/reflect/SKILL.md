@@ -14,6 +14,8 @@ Use only the active workspace's transcript for this session: this session's tran
 
 Record the session ID and today's date; every learning carries them.
 
+Collect this session's correction records: the entries with a `correction` field in this repository's `.agents/learning/sessions/<session-id>.json`, which the instructions have the agent append each time the user corrects it, plus any `global` ones the session listed in a report instead of writing. They are mistakes the user named directly; give them to every reviewer in section 2 with the transcript.
+
 ## 2. Review through three lenses, in parallel
 
 Spawn three read-only reviewer subagents at once, each with its prompt from `references/` filled in with the transcript path or digest:
@@ -65,9 +67,10 @@ Write the approved `repo` items from Accepted and Backlog, and nothing rejected,
 - `kind`: `repo` for this repository, `global` for the kit. A repository's file holds only its own items, so `global` entries appear only in agent-kit's files; when this repository is agent-kit, one file holds both.
 - `enforceable`: `true` for Backlog items routed to `correct`.
 - This session writes only files named for its own session ID. Never edit another session's file or merge files; merging session files into repository learnings is a separate step, and the user reviews its combined results.
+- The file may already hold this session's correction records: entries with `kind`, `class`, `correction`, `text`, and `evidence` (the same `evidence` shape), and no `enforceable`. Read the file first and append to its array, keeping every existing entry unchanged. A correction record is evidence for `correct`, not a learning: never rewrite, drop, or count it as one. `global` correction records the session listed in a report rather than wrote go unchanged into agent-kit's file with the `global` items.
 
 Parse each file back after writing it.
 
 ## Reply
 
-Short list, no preamble: edits applied (path and one line each), proposed global changes (branch), each learning file's path and entry counts by `kind` and `enforceable`, and dropped findings with the synthesizer's reason.
+Short list, no preamble: edits applied (path and one line each), proposed global changes (branch), each learning file's path with its learning counts by `kind` and `enforceable` and its correction record count, and dropped findings with the synthesizer's reason.

@@ -16,7 +16,7 @@ Read evidence, not memory, and only from this repository and workspace:
 - review comments on recent pull requests, read-only, and the `## Review record` section of their bodies (squash commit bodies carry it too): each accepted finding with its class, fixed or open; a class recorded on two pull requests is a repeat even when both were fixed;
 - agent instruction files and the current `rules.toml`;
 - code comments that justify a workaround;
-- decision logs under `.audit/`, and entries with `"enforceable": true` in `.agents/learning/sessions/*.json` (the learning loop's backlog for this skill).
+- decision logs under `.audit/`, and in `.agents/learning/sessions/*.json` both the entries with `"enforceable": true` (the learning loop's backlog for this skill) and the correction records, entries with a `correction` field that the instructions have the agent append each time the user corrects it: each is one occurrence of its `class`, so a class recorded twice, in one session or across sessions, is a repeat.
 
 Group mistakes into classes. A class counts once it has happened twice. A correction for a rule already in `rules.toml` at `level = "docs"` counts as a repeat: fix it at a higher level in the same change.
 

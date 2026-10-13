@@ -20,10 +20,24 @@ Mods enabled); model, effort, and permissions stay user choices.
 `git-interceptor` applies, to every tool that runs a shell command: Bash, Monitor, and PowerShell (Claude
 Code 2.1.296's tools that execute code and take a command). It refuses skipping git hooks (`--no-verify`,
 `git commit -n`, a `core.hooksPath` override) in every session, and refuses `git push`, `pull`, `merge`,
-`rebase`, `cherry-pick`, `revert`, `am`, `apply`, `tag`, and `gh pr merge` inside a subagent (an event
-carrying `agent_id`) unless its `agent_type` is `autopilot-owner`. The main session may publish. It denies
-with Claude Code's JSON decision, which holds in bypass-permission mode too, and allows by printing nothing.
-An event it cannot read is denied.
+`rebase`, `cherry-pick`, `revert`, `am`, `apply`, `tag` (except listing or verifying tags), `git subtree
+push`, `pull`, and `merge`, and `gh pr merge` inside a subagent (an event carrying `agent_id`) unless its
+`agent_type` is `autopilot-owner`. The main session may publish. It denies with Claude Code's JSON decision,
+which holds in bypass-permission mode too, and allows by printing nothing. An event it cannot read is denied.
+
+What it refuses that it need not (the same list is in ADR 0001 and the verify-agent-kit `git-guard` feature):
+
+- Mentions. Two readers decide, and either refusing refuses: text patterns that see a git command at the
+  start of any line, even inside a quoted commit message, a here document, or a search pattern, and a
+  command reader that reads what the shell would run. When only the patterns refuse, the reason says the
+  text may be a mention: commit such a message from a file (write it with the editor tool, then
+  `git commit -F <file>`), and search for `--no-verify` without its leading dashes.
+- A child's harmless uses of a refused subcommand, such as `git rebase --abort`.
+- `git config core.hooksPath <dir>`, for every session, even to turn on a repository's own hooks
+  directory: ask the user to set it.
+- A command the reader cannot read, for every session: an unclosed quote, substitution, or here document,
+  nesting past 8 levels, a glob or brace in a program name, or a PowerShell `-EncodedCommand` that is not
+  base64 of UTF-16LE. The reason asks for a plainer command.
 
 Bootstrap does not wire it yet: that is a pending bootstrap change, and until it lands no Claude Code
 session runs the guard. The change adds this PreToolUse entry to `settings.json`, where `<kit>` is the
@@ -58,11 +72,13 @@ agent-kit checkout:
 
 What the guard does not stop (the same list is in ADR 0001 and the verify-agent-kit `git-guard` feature):
 
-- Commands it cannot see in the text: a program named through a variable, a shell alias or function, a
-  script file, a subcommand supplied on stdin (`xargs git`), a git alias (`git p` for push), PowerShell's
-  `Start-Process`, and other programs that publish (`gh pr create` or `comment`, `gh api`, a script).
-- Hooks disabled another way: editing `.git/hooks` or `.git/config` (or a file it includes), or a
-  `GIT_CONFIG_*` variable exported by an earlier command.
+- Commands it cannot see in the text: a program or command named through a variable or a substitution, a
+  shell alias or function, a script file, a subcommand supplied on stdin (`xargs git`), a git or gh alias,
+  PowerShell's `Start-Process`, other programs that run their arguments as a command (for example
+  `parallel` or `ssh`), and other programs that publish (`gh pr create` or `comment`, `gh api`, a script).
+- Hooks disabled another way: editing `.git/hooks` or `.git/config` (or a file it includes),
+  `GIT_CONFIG_GLOBAL` or `GIT_CONFIG_SYSTEM` pointing at a file, a `GIT_CONFIG_*` variable exported by an
+  earlier command, or a tool's own skip variable such as `HUSKY=0`.
 - Identity it cannot tell: a nested `claude -p` started from a subagent's shell has no `agent_id`, so it is
   treated as a main session; a child that holds the Agent tool (the built-in `general-purpose`) can launch an
   `autopilot-owner` grandchild, which may publish; and `agent_id` for teammates is documented but not observed.

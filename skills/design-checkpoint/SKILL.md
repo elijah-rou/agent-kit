@@ -32,7 +32,7 @@ Trace every system the new shape touches, from entry points to effects, with sou
 Require at least two structurally distinct candidates: different whole shapes, not variations inside one shape.
 
 1. Write the rubric first: three to six gradeable criteria for this task. Candidates never see it.
-2. Spawn one subagent per candidate, in parallel, each in its own scratch directory or worktree, each with the same prompt: `references/candidate-prompt.md`, the task, and the grounding. Prefer different model families across candidates, through role or agent profiles on different providers or models where available. Candidates do not know about each other.
+2. Spawn one subagent per candidate, in parallel, each in its own scratch directory or worktree, each with the same prompt: `references/candidate-prompt.md`, the task, and the grounding. Candidates do not know about each other.
 3. If subagents are unavailable, write the candidates yourself in sequence, each before looking back at the last, and say so.
 
 Each candidate returns a package shaped by `references/rationale-template.md`: caller usage first, then types and signatures with `not implemented` bodies, a module map, and a rationale. A candidate that fails to return is dropped and noted.

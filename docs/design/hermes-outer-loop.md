@@ -23,7 +23,7 @@ Hermes starts coding work only by posting a job to a T3 webhook task: `schedule_
 
 Hermes never drives coding agents itself. Its bundled `claude-code` and `codex` skills could, but that would create a second executor beside V2. `pi-t3-runtime`'s design gives V2 sole ownership of "delegated launches, task IDs, lifecycle, cancellation, results and app persistence", and replaces its Pi fork's own subprocess fleet in T3 mode. Results flow back the other way: the T3 thread finishes, and Hermes relays the outcome to the user.
 
-A job may later carry an explicit work class for Jev routing, whose design is in progress. Until then the T3 side classifies the job like any other task.
+Jev routing is built, with its notes in shadow (`jev-task-routing.md`). A job may later carry an explicit work class for it; until a job does, the T3 side classifies the job like any other task.
 
 ## The line for coding work
 
@@ -31,7 +31,7 @@ Coding jobs follow the stages pstack's issue-report automation uses (`pstack/aut
 
 1. **Triage:** expected behavior, duplicate, or real defect.
 2. **Reproduce:** the exact symptom, twice, through the repository's verification skill and its feature map.
-3. **Fix:** a draft pull request with before-and-after evidence.
+3. **Fix:** a pull request, opened ready for review, with before-and-after evidence.
 4. **Review and verify:** the adversarial pull-request review (`skills/git-workflow/references/pr-review.md`, from PR #14) and a fresh verifier.
 5. **Land:** only through a mode the user invokes (`babysit-and-ship`).
 
@@ -61,6 +61,6 @@ T3 can already receive signed GitHub webhooks on its own. Hermes earns its place
 
 1. Choose the always-on host for Hermes.
 2. Observe what a T3 webhook task does when the app is closed or offline (queues, drops, or errors), and whether it needs T3 Connect. This is not yet verified.
-3. Settle Jev routing.
+3. Calibrate Jev routing: `route-report`, labeling, and `route-eval`.
 4. Decide the identity question.
 5. Run `design-checkpoint` on the job contract between Hermes and T3. Other components will consume it, so it is a one-way door.

@@ -26,7 +26,7 @@ What is deferred, with the reason:
 
 - **The overlay, the renderer, the role table, `SessionStart` hooks and T3 targets.** They exist to cross providers and harnesses. With one provider, the agent files are the whole mechanism.
 - **Codex and Pi.** `codex/AGENTS.md` and `pi/AGENTS.md` are unchanged, including the Codex model table and their alternate-model reviewer wording.
-- **Open questions 2 and 6** (cross-harness `quick` and `explore`, and usage-limit fallback) do not arise with one provider. Question 4 took its default. Question 1 took its default except `quick`, which the user moved to `high` because it writes files. Question 3 keeps design-checkpoint's candidate-diversity preference, which only applies "where available".
+- **Open questions 2 and 6** (cross-harness `quick` and `explore`, and usage-limit fallback) do not arise with one provider. Question 4 took its default. Question 1 took its default except `quick`, which the user moved to `high` because it writes files. Question 3 kept design-checkpoint's candidate-diversity preference until the user reopened it on 2026-10-13 and removed it: subagents are Claude-only, after a candidate sent to another provider stalled a trial.
 
 Verified on 2026-10-12 with Claude Code 2.1.296 in a scratch project: the four files, copied and also as symlinks, appear in the session's agent list, with `Explore` replacing the built-in. A headless run launched `Explore` on `claude-haiku-5-5` and `review` on `claude-opus-5-5`. Whether `effort` took effect is not visible in the output.
 
@@ -399,6 +399,8 @@ No separate judge ran. The skill makes one optional, and the scores above are mi
    - (b) Keep a "different model families across candidates" exception, launched through T3.
 
    I recommend (b): candidate diversity is what the step is for, and it is cheap at two or three launches. Default: (b).
+
+   Reopened and decided by the user on 2026-10-13: the preference is removed. Subagents are Claude-only, after a candidate sent to another provider stalled a trial.
 
 4. **Role names.** `explore`, `quick`, `build`, `review`. Alternatives: `bulk`/`implementation`/`review` (B), or `quick`/`implement`/`review` (A). I recommend the short verbs, because they are one word, read as agent types, and do not collide with skill names. Default: `explore`, `quick`, `build`, `review`.
 

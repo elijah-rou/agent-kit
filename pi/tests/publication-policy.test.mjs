@@ -54,19 +54,22 @@ test("the shared policy's tightened cases block in Pi too", () => {
     delete process.env.PI_SUBAGENT_CHILD;
     delete process.env.PI_SUBAGENT_CHILD_AGENT;
     const root = interceptor();
-    for (const command of ["git commit -n -m x", "git commit -nm x", "git -c core.hooksPath=/dev/null commit -m x", "git config core.hooksPath /dev/null"]) {
+    for (const command of ["git commit -n -m x", "git commit -nm x", "git -c core.hooksPath=/dev/null commit -m x", "2>/dev/null git commit -n -m x", "git commit -m \"$(cat <<'EOF'\nDon't skip hooks\nEOF\n)\" --no-verify"]) {
       assert.equal(root(command)?.block, true, command);
-      assert.match(root(command).reason, /skipping git hooks/);
+      assert.match(root(command).reason, /^git-interceptor: git guard blocked skipping git hooks/);
     }
+    assert.match(root("git config core.hooksPath /dev/null")?.reason, /setting core.hooksPath/);
+    for (const command of ["git merge --no-verify-signatures topic", "git commit -F /tmp/msg"]) assert.equal(root(command), undefined, command);
     assert.equal(root("/usr/bin/git push origin main"), undefined);
     assert.equal(root("git config --get core.hooksPath"), undefined);
     process.env.PI_SUBAGENT_CHILD = "1";
     process.env.PI_SUBAGENT_CHILD_AGENT = "deep";
     const run = interceptor();
-    for (const command of ["/usr/bin/git push", "git --git-dir=.git push", "command git push", "  git push", "nohup git push", "gh pr merge 3 --squash"]) {
+    for (const command of ["/usr/bin/git push", "git --git-dir=.git push", "command git push", "  git push", "nohup git push", "gh pr merge 3 --squash", ">/dev/null git push origin x", "git subtree push --prefix=d origin x"]) {
       assert.equal(run(command)?.block, true, command);
       assert.match(run(command).reason, /child publication\/integration/);
     }
+    for (const command of ["git merge-base HEAD origin/main", "git tag -l", "git tag --contains HEAD", "git tag"]) assert.equal(run(command), undefined, command);
   } finally {
     for (const [key, value] of [["PI_SUBAGENT_CHILD", saved.child], ["PI_SUBAGENT_CHILD_AGENT", saved.agent]]) {
       if (value === undefined) delete process.env[key];

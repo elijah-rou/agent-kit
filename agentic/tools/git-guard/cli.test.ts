@@ -89,6 +89,9 @@ describe("git-guard --claude-hook", () => {
 		expect(denied(hook(bash("git push origin agent/x", { id: "a1", type: "build" }, "Monitor")))).toMatch(/git push/);
 		expect(denied(hook(bash("git commit -n -m x", {}, "Monitor")))).toMatch(/skipping git hooks/);
 		expect(denied(hook(bash("& git.exe push", { id: "a1", type: "build" }, "PowerShell")))).toMatch(/git push/);
+		// Only PowerShell's dialect reads a backtick as an escape; read as Bash this would be a substitution.
+		expect(denied(hook(bash("git pu`sh origin x", { id: "a1", type: "build" }, "PowerShell")))).toMatch(/git push/);
+		allowed(hook(bash("git pu`sh origin x`", { id: "a1", type: "build" }, "Bash")));
 		allowed(hook(bash("tail -f build.log", { id: "a1", type: "build" }, "Monitor")));
 		allowed(hook(bash("git push origin agent/x", { id: "a1", type: "autopilot-owner" }, "Monitor")));
 	});

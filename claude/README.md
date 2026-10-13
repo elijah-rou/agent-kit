@@ -55,8 +55,10 @@ What it refuses that it need not (the same list is in ADR 0001 and the verify-ag
   argument holding spaces or quotes without `-e` (wsl joins its words into one line); `wsl -e` running a
   shell that reads its input; a `[[ ]]` holding a process substitution or `$'...'`, or followed by a
   redirection; a PowerShell assignment whose value is read as a program, so a quoted value naming a shell
-  (`$m = 'Switch the hook to /bin/sh'`) reads as starting that shell; and an `@"..."@` here-string whose body
-  holds a `"`. The
+  (`$m = 'Switch the hook to /bin/sh'`) reads as starting that shell; an `@"..."@` here-string whose body
+  holds a `"`, or that the double-quote reader does not read up to its own closing `"@`; a lone carriage
+  return in PowerShell, which it reads as a line break; and any curly quote in a PowerShell command, which its
+  tokenizer reads as a quote. The
   reason asks for a plainer command; a shell given a script operand reads its input as data and passes.
 
 Bootstrap does not wire it yet: that is a pending bootstrap change, and until it lands no Claude Code

@@ -78,7 +78,7 @@ The whole flow runs once per prompt, in a single pass through these steps:
 
 ### What Jev is asked
 
-Each prompt gets one request with state `{ task }`, which meets the door bar (see the door recheck below). The Claude hook posts it to `https://api.typesafe.ai/v1/systemone` with the keychain or environment key. Pi sends it through its classifier registry (`ctx.modelRegistry.findOfType("classifier")` and `classify`), with the TypeSafe credential Pi holds. Both questions are `choice` questions, which both paths support. A Pi with no TypeSafe classifier registered takes the `classifier-unavailable` fallback rather than reading the keychain. Pi's registry reports the requested model (`jev-latest`), not the version that answered, so model drift is invisible under Pi: its lookup and loop notes stay in shadow until Pi reports the version, while its door note is unaffected. Because two request paths can wrap the state differently, the eval runs the labeled set through both and requires matching answers before either note goes advisory.
+Each prompt gets one request with state `{ task }`, which met the pre-2026-10-12 door bar (see the door recheck below). The Claude hook posts it to `https://api.typesafe.ai/v1/systemone` with the keychain or environment key. Pi sends it through its classifier registry (`ctx.modelRegistry.findOfType("classifier")` and `classify`), with the TypeSafe credential Pi holds. Both questions are `choice` questions, which both paths support. A Pi with no TypeSafe classifier registered takes the `classifier-unavailable` fallback rather than reading the keychain. Pi's registry reports the requested model (`jev-latest`), not the version that answered, so model drift is invisible under Pi: its lookup and loop notes stay in shadow until Pi reports the version, while its door note is unaffected. Because two request paths can wrap the state differently, the eval runs the labeled set through both and requires matching answers before either note goes advisory.
 
 | Id | Type | Wording |
 | --- | --- | --- |
@@ -100,13 +100,13 @@ Each prompt gets one request with state `{ task }`, which meets the door bar (se
 | both questions, string state, 4 repeats | 112 of 120 | T046, T089 | 31 of 240 |
 | both questions, `{ task }` state, 4 repeats | 112 of 120 | T046, T089 | 32 of 240 |
 
-Both shapes meet the door bar. The state is `{ task }`, because Pi's classifier registry accepts only an object, so both runtimes send the same request. A first pair of repeats showed 15 against 17 other calls hinted; the next pair reversed it, so that gap was noise. Repeats of one request flip about 1 hint in 90.
+Both shapes met the door bar as it stood before 2026-10-12. The state is `{ task }`, because Pi's classifier registry accepts only an object, so both runtimes send the same request. A first pair of repeats showed 15 against 17 other calls hinted; the next pair reversed it, so that gap was noise. Repeats of one request flip about 1 hint in 90.
 
 With the provisional 0.9 threshold, no one-way-door task was advised lookup, and none of the 90 was advised loop. Two trivial edits were advised lookup: a `.gitignore` line and a README clarification. The closest miss was T046, the MIT license, which the door question also misses: its lookup confidence reached 0.85, so the lookup threshold must stay above that. Two questions took 389 ms at p50 and 507 ms at p95.
 
 ### Decision
 
-`decide` is pure and total. The door rule fires on `one-way-door`, or on any door confidence below 0.8, exactly as today.
+`decide` is pure and total. The door rule fires on `one-way-door`, or on any door confidence below 0.8, the thresholds of the 2026-10-07 door hint.
 
 | `level` (at or above its threshold) | Door rule | Route | Fallback recorded |
 | --- | --- | --- | --- |
@@ -166,9 +166,9 @@ Every failure delivers nothing beyond what the door rule allows, writes one reco
   - `route-harvest` joins records to local Claude, Codex, and Pi transcripts by digest. It writes candidates to an ignored local file and skips opted-out repositories. Text stays on the machine whose agent received it. The user's labels are stored by digest, without text, in that machine's ledger directory, so they travel with its records.
   - Sessions where the user typed `/background-run` supply loop positives.
   - The user labels 150 to 200 prompts, about an hour.
-  - The 2026-10-07 door samples are committed in `elijah-rou/agentic` (`evals/jev-risk`: 90 hand-labeled tasks, each asked twice, answered by `jev-1.13.0`), so the door bar is rechecked on them directly. Only lookup and loop need new labels.
+  - The 2026-10-07 door samples are committed in `elijah-rou/agentic` (`evals/jev-risk`: 90 hand-labeled tasks, each asked twice, answered by `jev-1.13.0`), and the pre-2026-10-12 door bar was rechecked on them directly. Since 2026-10-12 the door also needs labeled live records through `route-eval` (ADR 0002, Consequences), so all three notes need new labels.
 - **Acting bars.** These are proposals and the user's decision:
-  - **door:** with the combined request, no worse than the 2026-10-07 baseline on the same samples: 4 of 60 door calls missed (2 of 30 tasks) and 16 of 120 other calls hinted.
+  - **door:** before 2026-10-12, with the combined request, no worse than the 2026-10-07 baseline on the same samples: 4 of 60 door calls missed (2 of 30 tasks) and 16 of 120 other calls hinted. Since then the door also has to pass `route-eval` on labeled live records before it leaves shadow.
   - **lookup:** precision of at least 0.95, and no door-labeled sample routed to lookup.
   - **loop:** precision of at least 0.9 on at least 10 labeled positives, and it must beat a local handoff word list ("going to bed", "keep going until", "overnight", "until green"). If Jev doesn't beat the list, the list routes loops and sends nothing.
 
@@ -339,4 +339,4 @@ These are for the user. Each has a recommendation and the default taken if there
 
 ## First implementation step
 
-Slice 1 is offline and changes no live behavior. Split the former `jev.ts` into `egress.ts` and `pr-risk.ts`, moving the tests unchanged. Then write `route.ts`'s pure core with tests for the decision table, the runtime-neutral note text, and "advisory requires a matching digest". Slice 2 switches the Claude, Codex, and Pi adapters to `routeTask` and starts the ledger, with `lookup` and `loop` in shadow. The door bar on the combined request was rechecked on 2026-10-12 and passes with `{ task }`. Slices 1 and 2 are built. Slice 3 adds `route-report` and `route-sync`, by 2026-10-26. `route-harvest`, labeling, and `route-eval` follow.
+Slice 1 is offline and changes no live behavior. Split the former `jev.ts` into `egress.ts` and `pr-risk.ts`, moving the tests unchanged. Then write `route.ts`'s pure core with tests for the decision table, the runtime-neutral note text, and "advisory requires a matching digest". Slice 2 switches the Claude, Codex, and Pi adapters to `routeTask` and starts the ledger, with `lookup` and `loop` in shadow. The pre-2026-10-12 door bar on the combined request was rechecked on 2026-10-12 and passed with `{ task }`. Slices 1 and 2 are built. Slice 3 adds `route-report` and `route-sync`, by 2026-10-26. `route-harvest`, labeling, and `route-eval` follow.

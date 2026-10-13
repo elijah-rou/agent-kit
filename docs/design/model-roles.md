@@ -400,6 +400,8 @@ No separate judge ran. The skill makes one optional, and the scores above are mi
 
    I recommend (b): candidate diversity is what the step is for, and it is cheap at two or three launches. Default: (b).
 
+   Reopened and decided by the user on 2026-10-13: the preference is removed. Subagents are Claude-only, after a candidate sent to another provider stalled a trial.
+
 4. **Role names.** `explore`, `quick`, `build`, `review`. Alternatives: `bulk`/`implementation`/`review` (B), or `quick`/`implement`/`review` (A). I recommend the short verbs, because they are one word, read as agent types, and do not collide with skill names. Default: `explore`, `quick`, `build`, `review`.
 
 5. **Claude's built-in `Explore`.** Decided by the user on 2026-10-12: `Explore` runs on `claude-haiku-5-5`. The design now has an `explore` role that renders as Claude's `Explore` agent (see Roles and Source of truth).

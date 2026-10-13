@@ -42,14 +42,17 @@ What it refuses that it need not (the same list is in ADR 0001 and the verify-ag
 - A skip variable set alone or exported in a command whose git command runs no hooks, such as
   `export SKIP=lint; git log`.
 - `git config` changes to `core.hooksPath` or any `hook.*` key (git's config-based hooks), for every
-  session, even to turn on a repository's own hooks: ask the user to set them. Reading them passes, and so
-  does unsetting `core.hooksPath`.
+  session, even to turn on a repository's own hooks, and unsetting `core.hooksPath` (which turns a husky
+  repository's hooks off): ask the user to change them. Reading them passes.
 - A command the reader cannot read, for every session: an unclosed quote, substitution, or here document,
   nesting past 8 levels, a glob or brace in a program name or in git's or gh's subcommand or option words,
   a PowerShell `-EncodedCommand` that is not base64 of UTF-16LE, and commands fed to a shell (or to
   `Invoke-Expression`) from anything but a here document, a here-string, or `cat <<EOF |`, such as
-  `printf ... | sh`, `curl ... | sh`, `bash <(...)`, or `source <(...)`. The reason asks for a plainer
-  command; a shell given a script operand reads its input as data and passes.
+  `printf ... | sh`, `curl ... | sh`, `bash <(...)`, or `source <(...)`; a shell started with no input
+  (`bash -l`, `exec zsh`); a single-quoted span holding `}` or `"` inside a double-quoted `${...}`, which
+  bash and zsh read differently; a PowerShell option abbreviation that could name two options (`-in`); and a
+  PowerShell value option whose value names `-Command`, `-EncodedCommand`, or `-File` (`-wd /c`). The
+  reason asks for a plainer command; a shell given a script operand reads its input as data and passes.
 
 Bootstrap does not wire it yet: that is a pending bootstrap change, and until it lands no Claude Code
 session runs the guard. The change adds this PreToolUse entry to `settings.json`, where `<kit>` is the

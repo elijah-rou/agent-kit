@@ -1,6 +1,6 @@
 ---
 name: review
-description: "Independent read-only review of work this agent did not write: pull requests, plans, designs, and run transcripts. It can only read files, so give it the diff or material as file paths. Reports only findings that would block acceptance."
+description: "Independent read-only review of work this agent did not write: plans, designs, and run transcripts. Pull requests go to pr-review. It can only read files, so give it the material as file paths. Reports only findings that would block acceptance."
 model: claude-opus-5-5
 effort: xhigh
 tools: Read, Grep, Glob

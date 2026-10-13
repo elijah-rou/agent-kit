@@ -272,6 +272,40 @@ describe("round 4", () => {
 	});
 });
 
+// Round-5 re-review cases (each allowed wrongly on 7c0d337).
+describe("round 5", () => {
+	const build: Actor = { kind: "child", role: "build" };
+	const expectDeny = (command: string, actor: Actor, reason: RegExp, dialect: "posix" | "powershell" = "posix") => expect([command, blockReason(command, actor, dialect)]).toEqual([command, expect.stringMatching(reason)]);
+	const expectAllow = (command: string, actor: Actor = main, dialect: "posix" | "powershell" = "posix") => expect([command, blockReason(command, actor, dialect)]).toEqual([command, undefined]);
+	test("G1: PowerShell options resolve by documented alias or unambiguous prefix, and fail closed otherwise", () => {
+		expectDeny("pwsh -in -c 'git push origin x'", build, /could not read this command: its PowerShell option -in is ambiguous/, "powershell");
+		expectDeny("pwsh -in -c 'git commit -n -m x'", main, /could not read this command/, "powershell");
+		expectDeny("pwsh -co 'git push origin x'", build, /ambiguous/, "powershell");
+		for (const command of ["pwsh -inp Text -c 'git push origin x'", "pwsh -if Text -c 'git push origin x'", "pwsh -i -c 'git push origin x'", "pwsh -ExecutionPolicy -Command 'git push origin x'", "pwsh -wd -c 'git push origin x'", "pwsh -CustomPipeName p -Command 'git push origin x'", "pwsh -custom p -Command 'git push origin x'", "pwsh -nop -noni -Command 'git push origin x'", "pwsh -com 'git push origin x'"]) expectDeny(command, build, /git push/, "powershell");
+		expectDeny("pwsh -ep -e ZwBpAHQAIABwAHUAcwBoAA==", build, /git push/, "powershell");
+		expectAllow("pwsh -wd C:\\src -File build.ps1", build, "powershell");
+	});
+	test("G2: a single quote inside a double-quoted ${...} holding } or \" is unreadable", () => {
+		expectDeny(`echo "\${x:-'}"'}" ; command git push origin x ; echo "' #"`, build, /could not read this command: a single quote inside a double-quoted/);
+		expectDeny(`echo "\${x:-'}"'}" ; command git commit -n -m x ; echo "' #"`, main, /could not read this command/);
+		expectDeny(`echo "\${x:-'$(git push origin x)'}"`, build, /git push/);
+		expectAllow(`echo "\${x:-'default'}"`);
+	});
+	test("G3: skip variables in PowerShell, and on programs the reader follows into", () => {
+		for (const actor of [main, owner]) {
+			for (const command of ["$env:HUSKY = '0'; git commit -m x", "$env:SKIP='lint'; git commit -m x", "$env:lefthook = 0\ngit push origin x"]) expectDeny(command, actor, /hook manager's skip variable/, "powershell");
+			for (const command of ["HUSKY=0 sh -c 'git commit -m x'", "HUSKY=0 eval git commit -m x", "SKIP=lint bash <<'EOF'\ngit commit -m x\nEOF", "HUSKY=0 env -S 'git commit -m x'", "LEFTHOOK=0 find . -maxdepth 0 -exec git commit -m x \\;", "SKIP=lint watch -n 1 git commit -m x", "HUSKY=0 flock /tmp/l -c 'git commit -m x'"]) expectDeny(command, actor, /hook manager's skip variable/);
+			for (const command of ["declare -x HUSKY=0; git commit -m x", "typeset -x SKIP=lint; git commit -m x", "local SKIP=lint; git commit -m x", "readonly HUSKY=0; git commit -m x"]) expectDeny(command, actor, /hook manager's skip variable/);
+		}
+		for (const command of ["HUSKY=0 sh -c 'npm ci'; git status", "$env:HUSKY = '0'; npm ci"]) expectAllow(command, main, command.startsWith("$") ? "powershell" : "posix");
+	});
+	test("folds: an assignment piped to pwsh, eval --, and ${...} in an unquoted here document", () => {
+		expectDeny("X='git push origin x' | pwsh", build, /could not read this command: it feeds a shell/);
+		expectDeny("eval -- git push origin x", build, /git push/);
+		expectDeny("cat <<EOF\n${x:-'$(git push origin x)'}\nEOF", build, /git push/);
+	});
+});
+
 describe("invocations", () => {
 	test("splits quoted words, assignments, and substitutions", () => {
 		expect(invocations(`cd a && FOO=1 git -C "x y" push origin "$(git rev-parse HEAD)" # git merge`, "posix")).toEqual([

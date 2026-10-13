@@ -63,19 +63,47 @@ const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh
 // Shell options that take the next word as their value.
 const SHELL_VALUED = new Set(["-o", "+o", "-O", "+O", "--rcfile", "--init-file"]);
 const POWERSHELLS = new Set(["pwsh", "powershell"]);
-// PowerShell's command-line options that take a value: full name and documented aliases.
-const POWERSHELL_VALUED: [string, string[]][] = [
-	["executionpolicy", ["ex", "ep"]],
-	["windowstyle", ["w"]],
-	["workingdirectory", ["wd"]],
-	["configurationname", ["config"]],
-	["outputformat", ["o", "of"]],
-	["inputformat", ["in", "if"]],
-	["version", ["v"]],
-	["psconsolefile", []],
-	["settingsfile", ["settings"]],
-	["custompipename", []],
+// PowerShell's command-line parameters (pwsh 7 and Windows PowerShell 5.1): full name, documented
+// aliases, and what the parameter does with the words after it. Any other unambiguous prefix of a full
+// name also names it.
+type PowerShellKind = "command" | "encoded" | "file" | "value" | "flag";
+const POWERSHELL_PARAMETERS: [string, string[], PowerShellKind][] = [
+	["command", ["c"], "command"],
+	["commandwithargs", ["cwa"], "command"],
+	["encodedcommand", ["e", "ec"], "encoded"],
+	["file", ["f"], "file"],
+	["configurationfile", [], "value"],
+	["configurationname", ["config"], "value"],
+	["custompipename", [], "value"],
+	["executionpolicy", ["ex", "ep"], "value"],
+	["inputformat", ["inp", "if"], "value"],
+	["outputformat", ["o", "of"], "value"],
+	["psconsolefile", [], "value"],
+	["settingsfile", ["settings"], "value"],
+	["version", ["v"], "value"],
+	["windowstyle", ["w"], "value"],
+	["workingdirectory", ["wd"], "value"],
+	["interactive", ["i"], "flag"],
+	["login", ["l"], "flag"],
+	["mta", [], "flag"],
+	["sta", [], "flag"],
+	["noexit", ["noe"], "flag"],
+	["nologo", ["nol"], "flag"],
+	["noninteractive", ["noni"], "flag"],
+	["noprofile", ["nop"], "flag"],
+	["noprofileloadtime", [], "flag"],
+	["sshservermode", ["sshs"], "flag"],
+	["help", ["?", "h"], "flag"],
 ];
+
+/** What a PowerShell dash word names: an exact alias or full name, else the one full name it prefixes; Unreadable when it prefixes several. */
+function powerShellParameter(option: string): PowerShellKind | undefined {
+	const exact = POWERSHELL_PARAMETERS.find(([full, aliases]) => full === option || aliases.includes(option));
+	if (exact) return exact[2];
+	const matches = POWERSHELL_PARAMETERS.filter(([full]) => full.startsWith(option));
+	if (matches.length > 1 && new Set(matches.map(([, , kind]) => kind)).size > 1) throw new Unreadable(`its PowerShell option -${option} is ambiguous between ${matches.map(([full]) => `-${full}`).join(", ")}`);
+	return matches[0]?.[2];
+}
 const INVOKE_EXPRESSION = new Set(["eval", "invoke-expression", "iex"]);
 const ANSI_C: Record<string, string> = { n: "\n", t: "\t", r: "\r", a: "\x07", b: "\b", e: "\x1b", E: "\x1b", f: "\f", v: "\v", "\\": "\\", "'": "'", '"': '"', "?": "?" };
 
@@ -98,7 +126,11 @@ class Reader {
 	private pos = 0;
 	private readonly escape: string;
 
-	constructor(private readonly text: string, private readonly dialect: Dialect, private readonly depth: number, private readonly found: Invocation[]) {
+	/**
+	 * `inherited` holds the assignments in force for every command this text runs, because the text is a
+	 * string a program runs with them in its environment (`HUSKY=0 sh -c '...'`).
+	 */
+	constructor(private readonly text: string, private readonly dialect: Dialect, private readonly depth: number, private readonly found: Invocation[], private readonly inherited: string[] = []) {
 		if (depth > NESTING_LIMIT) throw new Unreadable(`it nests more than ${NESTING_LIMIT} levels of substitution, subshell, or shell string`);
 		this.escape = dialect === "posix" ? "\\" : "`";
 	}
@@ -110,26 +142,27 @@ class Reader {
 
 	/** Reads text nested inside this text (a substitution or subshell) from `pos` up to its `)`, as commands. */
 	private nestedHere(): void {
-		const inner = new Reader(this.text, this.dialect, this.depth + 1, this.found);
+		const inner = new Reader(this.text, this.dialect, this.depth + 1, this.found, this.inherited);
 		inner.pos = this.pos;
 		inner.analyze(inner.list(")"));
 		this.pos = inner.pos;
 	}
 
 	/** Reads a separate string as commands, such as an `sh -c` argument or a here document fed to a shell. */
-	nestedString(text: string, dialect: Dialect = this.dialect): void {
-		new Reader(text, dialect, this.depth + 1, this.found).run();
+	nestedString(text: string, dialect: Dialect = this.dialect, carry: string[] = this.inherited): void {
+		new Reader(text, dialect, this.depth + 1, this.found, carry).run();
 	}
 
 	/** Records the substitutions in text a shell expands but does not run, such as an unquoted here document body. */
 	private substitutionsIn(text: string): void {
-		const inner = new Reader(text, "posix", this.depth + 1, this.found);
+		const inner = new Reader(text, "posix", this.depth + 1, this.found, this.inherited);
 		while (inner.pos < text.length) {
 			const c = text[inner.pos]!;
 			if (c === "\\") inner.pos += 2;
 			else if (c === "`") inner.backtick();
 			else if (c === "$" && text[inner.pos + 1] === "(") inner.dollarParen();
-			else if (c === "$" && text[inner.pos + 1] === "{") inner.parameter();
+			// An unquoted here document body expands like a double-quoted string.
+			else if (c === "$" && text[inner.pos + 1] === "{") inner.parameter(true);
 			else inner.pos++;
 		}
 	}
@@ -198,6 +231,7 @@ class Reader {
 			const c = this.text[this.pos]!;
 			if (c === "\\") this.pos += 2;
 			else if (c === "'" && !inDoubleQuotes) this.singleQuoted();
+			else if (c === "'") this.quoteInDoubleQuotedParameter();
 			else if (c === '"') this.doubleQuoted();
 			else if (c === "`") this.backtick();
 			else if (c === "$" && this.text[this.pos + 1] === "(") this.dollarParen();
@@ -211,6 +245,20 @@ class Reader {
 			} else this.pos++;
 		}
 		throw new Unreadable("a ${ parameter expansion is never closed");
+	}
+
+	/**
+	 * Reads a ' inside a double-quoted ${...}. bash in its default mode skips a single-quoted span there
+	 * when it looks for the closing }, while zsh and POSIX-mode bash read the quote as an ordinary
+	 * character. The reader follows any substitution in the span, which both run, and refuses a span
+	 * holding } or ", where the shells end the expansion in different places.
+	 */
+	private quoteInDoubleQuotedParameter(): void {
+		const end = this.text.indexOf("'", this.pos + 1);
+		const span = end === -1 ? this.text.slice(this.pos + 1) : this.text.slice(this.pos + 1, end);
+		if (end === -1 || /[}"]/.test(span)) throw new Unreadable("a single quote inside a double-quoted ${...} is read differently by bash and zsh");
+		this.substitutionsIn(span);
+		this.pos = end + 1;
 	}
 
 	/** Reads an array assignment's ( ... ) from `pos` as text, following its quotes and substitutions. */
@@ -545,7 +593,7 @@ class Reader {
 	private readFedInput(segments: Segment[], commands: (Invocation | undefined)[], k: number, dialect: Dialect): void {
 		const own = segments[k]!.stdin;
 		if (own.length) {
-			for (const input of own) this.nestedString(input.text, dialect);
+			for (const input of own) this.nestedString(input.text, dialect, commands[k]!.assignments);
 			return;
 		}
 		const piped = k > 0 && segments[k - 1]!.pipes;
@@ -553,14 +601,14 @@ class Reader {
 		const producer = commands[k - 1];
 		const producerSegment = segments[k - 1];
 		if (producer && producerSegment && programName(producer.program) === "cat" && producer.args.length === 0 && producerSegment.stdin.length) {
-			for (const input of producerSegment.stdin) this.nestedString(input.text, dialect);
+			for (const input of producerSegment.stdin) this.nestedString(input.text, dialect, commands[k]!.assignments);
 			return;
 		}
-		if (producer && producerSegment && dialect === "powershell") {
+		if (producer && producerSegment && producer.program !== "" && dialect === "powershell") {
 			const words = producerSegment.words.filter((word) => !word.text.startsWith(REDIRECTION));
 			const literal = words.length === 1 && words[0]!.quoted ? words[0]!.text : ["echo", "write-output"].includes(programName(producer.program)) && words.slice(1).every((word) => word.quoted) ? producer.args.join(" ") : undefined;
 			if (literal !== undefined) {
-				this.nestedString(literal, "powershell");
+				this.nestedString(literal, "powershell", commands[k]!.assignments);
 				return;
 			}
 		}
@@ -604,7 +652,8 @@ class Reader {
 			i++;
 		}
 		const texts = words.map((word) => word.text);
-		const assignments: string[] = [];
+		// The environment this command runs with: what its text inherits, then its own assignments.
+		const assignments: string[] = [...this.inherited];
 		let i = 0;
 		// Each pass consumes at least one word, so this ends within words.length passes.
 		while (i < texts.length) {
@@ -624,14 +673,14 @@ class Reader {
 				const at = skipOptions(texts, i + 1, FLOCK_VALUED);
 				// flock [options] <file> -c <command>, or flock [options] <file> <command...>
 				if (texts[at + 1] === "-c" || texts[at + 1] === "--command") {
-					if (at + 2 < texts.length) this.nestedString(texts[at + 2]!);
+					if (at + 2 < texts.length) this.nestedString(texts[at + 2]!, this.dialect, assignments);
 					return undefined;
 				}
 				i = at + 1;
 			} else if (name === "watch") {
 				// watch joins its arguments into one string for sh -c.
 				const at = skipOptions(texts, i + 1, WATCH_VALUED);
-				if (at < texts.length) this.nestedString(texts.slice(at).join(" "), "posix");
+				if (at < texts.length) this.nestedString(texts.slice(at).join(" "), "posix", assignments);
 				return undefined;
 			} else if (WRAPPERS.has(name)) {
 				i = skipOptions(texts, i + 1, WRAPPERS.get(name)!);
@@ -642,7 +691,7 @@ class Reader {
 			}
 		}
 		// A command of assignments alone still sets them in the shell, which the policy reads.
-		if (i >= texts.length) return assignments.length ? { assignments, program: "", args: [], patterned: [] } : undefined;
+		if (i >= texts.length) return assignments.length > this.inherited.length ? { assignments, program: "", args: [], patterned: [] } : undefined;
 		const programWord = words[i]!;
 		if (programWord.glob && programWord.text !== "[" && programWord.text !== "[[") throw new Unreadable(`its program name ${programWord.text} holds an unquoted glob or brace pattern`);
 		// zsh expands =name in command position to the path of name.
@@ -656,7 +705,7 @@ class Reader {
 			args = [dashed[1]!, ...args];
 			patterned = [false, ...patterned];
 		}
-		this.followArguments(programName(program), args);
+		this.followArguments(programName(program), args, assignments);
 		return { assignments, program, args, patterned };
 	}
 
@@ -669,14 +718,14 @@ class Reader {
 				assignments.push(option);
 				i++;
 			} else if (option === "-S" || option === "--split-string") {
-				if (i + 1 < words.length) this.nestedString(words[i + 1]!, "posix");
+				if (i + 1 < words.length) this.nestedString(words[i + 1]!, "posix", assignments);
 				i += 2;
 			} else if (option.startsWith("--split-string=")) {
-				this.nestedString(option.slice("--split-string=".length), "posix");
+				this.nestedString(option.slice("--split-string=".length), "posix", assignments);
 				i++;
 			} else if (/^-[^-]*S/.test(option)) {
 				// -S attached to its string, possibly after other short flags: -S'git push', -iS'...'.
-				this.nestedString(option.slice(option.indexOf("S") + 1), "posix");
+				this.nestedString(option.slice(option.indexOf("S") + 1), "posix", assignments);
 				i++;
 			} else {
 				i += ENV_VALUED.has(option) ? 2 : 1;
@@ -686,31 +735,32 @@ class Reader {
 	}
 
 	/** Reads the command a program runs from its arguments: `sh -c`, `fish -c`, `eval`, PowerShell, `cmd /c`, `wsl`, and `find -exec`. */
-	private followArguments(name: string, args: string[]): void {
+	private followArguments(name: string, args: string[], carry: string[]): void {
 		if (INVOKE_EXPRESSION.has(name)) {
-			// eval <words>; Invoke-Expression [-Command] <string>, where -Command (or a prefix) can only come first.
-			const rest = name !== "eval" && /^-c(o(m(m(a(n(d)?)?)?)?)?)?$/i.test(args[0] ?? "") ? args.slice(1) : args;
-			if (rest.length) this.nestedString(rest.join(" "));
+			// eval [--] <words>; Invoke-Expression [-Command] <string>, where -Command (or a prefix) can only come first.
+			const leading = name === "eval" ? args[0] === "--" : /^-c(o(m(m(a(n(d)?)?)?)?)?)?$/i.test(args[0] ?? "");
+			const rest = leading ? args.slice(1) : args;
+			if (rest.length) this.nestedString(rest.join(" "), this.dialect, carry);
 		} else if (SHELLS.has(name)) {
 			const { commandMode, operand } = shellArgs(name, args);
-			if (commandMode && operand !== undefined) this.nestedString(operand, "posix");
+			if (commandMode && operand !== undefined) this.nestedString(operand, "posix", carry);
 		} else if (POWERSHELLS.has(name)) {
-			this.followPowerShell(name, args);
+			this.followPowerShell(name, args, carry);
 		} else if (name === "cmd") {
 			const flag = args.findIndex((arg) => /^\/[ck]$/i.test(arg));
-			if (flag !== -1) this.nestedString(args.slice(flag + 1).join(" "), "posix");
+			if (flag !== -1) this.nestedString(args.slice(flag + 1).join(" "), "posix", carry);
 		} else if (name === "wsl") {
 			let at = skipOptions(args, 0, WSL_VALUED);
 			if (args[at] === "--") at++;
-			if (at < args.length) this.nestedString(args.slice(at).join(" "), "posix");
+			if (at < args.length) this.nestedString(args.slice(at).join(" "), "posix", carry);
 		} else if (name === "find") {
-			this.followFindExec(args);
+			this.followFindExec(args, carry);
 		} else if (name === "git") {
 			// git submodule foreach [--recursive] <command> runs its command through a shell in each submodule.
 			const at = args.findIndex((arg, i) => arg === "foreach" && args[i - 1] === "submodule");
 			if (at !== -1) {
 				const command = skipOptions(args, at + 1, new Set());
-				if (command < args.length) this.nestedString(args.slice(command).join(" "), "posix");
+				if (command < args.length) this.nestedString(args.slice(command).join(" "), "posix", carry);
 			}
 		}
 	}
@@ -719,39 +769,40 @@ class Reader {
 	 * Reads `pwsh -Command <text>`, `-EncodedCommand <base64 of UTF-16LE>` (and their unambiguous
 	 * prefixes), and Windows PowerShell's positional command (`powershell "git push"`).
 	 */
-	private followPowerShell(name: string, args: string[]): void {
+	private followPowerShell(name: string, args: string[], carry: string[]): void {
+		const dash = (word: string | undefined) => word !== undefined && /^[-/]/.test(word) && word !== "-";
 		for (let i = 0; i < args.length; i++) {
 			const arg = args[i]!;
-			const option = arg.replace(/^[-/]+/, "").toLowerCase();
-			if (!/^[-/]/.test(arg)) {
+			if (!dash(arg)) {
 				// powershell.exe reads a first positional word as -Command; pwsh reads it as -File.
-				if (name === "powershell") this.nestedString(args.slice(i).join(" "), "powershell");
+				if (name === "powershell") this.nestedString(args.slice(i).join(" "), "powershell", carry);
 				return;
 			}
-			if (option === "ec" || option === "e" || (option.startsWith("en") && "encodedcommand".startsWith(option))) {
-				this.nestedString(decodePowerShell(args[i + 1] ?? ""), "powershell");
+			const kind = powerShellParameter(arg.replace(/^[-/]+/, "").toLowerCase());
+			if (kind === "encoded") {
+				this.nestedString(decodePowerShell(args[i + 1] ?? ""), "powershell", carry);
 				return;
 			}
-			if (option === "cwa" || (option.startsWith("c") && ("command".startsWith(option) || "commandwithargs".startsWith(option)))) {
-				if (i + 1 < args.length && args[i + 1] !== "-") this.nestedString(args.slice(i + 1).join(" "), "powershell");
+			if (kind === "command") {
+				if (i + 1 < args.length && args[i + 1] !== "-") this.nestedString(args.slice(i + 1).join(" "), "powershell", carry);
 				return;
 			}
 			// -File <script> [args]: the rest is the script's.
-			if (option.startsWith("f") && "file".startsWith(option)) return;
-			// A value-taking option (by full name, documented alias, or unambiguous prefix) consumes the next word;
-			// any other dash word is a flag, and reading goes on to the next word.
-			if (POWERSHELL_VALUED.some(([full, aliases]) => aliases.includes(option) || (option.length >= 2 && full.startsWith(option)))) i++;
+			if (kind === "file") return;
+			// A value option consumes the next word, unless that word itself names -Command, -EncodedCommand,
+			// or -File: then it is read as that option, which fails closed.
+			if (kind === "value" && !(dash(args[i + 1]) && ["command", "encoded", "file"].includes(powerShellParameter(args[i + 1]!.replace(/^[-/]+/, "").toLowerCase()) ?? ""))) i++;
 		}
 	}
 
 	/** Reads the commands that `find -exec` (and -execdir, -ok, -okdir) runs, up to their `;` or `+`. */
-	private followFindExec(args: string[]): void {
+	private followFindExec(args: string[], carry: string[]): void {
 		for (let i = 0; i < args.length; i++) {
 			if (!FIND_EXEC.has(args[i]!)) continue;
 			const end = args.findIndex((arg, at) => at > i && (arg === ";" || arg === "+"));
 			const command = args.slice(i + 1, end === -1 ? args.length : end);
 			const invocation = this.unwrap(command.map((text) => ({ text, glob: false, quoted: false })), []);
-			if (invocation) this.found.push(invocation);
+			if (invocation) this.found.push({ ...invocation, assignments: [...carry, ...invocation.assignments] });
 			i = end === -1 ? args.length : end;
 		}
 	}

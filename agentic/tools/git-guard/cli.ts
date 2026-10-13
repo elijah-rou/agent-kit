@@ -23,7 +23,7 @@ Claude Code PreToolUse hook for the tools that run a shell command (${[...SHELL_
 Reads the event JSON on stdin and denies:
   - skipping git hooks, in every session: --no-verify, git commit -n or git am -n, an override or
     git config change of core.hooksPath or a hook.* key, or a hook manager's skip variable (HUSKY, SKIP,
-    LEFTHOOK, ...) on a git command;
+    LEFTHOOK, ...) set for a git command, or alone or exported in a command that runs git;
   - git push, pull, merge, rebase, cherry-pick, revert, am, apply, tag (except listing), send-pack, and
     http-push, git subtree push, pull, and merge, and gh pr merge, inside a subagent (the event carries
     agent_id), unless its agent_type is autopilot-owner.

@@ -126,13 +126,19 @@ type HookSkip = "flag" | "override" | "config-write" | "skip-variable";
 const SKIP_VARIABLES = new Set(["HUSKY", "HUSKY_SKIP_HOOKS", "SKIP", "PRE_COMMIT_ALLOW_NO_CONFIG", "LEFTHOOK", "LEFTHOOK_EXCLUDE", "OVERCOMMIT_DISABLE"]);
 const EXPORTERS = new Set(["export", "declare", "typeset", "local", "readonly"]);
 
-/** The hook-skip variables a command sets: on a git command, alone, or through export and its kin. */
+/**
+ * True when a command sets a hook manager's skip variable: in a git command's environment (its own
+ * assignments, or those of a program the reader followed into, such as `HUSKY=0 sh -c 'git ...'`), as a
+ * standalone assignment, through export and its kin, or with PowerShell's `$env:NAME = ...`.
+ */
 function skipVariablesSet(calls: Invocation[]): boolean {
 	const named = (assignment: string) => SKIP_VARIABLES.has(assignment.slice(0, assignment.indexOf("=")));
 	return calls.some((call) => {
 		const name = programName(call.program);
 		if (name === "git" || name === "") return call.assignments.some(named);
-		return EXPORTERS.has(name) && call.args.some((arg) => arg.includes("=") && named(arg));
+		if (EXPORTERS.has(name)) return call.args.some((arg) => arg.includes("=") && named(arg));
+		const environment = /^\$env:([A-Za-z_][A-Za-z0-9_]*)(?:=|$)/i.exec(call.program);
+		return environment !== null && SKIP_VARIABLES.has(environment[1]!.toUpperCase());
 	});
 }
 

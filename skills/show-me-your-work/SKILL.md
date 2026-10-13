@@ -62,7 +62,7 @@ End the reply with an `Attention` section. Its first line is `reviewed by <model
 
 The `Attention` section holds only the reviewer's flags, as the reviewer gave them. Your responses (a flag fixed, disputed, or deferred) go in the report above the section, and a fix also gets a log row; never annotate, reword, or drop a flag inside the section.
 
-A review covers the run up to the hand-back it precedes. If work continues after it, in a later turn or to fix a flag, audit the new rows against the transcript and rerun the review on the updated log and transcript before the next hand-back. The new `Attention` section replaces the old one.
+A review covers the run up to the hand-back it precedes. If work continues after it, in a later turn or to fix a flag, audit the new rows against the transcript, and before the next hand-back rerun the review on only what came after it: the rows and the transcript since the last review, with the previous `Attention` section so the reviewer can carry forward any flag still open. The new `Attention` section replaces the old one.
 
 ## Reviewing a trail
 

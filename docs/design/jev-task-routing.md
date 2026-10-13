@@ -1,12 +1,12 @@
 # Jev task routing
 
-- **Status:** proposed 2026-10-12. All open questions were decided on 2026-10-12, Pi's transport was changed to its classifier registry, and every prompt in every runtime on every machine is now recorded (see Tracking across everything). Nothing is built.
+- **Status:** proposed 2026-10-12. All open questions were decided on 2026-10-12, Pi's transport was changed to its classifier registry, and every prompt in every runtime on every machine is now recorded (see Tracking across everything). Slices 1 and 2 are built, and routing has run in shadow since 2026-10-12, door note included, in `egress.ts`, `pr-risk.ts`, `route.ts`, `route-task.ts`, and `cli.ts` under `agentic/tools/jev/`. The calibration tools come next: `route-report` by 2026-10-26, two weeks after records started on 2026-10-12, then labeling and `route-eval`. The `background-run` revisit and any note's promotion out of shadow wait on them.
 - **Reader:** the user reviewing the shape, then whoever implements it.
 - **Door:** this design changes ADR 0001 decision 5 ("Jev is advisory and only adds caution"), the rule for which task text leaves the machine, and a policy that every runtime shares. The question wording, thresholds, note text, and adapters around those are reversible. So is the record format: the ledger is a temporary evaluation instrument, not a contract, and a format change may drop old records.
 
 ## Problem
 
-Today the user picks the level of work by typing skill names, such as `background-run`. Jev adds only a one-way-door hint (`agentic/tools/jev/jev.ts`, delivered by the Claude Code `UserPromptSubmit` hook and `pi/extensions/task-class.ts`). The goal is for Jev to pick the level for each task, so the user stops naming modes:
+Before this design, the user picked the level of work by typing skill names, such as `background-run`, and Jev added only a one-way-door hint, delivered by the Claude Code `UserPromptSubmit` hook and `pi/extensions/task-class.ts`. The goal is for Jev to pick the level for each task, so the user stops naming modes:
 
 - **lookup:** answer directly.
 - **rigor:** the full engineering method, the equivalent of pstack's `/poteto-mode`.
@@ -25,7 +25,7 @@ The user types tasks as now, in Claude Code, Codex, or Pi, in any repository the
 
 - "Going to bed, keep fixing the flaky session tests until CI is green twice in a row." The agent gets a loop note, reads `background-run`, writes the framing, and runs.
 - "Where does the config loader read XDG paths?" Once calibrated, the agent gets a lookup note and answers directly.
-- "Migrate the ledger store from JSON files to SQLite." No level note, so this is rigor. The door note fires as today.
+- "Migrate the ledger store from JSON files to SQLite." No level note, so this is rigor. The door note fires too, once it leaves shadow.
 - `/background-run …` or any other slash command is the user's own choice, so no note is delivered. The text is still classified in shadow and recorded, so each manual invocation becomes a labeled example.
 - `AGENTIC_ROUTE=shadow` or `AGENTIC_ROUTE=off` lowers every note for a session. `off` also stops every call to TypeSafe. Any other non-empty value counts as `shadow`, so nothing local can raise a note.
 
@@ -82,7 +82,7 @@ Each prompt gets one request with state `{ task }`, which meets the door bar (se
 
 | Id | Type | Wording |
 | --- | --- | --- |
-| `door` | choice | `TASK_INSTRUCTIONS` and `TASK_CRITERIA` from `jev.ts`, verbatim |
+| `door` | choice | `TASK_INSTRUCTIONS` and `TASK_CRITERIA` in `route.ts`, the 2026-10-07 wording verbatim |
 | `level` | choice | "The state is a message a user sent to a coding agent. Classify how much process the agent should apply." `lookup`: a question or small request answerable directly from reading code, docs, or state, with no change beyond a trivial edit. `rigor`: a change, fix, investigation, or design that needs grounding, verification, and review. `loop`: the user's own words hand the work off to run without them, or to keep going until a stated condition holds. Length alone does not make a loop. |
 
 **Probe evidence.** These numbers come from synthetic tasks only, against `jev-1.13.0` on 2026-10-12, so they indicate rather than calibrate.
@@ -123,7 +123,7 @@ Notes are fixed templates. No Jev text reaches the model, only a route key and n
 
 | Runtime | Delivery | lookup | loop | rigor or any failure |
 | --- | --- | --- | --- | --- |
-| Claude Code | hook `additionalContext` | "Answer directly: no plan, subagents, or headings. If it turns out to need a change, treat it as a task." | "If the user's words hand the work off, read `background-run`'s SKILL.md at <path> and follow it. This invokes no landing mode." | nothing (the door note fires as today) |
+| Claude Code | hook `additionalContext` | "Answer directly: no plan, subagents, or headings. If it turns out to need a change, treat it as a task." | "If the user's words hand the work off, read `background-run`'s SKILL.md at <path> and follow it. This invokes no landing mode." | nothing (the door note, once it leaves shadow) |
 | Pi, and Pi roots under T3 | a custom message from `before_agent_start`, persisted and visible, for the turn whose prompt is the routed text. Its pointer survives short follow-ups, and the system prompt stays byte-stable for the provider cache. A prompt queued while the agent works gets no note (`queued`), since Pi would drain a queued note as its own turn ahead of the prompt. | same | same | nothing |
 | Pi and T3 children | none: children work from their brief, whose `Route:` line the parent fills | – | – | – |
 | Codex | hook `additionalContext`, the same mechanism as Claude | same | same | nothing |
@@ -159,8 +159,8 @@ Every failure delivers nothing beyond what the door rule allows, writes one reco
 
 ### Measured before it acts
 
-- **Modes per note.** `door` is advisory (today's behavior). `lookup` and `loop` start in shadow, which records what they would have done.
-- **A note can't act without evidence.** Advisory mode requires a `Calibration`. It holds the threshold, the model, sample and positive counts, precision, recall, the date, and a digest of the exact question wording. A test fails when the wording changes and the digest no longer matches, which turns `jev.ts`'s comment "changing either wording means recalibrating" into a check. Flipping a note to advisory is a reviewed commit that adds its `Calibration`.
+- **Modes per note.** `door` was advisory until 2026-10-12 and is now in shadow too, until `route-eval` recalibrates it on labeled live records. `lookup` and `loop` start in shadow, which records what they would have done.
+- **A note can't act without evidence.** Advisory mode requires a `Calibration`. It holds the threshold, the model, sample and positive counts, precision, recall, the date, and a digest of the exact question wording. A test fails when the wording changes and the digest no longer matches, which turns the old comment "changing either wording means recalibrating" into a check. Flipping a note to advisory is a reviewed commit that adds its `Calibration`.
 - **Records hold answers, not text.** Each session appends to `$XDG_STATE_HOME/agentic/task-route/<machine>/<runtime>-<session>.jsonl`, one line of under 2 KiB per prompt: every string is cut to a bounded length of characters JSON writes as one byte, and the worst case is tested. A line holds the raw answers (choice, confidence, probabilities, model), the advised and delivered routes, modes, fallback, latency, word and character counts, and a 16-hex digest of the prompt. It never holds task text. Each file has one writer, and the reader merges files and dedupes. Because `decide` is pure, a new threshold can be replayed over stored answers without new requests.
 - **Labels come from the user's own history.**
   - `route-harvest` joins records to local Claude, Codex, and Pi transcripts by digest. It writes candidates to an ignored local file and skips opted-out repositories. Text stays on the machine whose agent received it. The user's labels are stored by digest, without text, in that machine's ledger directory, so they travel with its records.
@@ -224,16 +224,16 @@ They still never hold task text.
 
 The main flow is three files deep: the adapter, then `route.ts`, then `egress.ts`.
 
-| Path | Owns | Change |
+| Path | Owns | State |
 | --- | --- | --- |
-| `agentic/tools/jev/egress.ts` | Everything that leaves the machine: screen, redaction, length bound, `isPublic`, `originSlug`, `apiKey`, and `httpClassifier`. Only it produces `Sendable`, and both transports accept only `Sendable`. | split from `jev.ts` |
-| `agentic/tools/jev/route.ts` | Policy `task-route@1`, all pure: `QUESTIONS`, `POLICY`, `decide`, `applyModes`, `noteFor`, `parseAnswers`, `explicitCommand` | new |
-| `agentic/tools/jev/route-task.ts` | the one I/O pass per prompt: `routeTask`, `RouteRecord`, and the ledger writer | new |
-| `agentic/tools/jev/route-eval.ts` | `harvest`, `score`, and a report without text | new |
-| `agentic/tools/jev/pr-risk.ts` | the PR-risk question, threshold, and state | the rest of `jev.ts` |
-| `agentic/tools/jev/cli.ts` | `task-class --claude-hook` (unchanged command), `task-class --codex-hook`, `pr-risk`, `route-harvest`, `route-eval`, `route-report`, `route-sync` | edited |
-| `pi/extensions/task-class.ts` | the Pi adapter above, including `registryClassifier`, which parses Pi's `ClassifierAnswer` into the shared answer shape, and routing on `input`, before Pi's expansion | rewritten in place |
-| `docs/adr/0002-task-routing.md` | amends ADR 0001 decision 5 | new |
+| `agentic/tools/jev/egress.ts` | Everything that leaves the machine: screen, redaction, length bound, `isPublic`, `originSlug`, `apiKey`, and `httpClassifier`. Only it produces `Sendable`, and both transports accept only `Sendable`. | built, split from the former `jev.ts` |
+| `agentic/tools/jev/route.ts` | Policy `task-route@1`, all pure: `QUESTIONS`, `POLICY`, `decide`, `applyModes`, `noteFor`, `parseAnswers`, `explicitCommand` | built |
+| `agentic/tools/jev/route-task.ts` | the one I/O pass per prompt: `routeTask`, `RouteRecord`, and the ledger writer | built |
+| `agentic/tools/jev/route-eval.ts` | `harvest`, `score`, and a report without text | not built; follows labeling |
+| `agentic/tools/jev/pr-risk.ts` | the PR-risk question, threshold, and state | built, the rest of the former `jev.ts` |
+| `agentic/tools/jev/cli.ts` | `task-class --claude-hook` (unchanged command), `task-class --codex-hook`, `pr-risk`, `route-harvest`, `route-eval`, `route-report`, `route-sync` | built for `task-class` and `pr-risk`; the `route-*` commands are not built |
+| `pi/extensions/task-class.ts` | the Pi adapter above, including `registryClassifier`, which parses Pi's `ClassifierAnswer` into the shared answer shape, and routing on `input`, before Pi's expansion | built, rewritten in place |
+| `docs/adr/0002-task-routing.md` | amends ADR 0001 decision 5 | accepted |
 
 `taskClass`, `taskHint`, and `taskHintFor` are deleted in the same change that migrates their callers and tests. `pi-t3-runtime` is out of scope for now and needs no routing code.
 
@@ -332,11 +332,11 @@ These are for the user. Each has a recommendation and the default taken if there
 
 1. **Amend ADR 0001 decision 5 to allow the lookup and loop notes?** Decided: yes, scoped to calibrated notes. ADR 0002 records it in slice 2.
 2. **Private repositories.** Decided: send their prompts too, with a manual per-repository opt-out (`.agents/jev-opt-out`).
-3. **`background-run`:** keep it manual and reached through the loop note, or make it model-invocable? Decided: keep it manual. It is revisited after two weeks with `route-report`, which only works because every runtime records (see Tracking across everything).
+3. **`background-run`:** keep it manual and reached through the loop note, or make it model-invocable? Decided: keep it manual. It is revisited once `route-report` exists, by 2026-10-26, which only works because every runtime records (see Tracking across everything).
 4. **The acting bars** above. Decided: as written.
 5. **Labeling time:** about an hour for 150 to 200 harvested prompts, after about two weeks of shadow records. Decided: yes.
 6. **Machines.** Decided: agents will run on both `bananamac` and `bananaarch`. Each machine checks its own coverage, and `route-sync` copies its directory to `bananaarch` over SSH, not to a repository (see Machines under Tracking across everything).
 
 ## First implementation step
 
-Slice 1 is offline and changes no live behavior. Split `jev.ts` into `egress.ts` and `pr-risk.ts`, moving the tests unchanged. Then write `route.ts`'s pure core with tests for the decision table, the runtime-neutral note text, and "advisory requires a matching digest". Slice 2 switches the Claude, Codex, and Pi adapters to `routeTask` and starts the ledger, with `lookup` and `loop` in shadow. The door bar on the combined request was rechecked on 2026-10-12 and passes with `{ task }`. Slice 3 adds `route-report` and `route-sync`. `route-harvest` and `route-eval` follow once two weeks of records exist.
+Slice 1 is offline and changes no live behavior. Split the former `jev.ts` into `egress.ts` and `pr-risk.ts`, moving the tests unchanged. Then write `route.ts`'s pure core with tests for the decision table, the runtime-neutral note text, and "advisory requires a matching digest". Slice 2 switches the Claude, Codex, and Pi adapters to `routeTask` and starts the ledger, with `lookup` and `loop` in shadow. The door bar on the combined request was rechecked on 2026-10-12 and passes with `{ task }`. Slices 1 and 2 are built. Slice 3 adds `route-report` and `route-sync`, by 2026-10-26. `route-harvest`, labeling, and `route-eval` follow.

@@ -5,7 +5,11 @@ description: Design rules for writing or restructuring code, in the spirit of Ti
 
 # Code design
 
-Safety first, then performance, then the experience of everyone who reads and runs the code. Repository conventions and the language's own idioms take precedence; apply these where the codebase leaves the choice open. Read a reference only when the task reaches it:
+Safety first, then performance, then the experience of everyone who reads and runs the code. Repository conventions and the language's own idioms take precedence; apply these where the codebase leaves the choice open.
+
+The exception is a known workaround or anti-pattern, one the repository or the user has marked as such: a code comment that names it or cites its tracking issue, a `rules.toml` row, a lint suppression, or something the user said about this code. This skill's own preferences never make a repository convention an anti-pattern. Never extend a known workaround, which means never add a new copy of it, even when a copy is the nearest example; routing new code through the one existing site that holds it is the paved path. Fix the cause in this change when that stays in scope; otherwise take the paved path and report the workaround as a `correct` candidate, or as a blocker if the task cannot be done without a new copy. A workaround whose cause lies outside the repository, kept under the comment rule below, is not a blocker: reuse it through its one site, or move it into one site that cites the same issue.
+
+Read a reference only when the task reaches it:
 
 | Situation | Read |
 | --- | --- |
@@ -59,6 +63,17 @@ Safety first, then performance, then the experience of everyone who reads and ru
 - Acquire resources and arrange their cleanup on the next line; group allocation and cleanup visually so leaks stand out.
 - Return explicitly, and use type aliases for verbose types.
 
+## Paved paths
+
+Agents extend the patterns they see, so the code is the memory every later change reads. Shape it so the easy path is the right one:
+
+- Keep one paved path per job. Extend the existing way to do something rather than adding a second, and report a second way you find in code the change touches as a `correct` candidate.
+- Let the import graph or module visibility enforce boundaries, so a module's internals are unreachable from outside it and a wrong import fails the build instead of waiting for review.
+- Lay out folders so a file's path tells where its code runs, such as server or client, main process or renderer, and keep code from crossing that line.
+- Keep invariants enforceable where they are edited: a correct edit in the open file preserves the whole program's invariants, with no rule living only in a distant file or a reviewer's memory.
+- Prefer a type, check, or structure that makes the wrong path fail over guidance that asks agents to avoid it.
+- Keep each list in one place: derive other copies from it, or fail the build when they disagree.
+
 ## Naming and comments
 
 - Follow the language's and the project's naming conventions. Where the choice is open, use `snake_case` for functions and variables, and keep acronyms capitalized in type names (`VSRState`, not `VsrState`).
@@ -67,6 +82,7 @@ Safety first, then performance, then the experience of everyone who reads and ru
 - Name things by role so their handling is clear: `arena` versus `gpa` says whether to free. Prefix a callback with its caller's name: `read_sector` and `read_sector_callback`. Callbacks go last in parameter lists. Name nullable parameters so `null` reads clearly at the call site.
 - Order files for a top-down first read: important things and entry points first. Within a type, put fields first, then nested types, then methods, and promote a complex nested type to the top level. When no order is clearly better, sort alphabetically by big-endian name.
 - Comments say why, and for tests, the goal and method. Write them as sentences. Rewrite code that needs a what-comment.
+- Never write a comment that justifies a workaround or band-aid in place of fixing its cause, such as a test note that explains away a slowdown: the next agent copies the reason along with the code. Fix the cause. If the workaround must stay, its comment states the constraint and cites the issue that tracks it, and never argues the workaround is acceptable. A cause outside the repository, such as an upstream bug, still gets its why, and the citation may be the upstream issue.
 
 ## Tooling and configuration
 

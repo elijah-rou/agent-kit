@@ -1,14 +1,15 @@
 // Splits a shell command line into the simple commands it would run, for the git guard. It is not a
-// shell: it knows quoting (including ANSI-C $'...'), escapes, comments, separators, redirections, here
-// documents and here-strings, command substitution, `sh -c` and `eval` strings, and the wrappers that
-// run another command (`env`, `command`, `nohup`, `find -exec`, ...), which is enough to find a git or
-// gh invocation an agent writes. Text it cannot read (an unclosed quote, substitution, or here
-// document, nesting past NESTING_LIMIT, a glob in a program name) throws Unreadable, which the guard
-// refuses. What it cannot see (variables, aliases, functions called by name, scripts) is listed as a
-// gap in claude/README.md.
+// shell: it follows common shell syntax (quoting, including ANSI-C $'...' and locale $"...", escapes,
+// comments, separators, redirections, here documents and here-strings, command and process
+// substitution, arithmetic, parameter expansion, case patterns, array assignments), `sh -c` and `eval`
+// strings, commands fed to a shell's standard input, and the wrappers that run another command (`env`,
+// `command`, `nohup`, `find -exec`, ...), which is enough to find a git or gh invocation an agent writes.
+// Text it cannot read with confidence throws Unreadable, which the guard refuses. What it cannot see (a
+// program or arguments that appear only after expansion or evaluation) is listed as a gap in
+// claude/README.md.
 
-/** One simple command: its leading NAME=value assignments, the program word, and its arguments. */
-export type Invocation = { assignments: string[]; program: string; args: string[] };
+/** One simple command: its leading NAME=value assignments, the program word, and its arguments, with which arguments hold an unquoted pattern. */
+export type Invocation = { assignments: string[]; program: string; args: string[]; patterned: boolean[] };
 
 /** POSIX shells escape with a backslash and substitute with backticks; PowerShell escapes with a backtick. */
 export type Dialect = "posix" | "powershell";
@@ -19,19 +20,22 @@ export class Unreadable extends Error {}
 /** Command substitutions, subshells, shell strings, and fed here documents are followed this many levels deep. */
 export const NESTING_LIMIT = 8;
 
-/** A word and whether it holds an unquoted glob or brace character, which would make it a pattern. */
-type Word = { text: string; glob: boolean };
+/** A word, whether it holds an unquoted glob or brace character (a pattern), and whether any of it was quoted. */
+type Word = { text: string; glob: boolean; quoted: boolean };
 /** A simple command's words, the text on its standard input (here documents and here-strings), and whether it pipes into the next. */
 type Segment = { words: Word[]; stdin: StdinText[]; pipes: boolean };
-type StdinText = { text: string; dialect: Dialect };
+type StdinText = { text: string };
 type PendingHeredoc = { delimiter: string; stripTabs: boolean; quoted: boolean; target: StdinText[] };
 
 // A word holding a redirection operator starts with this character, which no command text produces.
 const REDIRECTION = "\u0000";
+// The placeholder a process substitution leaves in its word, so a shell given one as its script is seen.
+const PROCESS_SUBSTITUTION = "\u0001<(...)";
 const GLOB = /[*?[{}]/;
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+const ARRAY_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*\+?=$/;
 // Words that may precede a command without being it (shell keywords, and zsh's precommand modifiers).
-const KEYWORDS = new Set(["then", "do", "else", "elif", "if", "while", "until", "!", "{", "}", "-", "nocorrect"]);
+const KEYWORDS = new Set(["then", "do", "else", "elif", "if", "while", "until", "!", "{", "}", "-", "nocorrect", "coproc"]);
 // Wrappers that run the rest of their arguments as a command, with their options that take a value.
 const WRAPPERS = new Map<string, Set<string>>(Object.entries({
 	command: new Set<string>(),
@@ -48,14 +52,18 @@ const WRAPPERS = new Map<string, Set<string>>(Object.entries({
 	caffeinate: new Set(["-t", "-w"]),
 	arch: new Set(["-arch", "-e", "-d"]),
 	busybox: new Set<string>(),
+	xcrun: new Set(["-sdk", "--sdk", "--toolchain"]),
 }));
 const ENV_VALUED = new Set(["-u", "--unset", "-C", "--chdir", "-P"]);
 const FLOCK_VALUED = new Set(["-w", "--wait", "--timeout", "-E", "--conflict-exit-code"]);
 const WATCH_VALUED = new Set(["-n", "--interval", "-q", "--equexit", "-s", "--shell"]);
 const WSL_VALUED = new Set(["-d", "--distribution", "-u", "--user", "--cd", "--shell-type", "--distribution-id"]);
 const FIND_EXEC = new Set(["-exec", "-execdir", "-ok", "-okdir"]);
-const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish"]);
+const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh"]);
+// Shell options that take the next word as their value.
+const SHELL_VALUED = new Set(["-o", "+o", "-O", "+O", "--rcfile", "--init-file"]);
 const POWERSHELLS = new Set(["pwsh", "powershell"]);
+const INVOKE_EXPRESSION = new Set(["eval", "invoke-expression", "iex"]);
 const ANSI_C: Record<string, string> = { n: "\n", t: "\t", r: "\r", a: "\x07", b: "\b", e: "\x1b", E: "\x1b", f: "\f", v: "\v", "\\": "\\", "'": "'", '"': '"', "?": "?" };
 
 /** The basename of a program word, lower-cased, without a Windows `.exe`: `/usr/bin/git` and `GIT.exe` are `git`. */
@@ -70,13 +78,8 @@ export function invocations(command: string, dialect: Dialect): Invocation[] {
 	return found;
 }
 
-/** True when a program reads its standard input as commands: a shell, or PowerShell. */
-function readsCommands(program: string): Dialect | undefined {
-	const name = programName(program);
-	if (SHELLS.has(name)) return "posix";
-	if (POWERSHELLS.has(name)) return "powershell";
-	return undefined;
-}
+/** How a shell invocation treats text: its standard input as commands, an operand that is another command's output, or neither. */
+type ShellInput = { kind: "stdin"; dialect: Dialect } | { kind: "output-as-script" } | undefined;
 
 class Reader {
 	private pos = 0;
@@ -90,7 +93,6 @@ class Reader {
 	/** Reads the whole text as a command list and records every invocation in it. */
 	run(): void {
 		this.analyze(this.list(undefined));
-		if (this.pos < this.text.length) throw new Unreadable("the reader stopped before the end of the command");
 	}
 
 	/** Reads text nested inside this text (a substitution or subshell) from `pos` up to its `)`, as commands. */
@@ -113,34 +115,161 @@ class Reader {
 			const c = text[inner.pos]!;
 			if (c === "\\") inner.pos += 2;
 			else if (c === "`") inner.backtick();
-			else if (c === "$" && text[inner.pos + 1] === "(") {
-				inner.pos += 2;
-				inner.nestedHere();
-			} else inner.pos++;
+			else if (c === "$" && text[inner.pos + 1] === "(") inner.dollarParen();
+			else if (c === "$" && text[inner.pos + 1] === "{") inner.parameter();
+			else inner.pos++;
 		}
 	}
 
 	/** Reads `...` from the opening backtick at `pos` and its command. */
 	private backtick(): void {
-		const end = this.text.indexOf("`", this.pos + 1);
-		if (end === -1) throw new Unreadable("a backtick substitution is never closed");
-		this.nestedString(this.text.slice(this.pos + 1, end));
+		let end = this.pos + 1;
+		while (end < this.text.length && this.text[end] !== "`") end += this.text[end] === "\\" ? 2 : 1;
+		if (end >= this.text.length) throw new Unreadable("a backtick substitution is never closed");
+		this.nestedString(this.text.slice(this.pos + 1, end).replace(/\\([`\\$])/g, "$1"));
 		this.pos = end + 1;
 	}
 
-	/** Splits commands until `closer` or the end, reading quotes, substitutions, redirections, and here documents. */
+	/**
+	 * Index of the `)` that closes the inner `(` of `$((` or `((` at `open` (the first `(`), or -1. As bash
+	 * and zsh decide, the text is arithmetic only when that `)` is followed at once by the final `)`.
+	 */
+	private arithmeticEnd(open: number): number {
+		let depth = 0;
+		for (let i = open + 2; i < this.text.length; i++) {
+			const c = this.text[i]!;
+			if (c === "\\") i++;
+			else if (c === "(") depth++;
+			else if (c === ")") {
+				if (depth === 0) return this.text[i + 1] === ")" ? i : -1;
+				depth--;
+			}
+		}
+		return -1;
+	}
+
+	/** Reads `$(` at `pos`: arithmetic `$(( ))` as text whose substitutions are commands, otherwise a command substitution. */
+	private dollarParen(): string {
+		if (this.dialect === "posix" && this.text[this.pos + 2] === "(") {
+			const end = this.arithmeticEnd(this.pos + 1);
+			if (end !== -1) return this.arithmetic(this.pos + 3, end, this.pos);
+		}
+		this.pos += 2;
+		this.nestedHere();
+		return "$(...)";
+	}
+
+	/** Reads arithmetic text from `start` to `end` (the inner `)`), following $( ), backticks, and ${ }; returns the text from `from`. */
+	private arithmetic(start: number, end: number, from: number): string {
+		this.pos = start;
+		while (this.pos < end) {
+			const c = this.text[this.pos]!;
+			if (c === "`") this.backtick();
+			else if (c === "$" && this.text[this.pos + 1] === "(") this.dollarParen();
+			else if (c === "$" && this.text[this.pos + 1] === "{") this.parameter();
+			else this.pos++;
+		}
+		this.pos = end + 2;
+		return this.text.slice(from, this.pos);
+	}
+
+	/** Reads ${...} from `pos`, matching braces past quotes and substitutions, and follows the substitutions inside. */
+	private parameter(): string {
+		const start = this.pos;
+		this.pos += 2;
+		let depth = 0;
+		while (this.pos < this.text.length) {
+			const c = this.text[this.pos]!;
+			if (c === "\\") this.pos += 2;
+			else if (c === "'") this.singleQuoted();
+			else if (c === '"') this.doubleQuoted();
+			else if (c === "`") this.backtick();
+			else if (c === "$" && this.text[this.pos + 1] === "(") this.dollarParen();
+			else if (c === "$" && this.text[this.pos + 1] === "{") {
+				this.pos += 2;
+				depth++;
+			} else if (c === "}") {
+				this.pos++;
+				if (depth === 0) return this.text.slice(start, this.pos);
+				depth--;
+			} else this.pos++;
+		}
+		throw new Unreadable("a ${ parameter expansion is never closed");
+	}
+
+	/** Reads an array assignment's ( ... ) from `pos` as text, following its quotes and substitutions. */
+	private arrayLiteral(): string {
+		const start = this.pos;
+		this.pos++;
+		while (this.pos < this.text.length) {
+			const c = this.text[this.pos]!;
+			if (c === ")") {
+				this.pos++;
+				return this.text.slice(start, this.pos);
+			}
+			if (c === "\\") this.pos += 2;
+			else if (c === "'") this.singleQuoted();
+			else if (c === '"') this.doubleQuoted();
+			else if (c === "`") this.backtick();
+			else if (c === "$" && this.text[this.pos + 1] === "(") this.dollarParen();
+			else if (c === "$" && this.text[this.pos + 1] === "{") this.parameter();
+			else this.pos++;
+		}
+		throw new Unreadable("an array assignment's ( is never closed");
+	}
+
+	/** Skips a case pattern (an optional `(`, then up to its unquoted `)`); returns false at `esac` instead. */
+	private casePattern(): boolean {
+		while (this.pos < this.text.length && " \t\r\n".includes(this.text[this.pos]!)) this.pos++;
+		if (/^esac(?=$|[\s;&|)])/.test(this.text.slice(this.pos))) {
+			this.pos += 4;
+			return false;
+		}
+		if (this.text[this.pos] === "(") this.pos++;
+		let depth = 0;
+		while (this.pos < this.text.length) {
+			const c = this.text[this.pos]!;
+			if (c === "\\") this.pos += 2;
+			else if (c === "'") this.singleQuoted();
+			else if (c === '"') this.doubleQuoted();
+			else if (c === "$" && this.text[this.pos + 1] === "(") this.dollarParen();
+			else if (c === "(") {
+				depth++;
+				this.pos++;
+			} else if (c === ")") {
+				this.pos++;
+				if (depth === 0) return true;
+				depth--;
+			} else this.pos++;
+		}
+		throw new Unreadable("a case pattern is never closed with )");
+	}
+
+	/** Splits commands until `closer` or the end, reading quotes, substitutions, redirections, here documents, and case patterns. */
 	private list(closer: ")" | undefined): Segment[] {
 		const segments: Segment[] = [];
 		let words: Word[] = [];
 		let stdin: StdinText[] = [];
 		let word: Word | undefined;
 		const pending: PendingHeredoc[] = [];
-		const append = (s: string, glob = false) => {
-			word = { text: (word?.text ?? "") + s, glob: (word?.glob ?? false) || glob };
+		// Open case statements, and whether the next text is a pattern rather than a command.
+		let cases = 0;
+		let expectPattern = false;
+		const append = (s: string, flags: { glob?: boolean; quoted?: boolean } = {}) => {
+			word = { text: (word?.text ?? "") + s, glob: (word?.glob ?? false) || (flags.glob ?? false), quoted: (word?.quoted ?? false) || (flags.quoted ?? false) };
 		};
 		const endWord = () => {
-			if (word !== undefined) words.push(word);
+			if (word === undefined) return;
+			if (word.text === "esac" && !word.quoted && words.length === 0 && cases > 0) cases--;
+			else words.push(word);
 			word = undefined;
+			// `case <word> in` at command position (after any keywords such as do or then) opens a case.
+			const at = words.length - 3;
+			if (at >= 0 && words[at]!.text === "case" && words[at + 2]!.text === "in" && !words[at + 2]!.quoted && words.slice(0, at).every((before) => KEYWORDS.has(before.text))) {
+				cases++;
+				expectPattern = true;
+				words = [];
+			}
 		};
 		const endSegment = (pipes: boolean) => {
 			endWord();
@@ -150,6 +279,11 @@ class Reader {
 		};
 		const text = this.text;
 		while (this.pos < text.length) {
+			if (expectPattern) {
+				expectPattern = false;
+				if (!this.casePattern()) cases--;
+				continue;
+			}
 			const c = text[this.pos]!;
 			const next = text[this.pos + 1];
 			if (closer !== undefined && c === closer) {
@@ -163,31 +297,35 @@ class Reader {
 				this.pos++;
 				this.heredocBodies(pending);
 			} else if (c === this.escape) {
-				if (next !== undefined && next !== "\n") append(next);
+				if (next !== undefined && next !== "\n") append(next, { quoted: true });
 				this.pos += 2;
 			} else if (c === "'") {
-				append(this.singleQuoted());
+				append(this.singleQuoted(), { quoted: true });
 			} else if (this.dialect === "posix" && c === "$" && next === "'") {
 				this.pos++;
-				append(this.ansiC());
+				append(this.ansiC(), { quoted: true });
+			} else if (this.dialect === "posix" && c === "$" && next === '"') {
+				// $"..." is bash's locale-translated string: a double-quoted string.
+				this.pos++;
+				append(this.doubleQuoted(), { quoted: true });
 			} else if (c === "$" && next === "{") {
-				// ${name...} is a parameter expansion, not a brace pattern.
-				const end = text.indexOf("}", this.pos);
-				if (end === -1) throw new Unreadable("a ${ parameter expansion is never closed");
-				append(text.slice(this.pos, end + 1));
-				this.pos = end + 1;
+				append(this.parameter());
 			} else if (c === '"') {
-				append(this.doubleQuoted());
+				append(this.doubleQuoted(), { quoted: true });
 			} else if (this.dialect === "posix" && c === "`") {
 				this.backtick();
 				append("`...`");
-			} else if (this.dialect === "posix" && c === "$" && next === "(" && text[this.pos + 2] === "(") {
-				// $(( )) is arithmetic, whose << and >> are shifts, not redirections.
-				append(this.arithmetic());
-			} else if ((c === "$" || c === "<" || c === ">") && next === "(") {
+			} else if (c === "$" && next === "(") {
+				append(this.dollarParen());
+			} else if ((c === "<" || c === ">") && next === "(") {
 				this.pos += 2;
 				this.nestedHere();
-				append("$(...)");
+				append(c === "<" ? PROCESS_SUBSTITUTION : ">(...)");
+			} else if (this.dialect === "posix" && c === "(" && word !== undefined && ARRAY_ASSIGNMENT.test(word.text)) {
+				append(this.arrayLiteral());
+			} else if (this.dialect === "posix" && c === "(" && next === "(" && word === undefined && this.arithmeticEnd(this.pos) !== -1) {
+				// (( ... )) is an arithmetic command.
+				append(this.arithmetic(this.pos + 2, this.arithmeticEnd(this.pos), this.pos));
 			} else if (c === "(") {
 				endSegment(false);
 				this.pos++;
@@ -195,6 +333,10 @@ class Reader {
 			} else if (c === ")" || (this.dialect === "powershell" && (c === "{" || c === "}"))) {
 				endSegment(false);
 				this.pos++;
+			} else if (this.dialect === "powershell" && c === "<" && next === "#") {
+				const end = text.indexOf("#>", this.pos + 2);
+				if (end === -1) throw new Unreadable("a <# block comment is never closed");
+				this.pos = end + 2;
 			} else if (c === "#" && word === undefined) {
 				const end = text.indexOf("\n", this.pos);
 				this.pos = end === -1 ? text.length : end;
@@ -205,16 +347,18 @@ class Reader {
 			} else if (c === "<" || c === ">" || (c === "&" && next === ">")) {
 				if (word !== undefined && /^(\d+|\*)$/.test(word.text)) word = undefined;
 				endWord();
-				words.push({ text: REDIRECTION + this.redirection(), glob: false });
+				words.push({ text: REDIRECTION + this.redirection(), glob: false, quoted: false });
 			} else if (c === ";" || c === "&" || c === "|") {
 				const pipes = c === "|" && next !== "|";
 				endSegment(pipes);
-				this.pos += next === c || (c === "|" && next === "&") ? 2 : 1;
+				const operator = /^(;;&|;;|;&|&&|\|\||\|&|;|&|\|)/.exec(text.slice(this.pos))![0];
+				this.pos += operator.length;
+				if (cases > 0 && operator.startsWith(";") && operator.length > 1) expectPattern = true;
 			} else if (c === " " || c === "\t" || c === "\r") {
 				endWord();
 				this.pos++;
 			} else {
-				append(c, this.dialect === "posix" && GLOB.test(c));
+				append(c, { glob: this.dialect === "posix" && GLOB.test(c) });
 				this.pos++;
 			}
 		}
@@ -224,24 +368,12 @@ class Reader {
 		return segments;
 	}
 
-	/** Reads $(( ... )) from `pos` as literal text, matching parentheses. */
-	private arithmetic(): string {
-		const start = this.pos;
-		let depth = 0;
-		while (this.pos < this.text.length) {
-			const c = this.text[this.pos++]!;
-			if (c === "(") depth++;
-			if (c === ")" && --depth === 0) return this.text.slice(start, this.pos);
-		}
-		throw new Unreadable("a $(( arithmetic expansion is never closed");
-	}
-
-	/** Reads a redirection operator at `pos` (>, >>, >|, >&, <, <&, <>, <<<, &>, &>>) and returns it. */
+	/** Reads a redirection operator at `pos` (>, >>, >|, >!, >&, <, <&, <>, <<<, &>, &>>) and returns it. */
 	private redirection(): string {
 		const start = this.pos;
 		if (this.text[this.pos] === "&") this.pos++;
 		while (this.pos - start < 4 && (this.text[this.pos] === ">" || this.text[this.pos] === "<")) this.pos++;
-		if (this.text[this.pos] === "&" || this.text[this.pos] === "|") this.pos++;
+		if (this.text[this.pos] === "&" || this.text[this.pos] === "|" || (this.dialect === "posix" && this.text[this.pos] === "!")) this.pos++;
 		return this.text.slice(start, this.pos);
 	}
 
@@ -290,7 +422,7 @@ class Reader {
 			const body = lines.join("\n");
 			// An unquoted delimiter lets the shell expand $( ) and backticks in the body, which runs them.
 			if (!heredoc.quoted) this.substitutionsIn(body);
-			heredoc.target.push({ text: body, dialect: "posix" });
+			heredoc.target.push({ text: body });
 		}
 	}
 
@@ -321,16 +453,14 @@ class Reader {
 				this.pos++;
 				continue;
 			}
-			const e = this.text[this.pos + 1] ?? "";
-			const hex = /^x([0-9A-Fa-f]{1,2})/.exec(this.text.slice(this.pos + 1));
-			const octal = /^([0-7]{1,3})/.exec(this.text.slice(this.pos + 1));
-			if (hex) {
-				out += String.fromCharCode(parseInt(hex[1]!, 16));
-				this.pos += 1 + hex[0].length;
-			} else if (octal) {
-				out += String.fromCharCode(parseInt(octal[1]!, 8));
-				this.pos += 1 + octal[0].length;
+			const rest = this.text.slice(this.pos + 1);
+			const code = /^(?:x([0-9A-Fa-f]{1,2})|u([0-9A-Fa-f]{1,4})|U([0-9A-Fa-f]{1,8})|([0-7]{1,3}))/.exec(rest);
+			if (code) {
+				const [digits, base] = code[1] ? [code[1], 16] : code[2] ? [code[2], 16] : code[3] ? [code[3], 16] : [code[4]!, 8];
+				out += String.fromCodePoint(Math.min(parseInt(digits, base), 0x10ffff));
+				this.pos += 1 + code[0].length;
 			} else {
+				const e = rest[0] ?? "";
 				out += ANSI_C[e] ?? `\\${e}`;
 				this.pos += 2;
 			}
@@ -358,8 +488,9 @@ class Reader {
 			} else if (this.dialect === "posix" && c === "`") {
 				this.backtick();
 			} else if (c === "$" && next === "(") {
-				this.pos += 2;
-				this.nestedHere();
+				out += this.dollarParen();
+			} else if (this.dialect === "posix" && c === "$" && next === "{") {
+				out += this.parameter();
 			} else {
 				out += c;
 				this.pos++;
@@ -370,20 +501,69 @@ class Reader {
 		return out;
 	}
 
-	/** Records each segment's command, and reads as commands the text fed to a shell on standard input. */
+	/** Records each segment's command, and reads as commands what a shell reads as commands from its input. */
 	private analyze(segments: Segment[]): void {
 		const commands = segments.map((segment) => this.unwrap(segment.words, segment.stdin));
 		segments.forEach((segment, k) => {
-			const own = commands[k] ? readsCommands(commands[k]!.program) : undefined;
-			const piped = segment.pipes && commands[k + 1] ? readsCommands(commands[k + 1]!.program) : undefined;
-			const shell = own ?? piped;
-			if (shell === undefined) return;
-			for (const input of segment.stdin) this.nestedString(input.text, shell);
-			// Text echoed into a shell through a pipe is a command too.
-			const echoed = commands[k];
-			if (piped !== undefined && echoed && ["echo", "printf"].includes(programName(echoed.program))) this.nestedString(echoed.args.join(" "), piped);
+			const command = commands[k];
+			if (!command) return;
+			const input = this.shellInput(command);
+			if (input === undefined) return;
+			if (input.kind === "output-as-script") throw new Unreadable("it runs another command's output as a script");
+			this.readFedInput(segments, commands, k, input.dialect);
 		});
 		for (const command of commands) if (command) this.found.push(command);
+	}
+
+	/**
+	 * Reads the commands fed to the stdin-reading shell at segment k: its own here document or here-string,
+	 * or one fed by `cat <<EOF |` (or, for PowerShell, a literal string piped into it). Anything else feeding
+	 * it, including another command's output, is unreadable.
+	 */
+	private readFedInput(segments: Segment[], commands: (Invocation | undefined)[], k: number, dialect: Dialect): void {
+		const own = segments[k]!.stdin;
+		if (own.length) {
+			for (const input of own) this.nestedString(input.text, dialect);
+			return;
+		}
+		const producer = k > 0 && segments[k - 1]!.pipes ? commands[k - 1] : undefined;
+		const producerSegment = segments[k - 1];
+		if (producer && producerSegment && programName(producer.program) === "cat" && producer.args.length === 0 && producerSegment.stdin.length) {
+			for (const input of producerSegment.stdin) this.nestedString(input.text, dialect);
+			return;
+		}
+		if (producer && producerSegment && dialect === "powershell") {
+			const words = producerSegment.words.filter((word) => !word.text.startsWith(REDIRECTION));
+			const literal = words.length === 1 && words[0]!.quoted ? words[0]!.text : ["echo", "write-output"].includes(programName(producer.program)) && words.slice(1).every((word) => word.quoted) ? producer.args.join(" ") : undefined;
+			if (literal !== undefined) {
+				this.nestedString(literal, "powershell");
+				return;
+			}
+		}
+		throw new Unreadable("it feeds a shell commands from another command's output; pass them with -c, or in a quoted here document, instead");
+	}
+
+	/** Whether an invocation reads its standard input as commands (a shell without a script, or Invoke-Expression without a string), or runs another command's output as its script. */
+	private shellInput(command: Invocation): ShellInput {
+		const name = programName(command.program);
+		const { args } = command;
+		if (name === "source" || name === ".") {
+			if (args[0] === PROCESS_SUBSTITUTION) return { kind: "output-as-script" };
+			return args[0] === "/dev/stdin" || args[0] === "-" ? { kind: "stdin", dialect: "posix" } : undefined;
+		}
+		if (SHELLS.has(name)) {
+			const { commandMode, operand, readsStdin } = shellArgs(name, args);
+			if (commandMode || args.includes("--version") || args.includes("--help")) return undefined;
+			if (operand === PROCESS_SUBSTITUTION) return { kind: "output-as-script" };
+			return readsStdin || operand === undefined || operand === "-" || operand === "/dev/stdin" ? { kind: "stdin", dialect: "posix" } : undefined;
+		}
+		if (POWERSHELLS.has(name)) {
+			if (args.length === 0) return { kind: "stdin", dialect: "powershell" };
+			const at = args.findIndex((arg) => /^[-/](c|co|com|comm|comma|comman|command|f|fi|fil|file)$/i.test(arg));
+			return at !== -1 && args[at + 1] === "-" ? { kind: "stdin", dialect: "powershell" } : undefined;
+		}
+		if (name === "invoke-expression" || name === "iex") return args.length === 0 ? { kind: "stdin", dialect: "powershell" } : undefined;
+		return undefined;
 	}
 
 	/** Strips redirections, assignments, keywords, and wrappers, follows the strings they run, and returns the command left. */
@@ -396,7 +576,7 @@ class Reader {
 				continue;
 			}
 			// A here-string is standard input; any other redirection's target is a file name.
-			if (word.text === `${REDIRECTION}<<<` && i + 1 < all.length) stdin.push({ text: all[i + 1]!.text, dialect: this.dialect });
+			if (word.text === `${REDIRECTION}<<<` && i + 1 < all.length) stdin.push({ text: all[i + 1]!.text });
 			i++;
 		}
 		const texts = words.map((word) => word.text);
@@ -411,6 +591,9 @@ class Reader {
 				i++;
 			} else if (KEYWORDS.has(word)) {
 				i++;
+			} else if (word === "repeat" && i + 1 < texts.length) {
+				// zsh: repeat <count> <command>
+				i += 2;
 			} else if (name === "env") {
 				i = this.skipEnv(texts, i + 1, assignments);
 			} else if (name === "flock") {
@@ -438,10 +621,18 @@ class Reader {
 		const programWord = words[i]!;
 		if (programWord.glob && programWord.text !== "[" && programWord.text !== "[[") throw new Unreadable(`its program name ${programWord.text} holds an unquoted glob or brace pattern`);
 		// zsh expands =name in command position to the path of name.
-		const program = programWord.text.length > 1 && programWord.text.startsWith("=") ? programWord.text.slice(1) : programWord.text;
-		const args = texts.slice(i + 1);
+		let program = programWord.text.length > 1 && programWord.text.startsWith("=") ? programWord.text.slice(1) : programWord.text;
+		let args = texts.slice(i + 1);
+		let patterned = words.slice(i + 1).map((word) => word.glob);
+		// git's own git-<subcommand> programs (libexec/git-core/git-push) are git with that subcommand.
+		const dashed = /^git-([a-z][a-z0-9-]*)$/.exec(programName(program));
+		if (dashed) {
+			program = "git";
+			args = [dashed[1]!, ...args];
+			patterned = [false, ...patterned];
+		}
 		this.followArguments(programName(program), args);
-		return { assignments, program, args };
+		return { assignments, program, args, patterned };
 	}
 
 	/** Skips env's options and assignments, reading an -S string as a command; returns the index of its command. */
@@ -469,15 +660,17 @@ class Reader {
 		return i;
 	}
 
-	/** Reads the command a program runs from its arguments: `sh -c`, `eval`, PowerShell, `cmd /c`, `wsl`, and `find -exec`. */
+	/** Reads the command a program runs from its arguments: `sh -c`, `fish -c`, `eval`, PowerShell, `cmd /c`, `wsl`, and `find -exec`. */
 	private followArguments(name: string, args: string[]): void {
-		if (name === "eval" || name === "invoke-expression" || name === "iex") {
-			this.nestedString(args.join(" "));
+		if (INVOKE_EXPRESSION.has(name)) {
+			// Invoke-Expression [-Command] <string>
+			const rest = args.filter((arg) => !/^-c(o(m(m(a(n(d)?)?)?)?)?)?$/i.test(arg));
+			if (rest.length) this.nestedString(rest.join(" "));
 		} else if (SHELLS.has(name)) {
-			const flag = args.findIndex((arg) => /^-[A-Za-z]*c[A-Za-z]*$/.test(arg));
-			if (flag !== -1 && flag + 1 < args.length) this.nestedString(args[flag + 1]!, "posix");
+			const { commandMode, operand } = shellArgs(name, args);
+			if (commandMode && operand !== undefined) this.nestedString(operand, "posix");
 		} else if (POWERSHELLS.has(name)) {
-			this.followPowerShell(args);
+			this.followPowerShell(name, args);
 		} else if (name === "cmd") {
 			const flag = args.findIndex((arg) => /^\/[ck]$/i.test(arg));
 			if (flag !== -1) this.nestedString(args.slice(flag + 1).join(" "), "posix");
@@ -487,22 +680,40 @@ class Reader {
 			if (at < args.length) this.nestedString(args.slice(at).join(" "), "posix");
 		} else if (name === "find") {
 			this.followFindExec(args);
+		} else if (name === "git") {
+			// git submodule foreach [--recursive] <command> runs its command through a shell in each submodule.
+			const at = args.findIndex((arg, i) => arg === "foreach" && args[i - 1] === "submodule");
+			if (at !== -1) {
+				const command = skipOptions(args, at + 1, new Set());
+				if (command < args.length) this.nestedString(args.slice(command).join(" "), "posix");
+			}
 		}
 	}
 
-	/** Reads `pwsh -Command <text>` and `pwsh -EncodedCommand <base64 of UTF-16LE>` (and their unambiguous prefixes). */
-	private followPowerShell(args: string[]): void {
+	/**
+	 * Reads `pwsh -Command <text>`, `-EncodedCommand <base64 of UTF-16LE>` (and their unambiguous
+	 * prefixes), and Windows PowerShell's positional command (`powershell "git push"`).
+	 */
+	private followPowerShell(name: string, args: string[]): void {
 		for (let i = 0; i < args.length; i++) {
-			const option = args[i]!.replace(/^[-/]+/, "").toLowerCase();
-			if (!/^[-/]/.test(args[i]!) || option === "") continue;
+			const arg = args[i]!;
+			const option = arg.replace(/^[-/]+/, "").toLowerCase();
+			if (!/^[-/]/.test(arg)) {
+				// powershell.exe reads a first positional word as -Command; pwsh reads it as -File.
+				if (name === "powershell") this.nestedString(args.slice(i).join(" "), "powershell");
+				return;
+			}
 			if (option === "ec" || (option.startsWith("e") && "encodedcommand".startsWith(option))) {
 				this.nestedString(decodePowerShell(args[i + 1] ?? ""), "powershell");
 				return;
 			}
 			if (option === "cwa" || (option.startsWith("c") && ("command".startsWith(option) || "commandwithargs".startsWith(option)))) {
-				if (i + 1 < args.length) this.nestedString(args.slice(i + 1).join(" "), "powershell");
+				if (i + 1 < args.length && args[i + 1] !== "-") this.nestedString(args.slice(i + 1).join(" "), "powershell");
 				return;
 			}
+			if (option.startsWith("f") && "file".startsWith(option)) return;
+			// Options that take a value: -ExecutionPolicy, -WorkingDirectory, -ConfigurationName, -OutputFormat, -InputFormat, -WindowStyle, -Version.
+			if (/^(ex|executionpolicy|ep|wd|workingdirectory|configurationname|config|of|outputformat|if|inputformat|w|windowstyle|v|version)$/.test(option)) i++;
 		}
 	}
 
@@ -512,11 +723,40 @@ class Reader {
 			if (!FIND_EXEC.has(args[i]!)) continue;
 			const end = args.findIndex((arg, at) => at > i && (arg === ";" || arg === "+"));
 			const command = args.slice(i + 1, end === -1 ? args.length : end);
-			const invocation = this.unwrap(command.map((text) => ({ text, glob: false })), []);
+			const invocation = this.unwrap(command.map((text) => ({ text, glob: false, quoted: false })), []);
 			if (invocation) this.found.push(invocation);
 			i = end === -1 ? args.length : end;
 		}
 	}
+}
+
+/**
+ * Reads a shell's arguments: whether it runs a command string (-c, or fish's --command and -C), the
+ * first operand (that string, or the script), and whether -s makes it read commands from stdin.
+ */
+function shellArgs(name: string, args: string[]): { commandMode: boolean; operand: string | undefined; readsStdin: boolean } {
+	let commandMode = false;
+	let readsStdin = false;
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i]!;
+		if (arg === "--") return { commandMode, operand: args[i + 1], readsStdin };
+		if (name === "fish" && /^--(command|init-command)=/.test(arg)) return { commandMode: true, operand: arg.slice(arg.indexOf("=") + 1), readsStdin };
+		if (name === "fish" && (arg === "--command" || arg === "--init-command")) return { commandMode: true, operand: args[i + 1], readsStdin };
+		if (SHELL_VALUED.has(arg)) {
+			i++;
+			continue;
+		}
+		if (/^[-+][A-Za-z]+$/.test(arg)) {
+			if (/c/.test(arg) || (name === "fish" && /C/.test(arg))) commandMode = true;
+			if (/s/.test(arg)) readsStdin = true;
+			// A cluster ending in o or O takes the next word as its option name: bash -euo pipefail.
+			if (name !== "fish" && /[oO]$/.test(arg)) i++;
+			continue;
+		}
+		if (arg.startsWith("--")) continue;
+		return { commandMode, operand: arg, readsStdin };
+	}
+	return { commandMode, operand: undefined, readsStdin };
 }
 
 /** Decodes PowerShell's -EncodedCommand argument; throws Unreadable when it is not base64 of UTF-16LE. */

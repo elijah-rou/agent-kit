@@ -58,7 +58,9 @@ test("the shared policy's tightened cases block in Pi too", () => {
       assert.equal(root(command)?.block, true, command);
       assert.match(root(command).reason, /^git-interceptor: git guard blocked skipping git hooks/);
     }
-    assert.match(root("git config core.hooksPath /dev/null")?.reason, /setting core.hooksPath/);
+    assert.match(root("git config core.hooksPath /dev/null")?.reason, /changing core.hooksPath or a hook.\* key/);
+    assert.equal(root("git am -n < 0001-fix.patch")?.block, true);
+    assert.equal(root("git -c hook.pre-commit.enabled=false commit -m x")?.block, true);
     for (const command of ["git merge --no-verify-signatures topic", "git commit -F /tmp/msg"]) assert.equal(root(command), undefined, command);
     assert.equal(root("/usr/bin/git push origin main"), undefined);
     assert.equal(root("git config --get core.hooksPath"), undefined);

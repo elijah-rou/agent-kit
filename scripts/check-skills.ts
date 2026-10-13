@@ -161,9 +161,11 @@ for (const { root, name, path } of instructionFiles) {
   const block = PLAIN_FRONTMATTER.exec(text)?.[1];
   if (block === undefined) continue;
   const lines = block.split("\n");
-  const odd = lines.filter(line => !/^[A-Za-z][A-Za-z0-9_-]*:(?: .*)?$/.test(line) || /\s#/.test(line));
+  // A value is a quoted string closed on its own line or text starting with a letter or digit, with no ---,
+  // which a runtime takes as the end of the frontmatter and would drop every key after it.
+  const odd = lines.filter(line => !/^[A-Za-z][A-Za-z0-9_-]*: (?:"[^"]*"|'[^']*'|[A-Za-z0-9].*)$/.test(line) || /\s#/.test(line) || line.includes("---"));
   if (odd.length > 0) {
-    fail(`${where}: every frontmatter line must be a single top-level key: value line without a # comment (found ${JSON.stringify(odd[0])})`);
+    fail(`${where}: every frontmatter line must be a single top-level key: value line, its value a quoted string closed on the line or text starting with a letter or digit, without a # comment or --- (found ${JSON.stringify(odd[0])})`);
     continue;
   }
   const keys = lines.map(line => line.slice(0, line.indexOf(":")));

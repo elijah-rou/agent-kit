@@ -110,6 +110,25 @@ The audit thread needed nine user interventions and ended with six of its eleven
 | Review bots | Bugbot, agentic security review, triaged by Babysit | No, the verification swarm is primary | `pr-review` role; skip |
 | Forge | Origin, optional | No | `gh` |
 
+### Outer-loop work items
+
+| ID | Work | Lives in |
+|---|---|---|
+| L1 | The autopilot tick is a T3 `schedule_task` bound to the coordinator thread, not in-session cron. Its prompt resumes the program from the decision log, so a stalled run restarts on the next tick once the cause clears, with no "/compact, continue". The mode deletes it when the queue finishes. Outside T3, fall back to `/loop` and say it dies with the session. | `babysit-and-ship/references/autopilot-full.md`, `background-run` |
+| L2 | Each tick checks liveness: `children.tsv` with expected runtimes; a lane past its runtime with no side effect is replaced; a failed run or a child waiting on a prompt is reported once, not every tick (O6). | same |
+| L3 | PR waits use T3 `watch_pull_request`; `agentic watch-pr` stays the fallback outside T3. No sleep loops. | `babysit-and-ship` |
+| L4 | Auth: unattended runs use a long-lived token (`claude setup-token`), so the session cannot expire mid-run. The tick also runs `claude auth status` and reports a failure once. | user action (D8), tick prompt |
+| L5 | Upkeep: `create-verification` ends by creating a weekly T3 `fixed_time` schedule that runs `/maintain-verification` for that repo. | `create-verification`, `maintain-verification` |
+| L6 | Kit lag (slice 0b): after an agent-kit merge, the landing mode opens the bootstrap pin PR; a session-start check warns when the installed kit is behind. | `babysit-and-ship`, bootstrap |
+| L7 | Intake v1: a daily T3 schedule lists failed CI runs on `main` across owned repos that have a verify skill, and starts the A8 line for each new one. v2, a signed GitHub webhook, waits until T3 Connect remote access is set up and v1 has shown the need. | T3 schedule, a small `agentic` command |
+| L8 | `claude/CLAUDE.md` and `pi/AGENTS.md`: schedules an invoked mode creates for its own run (tick, watch) are part of the mode and are removed when it ends; upkeep and intake schedules need the user's standing approval (D9). | instructions |
+
+Open decisions for the outer loop:
+
+- **D8. Long-lived token for unattended runs.** A credential change only the user can make. Unverified: whether T3's Claude provider picks up the token; test it on one run first.
+- **D9. Standing approval for upkeep and intake schedules,** as an exception to "Do not silently create schedules".
+- **D10. Intake scope:** which repos L7 watches. Default proposal: owned repos with a verify skill.
+
 ## 6. Gaps in both systems
 
 | ID | Gap | Proposal |
@@ -142,13 +161,13 @@ Each slice is one PR or a short stack. It is verified with `verify-agent-kit`, a
    - 0b: the post-merge bump and the lag warning.
 1. **Control:** P1, P2, P3, X5, O2, X4, X1, X2, X3.
 2. **Review economy:** X6, O8, P4.
-3. **Liveness and coordination:** A1, A2, O4, O5, O6, P5, A7.
+3. **Liveness and coordination:** A1, A2, L1 to L4, O4, O5, O6, P5, A7.
 4. **Repo baseline and local gate:** G2b, G3, O7.
 5. **Greenfield flow:** G2a, P6, landing PR #35 (`spike`).
 6. **Catch-up and guide:** A4, A5, PR #34 reworked into the guide.
-7. **Scheduled upkeep:** A3, A6.
+7. **Scheduled upkeep:** A3, L5, L6, L8, A6.
 8. **Removals and Jev:** R3, J1, J2.
-9. **Outer loop:** A8, only after A1 to A3 have run cleanly for a week, and only for repos with a verify skill.
+9. **Outer loop:** A8 through L7 v1, only after A1 to A3 have run cleanly for a week, and only for repos with a verify skill.
 
 ## Notes from slice 0a review
 

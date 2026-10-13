@@ -105,7 +105,7 @@ for (const entry of readdirSync(join(ROOT, "claude/agents")).filter(name => name
   if (!name || !field("description")) fail(`${path}: needs name and description`);
   if (!model || !ROLE_MODELS.has(model)) fail(`${path}: model must be one of ${[...ROLE_MODELS].join(", ")}`);
   if (!effort || !EFFORTS.has(effort)) fail(`${path}: effort must be one of ${[...EFFORTS].join(", ")}`);
-  if (!/^disallowedTools:.*\bAgent\b/m.test(frontmatter)) fail(`${path}: disallow Agent; children do not launch children`);
+  if (!(field("disallowedTools") ?? "").split(/[\s,]+/).includes("Agent")) fail(`${path}: list Agent in disallowedTools; children do not launch children`);
   if (name && roles.has(name)) fail(`${path}: a second role file named ${name}`);
   if (name) roles.add(name);
 }
@@ -144,25 +144,30 @@ for (const { root, name, path } of instructionFiles) {
   if (SKILL_ROOTS.includes(root) && SKILL_FILE.test(name) && name.split("/").length !== 2) fail(`${where}: a SKILL.md below a skill's top folder is loaded as its own skill; keep one SKILL.md per <root>/<name>/`);
   if (!/\.md$/i.test(name)) continue;
   const text = readFileSync(path, "utf8");
-  // YAML reads a lone carriage return or a Unicode line separator as a line break, so one would split a line the
-  // checks below read as one; instruction Markdown uses LF only.
-  if (/[\r\u0085\u2028\u2029]/.test(text)) fail(`${where}: use LF line endings only (no carriage returns or Unicode line separators), so a runtime reads the same lines this checker does`);
+  // YAML reads a lone carriage return or a Unicode line separator as a line break, and other control characters
+  // change how it parses, so instruction Markdown uses LF line endings and no control characters but tab.
+  if (/[\x00-\x08\x0b-\x1f\x7f\u0085\u2028\u2029]/.test(text)) fail(`${where}: use LF line endings and no control characters (no carriage returns, form feeds, or Unicode line separators), so a runtime reads the same lines this checker does`);
   if (INLINE_SHELL.test(text) || FENCED_SHELL.test(text)) fail(`${where}: inline shell (!\`...\` or a fence opened with !) runs before the model reads the file; put the command in a script and name the script, or to document the syntax, separate the ! from the backtick`);
   const opening = text.replace(/^\uFEFF/, "");
   if (/^---\s*\n/.test(opening) && !PLAIN_FRONTMATTER.test(text)) fail(`${where}: write frontmatter in the plain form (no byte-order mark, no trailing spaces after ---, LF line endings) so this checker reads every key`);
   const kind = SKILL_FILE.test(name) && SKILL_ROOTS.includes(root) ? "skill" : root === "claude/agents" ? "role" : root === "pi/prompts" ? "prompt" : undefined;
   if (kind === undefined) continue;
   const allowed = ALLOWED_KEYS[kind];
-  // Every frontmatter line must be one top-level key: value line, so a line reader and a YAML reader (which
-  // runtimes fall back between) see the same keys; indented, continued, or flow lines could hide one.
-  const block = PLAIN_FRONTMATTER.exec(text)?.[1] ?? "";
+  // Every frontmatter line must be one top-level key: value line with no comment, and no key may repeat. The
+  // runtime parses frontmatter as YAML, and YAML can only see a top-level key that starts a line at column 0, so
+  // it never sees a key these lines miss; a comment or a repeated key would change a value it reads.
+  const block = PLAIN_FRONTMATTER.exec(text)?.[1];
+  if (block === undefined) continue;
   const lines = block.split("\n");
-  const odd = lines.filter(line => !/^[A-Za-z][A-Za-z0-9_-]*:(?: .*)?$/.test(line));
+  const odd = lines.filter(line => !/^[A-Za-z][A-Za-z0-9_-]*:(?: .*)?$/.test(line) || /\s#/.test(line));
   if (odd.length > 0) {
-    fail(`${where}: every frontmatter line must be a single top-level key: value line (found ${JSON.stringify(odd[0])})`);
+    fail(`${where}: every frontmatter line must be a single top-level key: value line without a # comment (found ${JSON.stringify(odd[0])})`);
     continue;
   }
-  for (const key of lines.map(line => line.slice(0, line.indexOf(":")))) {
+  const keys = lines.map(line => line.slice(0, line.indexOf(":")));
+  const repeated = keys.find((key, index) => keys.indexOf(key) !== index);
+  if (repeated !== undefined) fail(`${where}: frontmatter key "${repeated}" appears twice; a runtime keeps only one of them`);
+  for (const key of keys) {
     if (!allowed.has(key)) fail(`${where}: frontmatter key "${key}" is not allowed (allowed: ${[...allowed].join(", ")}); keys that grant tools, hooks, or permissions belong in reviewed configuration, not instruction text`);
   }
 }

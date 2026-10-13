@@ -20,12 +20,16 @@ Mods enabled); model, effort, and permissions stay user choices.
 `git-interceptor` applies, to every tool that runs a shell command: Bash, Monitor, and PowerShell (Claude
 Code 2.1.296's tools that execute code and take a command). It refuses skipping git hooks (`--no-verify`,
 `git commit -n` or `git am -n`, a `-c` or `GIT_CONFIG_*` override of `core.hooksPath` or a `hook.*` key, or
-a hook manager's skip variable such as `HUSKY=0` or `SKIP=` set on or before a git command) in every
-session, and refuses `git push`, `pull`, `merge`, `rebase`, `cherry-pick`, `revert`, `am`, `apply`, `tag`
-(except listing or verifying tags), `send-pack`, `http-push`, `git subtree push`, `pull`, and `merge`, and
-`gh pr merge` inside a subagent (an event carrying `agent_id`) unless its `agent_type` is `autopilot-owner`.
-The main session may publish. It denies with Claude Code's JSON decision, which holds in bypass-permission
-mode too, and allows by printing nothing. An event it cannot read is denied.
+a hook manager's skip variable (`HUSKY`, `HUSKY_SKIP_HOOKS`, `SKIP`, `PRE_COMMIT_ALLOW_NO_CONFIG`,
+`LEFTHOOK`, `LEFTHOOK_EXCLUDE`, `OVERCOMMIT_DISABLE`) in a command that runs git, set on the git command, on
+a program the guard follows into that runs it (`sh -c`, `eval`, `env`, a here document fed to a shell, and
+the other wrappers), as a standalone assignment, through `export`, `declare`, `typeset`, `local`, or
+`readonly`, or with PowerShell's `$env:NAME =`) in every session, and refuses `git push`, `pull`, `merge`,
+`rebase`, `cherry-pick`, `revert`, `am`, `apply`, `tag` (except listing or verifying tags), `send-pack`,
+`http-push`, `git subtree push`, `pull`, and `merge`, and `gh pr merge` inside a subagent (an event carrying
+`agent_id`) unless its `agent_type` is `autopilot-owner`. The main session may publish. It denies with
+Claude Code's JSON decision, which holds in bypass-permission mode too, and allows by printing nothing. An
+event it cannot read is denied.
 
 What it refuses that it need not (the same list is in ADR 0001 and the verify-agent-kit `git-guard` feature):
 
@@ -35,6 +39,8 @@ What it refuses that it need not (the same list is in ADR 0001 and the verify-ag
   text may be a mention: commit such a message from a file (write it with the editor tool, then
   `git commit -F <file>`), and search for `--no-verify` without its leading dashes.
 - A child's harmless uses of a refused subcommand, such as `git rebase --abort`.
+- A skip variable set alone or exported in a command whose git command runs no hooks, such as
+  `export SKIP=lint; git log`.
 - `git config` changes to `core.hooksPath` or any `hook.*` key (git's config-based hooks), for every
   session, even to turn on a repository's own hooks: ask the user to set them. Reading them passes, and so
   does unsetting `core.hooksPath`.

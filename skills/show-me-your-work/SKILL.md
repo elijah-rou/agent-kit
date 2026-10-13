@@ -60,6 +60,10 @@ Before handing back, spawn one fresh read-only reviewer subagent that did not do
 
 End the reply with an `Attention` section. Its first line is `reviewed by <model>`. Then one bullet per flag, each pointing at a row `ts` or a transcript moment. `No flags` is a valid body.
 
+The `Attention` section holds only the reviewer's flags, as the reviewer gave them. Your responses (a flag fixed, disputed, or deferred) go in the report above the section, and a fix also gets a log row; never annotate, reword, or drop a flag inside the section.
+
+A review covers the run up to the hand-back it precedes. If work continues after it, in a later turn or to fix a flag, audit the new rows against the transcript and rerun the review on the updated log and transcript before the next hand-back. The new `Attention` section replaces the old one.
+
 ## Reviewing a trail
 
 When asked to catch the user up, read the `Attention` section first, then the rows it cites, then follow evidence pointers. `column -s$'\t' -t <log>` renders the log in a terminal.

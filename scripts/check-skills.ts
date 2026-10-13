@@ -182,6 +182,16 @@ for (const { root, name, path } of instructionFiles) {
     fail(`${where}: frontmatter must parse as YAML on its own to exactly its key lines; quote a value that contains ": ", ends in ":", or holds a backslash or quote`);
     continue;
   }
+  // Check the values the runtime reads, not the raw text: it ignores a flag that is not a real boolean and drops a
+  // role whose name or description is not a non-empty string.
+  const values = parsed as Record<string, unknown>;
+  for (const [key, value] of Object.entries(values)) {
+    if (typeof value !== "string" && typeof value !== "boolean") fail(`${where}: frontmatter ${key} must be text or true/false (YAML read ${JSON.stringify(value)})`);
+  }
+  if ("disable-model-invocation" in values && typeof values["disable-model-invocation"] !== "boolean") fail(`${where}: disable-model-invocation must be true or false, unquoted`);
+  for (const key of ["name", "description"]) {
+    if (key in values && (typeof values[key] !== "string" || (values[key] as string).trim() === "")) fail(`${where}: ${key} must be non-empty text`);
+  }
   const repeated = keys.find((key, index) => keys.indexOf(key) !== index);
   if (repeated !== undefined) fail(`${where}: frontmatter key "${repeated}" appears twice; a runtime keeps only one of them`);
   for (const key of keys) {

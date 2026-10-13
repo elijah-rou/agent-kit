@@ -446,6 +446,14 @@ class Reader {
 			} else if (this.dialect === "posix" && c === "[" && next === "[" && word === undefined && words.every((before) => KEYWORDS.has(before.text)) && /^\[\[\s/.test(text.slice(this.pos))) {
 				// [[ ... ]] is a conditional: its ( ) and =~ patterns are not subshells or programs.
 				append(this.conditional());
+			} else if (this.dialect === "powershell" && c === "@" && next === '"' && /^@"[ \t]*\r?\n/.test(text.slice(this.pos))) {
+				// An @"..."@ here-string is read by the double-quote reader, which follows its $( ). A " in its
+				// body is literal to PowerShell but would end that reader's string, so such a body is unreadable.
+				const end = /\r?\n"@/.exec(text.slice(this.pos + 2));
+				if (!end) throw new Unreadable('a PowerShell @" here-string is never closed');
+				if (text.slice(this.pos + 2, this.pos + 2 + end.index).includes('"')) throw new Unreadable('a PowerShell @" here-string holds a "');
+				append(c);
+				this.pos++;
 			} else if (this.dialect === "powershell" && c === "@" && next === "'" && /^@'[ \t]*\r?\n/.test(text.slice(this.pos))) {
 				// @'...'@ is a literal here-string. @"..."@ is read by the double-quote reader, which follows its $( ).
 				append(this.literalHereString(), { quoted: true });
@@ -796,8 +804,6 @@ class Reader {
 		if (rest) words.unshift({ text: rest, glob: false, quoted: restQuoted });
 		const environment = /^\$(?:env:([A-Za-z_][\w]*)|\{env:([A-Za-z_][\w]*)\})$/i.exec(name!);
 		if (environment) this.found.push({ assignments: [...assignments, `${(environment[1] ?? environment[2])!.toUpperCase()}=${words.map((word) => word.text).join(" ")}`], program: "", args: [], patterned: [] });
-		// Only an unquoted word can be the command whose output is captured; a quoted value is a string.
-		if (words[0]?.quoted) words.splice(0, words.length);
 	}
 
 	/** Skips env's options and assignments, reading an -S string as a command; returns the index of its command. */
@@ -865,7 +871,8 @@ class Reader {
 			// submodule. The subcommand is found past git's global options (git -C submodule submodule ...), and
 			// any other word "submodule" is followed too.
 			const subcommand = skipOptions(args, 0, GIT_GLOBAL_VALUED);
-			for (const submodule of new Set([subcommand, args.indexOf("submodule")])) {
+			const adjacent = args.findIndex((arg, i) => arg === "foreach" && args[i - 1] === "submodule") - 1;
+			for (const submodule of new Set([subcommand, args.indexOf("submodule"), adjacent])) {
 				if (args[submodule] !== "submodule") continue;
 				const foreach = skipOptions(args, submodule + 1, new Set());
 				if (args[foreach] !== "foreach") continue;

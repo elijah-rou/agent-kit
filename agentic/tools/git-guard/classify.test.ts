@@ -353,6 +353,11 @@ describe("round 9", () => {
 	const build: Actor = { kind: "child", role: "build" };
 	const expectDeny = (command: string, actor: Actor, reason: RegExp, dialect: "posix" | "powershell" = "posix") => expect([command, blockReason(command, actor, dialect)]).toEqual([command, expect.stringMatching(reason)]);
 	const expectAllow = (command: string, actor: Actor = main, dialect: "posix" | "powershell" = "posix") => expect([command, blockReason(command, actor, dialect)]).toEqual([command, undefined]);
+	test("an @\"...\"@ here-string holding a \" is unreadable; one without is read", () => {
+		expectDeny("$m = @\"\nsay \"hi\n\"@\ngit commit -n -m x # \"", main, /could not read this command: a PowerShell @" here-string holds a "/, "powershell");
+		expectDeny("$m = @\"\nUse \"Bob's $(git push origin x) and Ann's\" fix\n\"@", build, /could not read this command/, "powershell");
+		expectAllow("$m = @\"\nBuilt at $(Get-Date)\n\"@\nWrite-Output $m", build, "powershell");
+	});
 	test("N1: an @\"...\"@ here-string's $( ) is read as PowerShell", () => {
 		expectDeny("$m = @\"\n$(Get-Content b.txt | ForEach-Object { git push origin x })\n\"@", build, /git push/, "powershell");
 		expectDeny("$m = @\"\nC:\\logs\\$(git push origin x)\n\"@", build, /git push/, "powershell");
@@ -377,13 +382,15 @@ describe("round 9", () => {
 	test("N6: ${env:NAME} = sets a skip variable", () => {
 		expectDeny("${env:HUSKY} = '0'; git commit -m x", main, /hook manager's skip variable/, "powershell");
 	});
-	test("N7 and B6: intended narrowings", () => {
-		expectAllow("$m = 'Switch the hook to /bin/sh'; git commit -m $m", main, "powershell");
-		expectAllow("$m='Switch the hook to /bin/sh'; git commit -m $m", main, "powershell");
+	test("B6: intended narrowings, and a quoted PowerShell value read as a program", () => {
+		// The right side's first word is read as the program even when quoted, so a partly escaped name is still seen.
+		expectDeny("$x = g`it commit -n -m x", main, /skipping git hooks/, "powershell");
+		expectDeny("$x = g`it push origin x", build, /git push/, "powershell");
+		expectDeny("$m = 'Switch the hook to /bin/sh'; git commit -m $m", main, /could not read this command/, "powershell");
 		expectAllow("$env:HUSKY; git commit -m x", main, "powershell");
 		expectAllow("$env:HUSKY=0; git commit -m x", main);
 		expectAllow("wsl -e 'git push origin x'", build, "powershell");
-		expectDeny("$env:HUSKY = 'Switch the hook to /bin/sh'; git commit -m x", main, /hook manager's skip variable/, "powershell");
+		expectDeny("$env:HUSKY = 'Switch the hook to /bin/sh'; git commit -m x", main, /could not read this command|hook manager's skip variable/, "powershell");
 	});
 });
 

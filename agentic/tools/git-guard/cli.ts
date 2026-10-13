@@ -19,9 +19,11 @@ const USAGE = `Usage: git-guard --claude-hook
 Claude Code PreToolUse hook for the tools that run a shell command (${[...SHELL_TOOLS].join(", ")}).
 Reads the event JSON on stdin and matches the command text; git and gh match by name or absolute path.
 It denies, in every session:
-  - --no-verify after git on one line;
-  - -n, alone or among short flags, on git commit or git am;
-  - a hook manager's skip variable (HUSKY, SKIP, LEFTHOOK, and the like) assigned on a line that runs git;
+  - --no-verify after git on its line, or on a later line that a quoted string or a line-ending
+    backslash carries the command onto;
+  - -n on git commit or git am, alone or after short flags that take no value (-an, -nm);
+  - a hook manager's skip variable (HUSKY, SKIP, LEFTHOOK, and the like) assigned on a line that runs
+    git, or on a line of only assignments just before one that starts git;
   - core.hooksPath or a hook.* key set or unset with git -c, --config-env, or git config.
 Inside a subagent (the event carries agent_id), unless its agent_type is autopilot-owner, it also denies a
 line (or a command after ;, &, or |) starting git push, pull, merge, rebase, cherry-pick, revert, am,

@@ -98,8 +98,8 @@ describe("patterns for what the shell reader alone used to find", () => {
 		allowedForAll(["git commit -m x", "git commit -am local", "git commit -mn", "git log -n 3", "git add . && git commit -m x && git log -n 3", "git commit -m x; head -n 5 log", "git commit --no-edit"]);
 		amAllowed(["git am patch", "git am -3 patch", "git am -k -s patch"]);
 	});
-	test("a hook manager's skip variable assigned before git on the same line is refused for every actor", () => {
-		refusedForAll(["HUSKY=0 git commit -m x", "HUSKY_SKIP_HOOKS=1 git commit -m x", "SKIP=lint git commit -m x", "PRE_COMMIT_ALLOW_NO_CONFIG=1 git commit -m x", "LEFTHOOK=0 git push", "LEFTHOOK_EXCLUDE=lint git commit -m x", "OVERCOMMIT_DISABLE=1 git commit -m x", "FOO=1 HUSKY=0 git commit -m x", "HUSKY=0 FOO=1 git commit -m x", "cd repo && SKIP='lint,test' git commit -m x", "export HUSKY=0 && git commit -m x", "export HUSKY=0; git push", "HUSKY=0 /usr/bin/git commit -m x"], /skipping git hooks with a hook manager's skip variable.*git commit -F <file>/);
+	test("a hook manager's skip variable assigned before git on the same line, or alone on the line before it, is refused for every actor", () => {
+		refusedForAll(["HUSKY=0 git commit -m x", "HUSKY_SKIP_HOOKS=1 git commit -m x", "SKIP=lint git commit -m x", "PRE_COMMIT_ALLOW_NO_CONFIG=1 git commit -m x", "LEFTHOOK=0 git push", "LEFTHOOK_EXCLUDE=lint git commit -m x", "OVERCOMMIT_DISABLE=1 git commit -m x", "FOO=1 HUSKY=0 git commit -m x", "HUSKY=0 FOO=1 git commit -m x", "cd repo && SKIP='lint,test' git commit -m x", "export HUSKY=0 && git commit -m x", "export HUSKY=0; git push", "HUSKY=0 /usr/bin/git commit -m x", "export HUSKY=0\ngit commit -m x", "export HUSKY=0 FOO=1;\ngit commit -m x"], /skipping git hooks with a hook manager's skip variable.*git commit -F <file>/);
 		allowedForAll(["HUSKY=0 npm install", "SKIP=1 make", "MYSKIP=1 git commit -m x", "HUSKYX=1 git commit -m x", "git commit -m x"]);
 	});
 	test("setting or unsetting core.hooksPath or a hook.* key through git -c, --config-env, or git config is refused for every actor", () => {
@@ -120,6 +120,28 @@ describe("patterns for what the shell reader alone used to find", () => {
 		}
 		refusedForAll(["/usr/bin/git commit --no-verify -m x", "make && /usr/bin/git push --no-verify"], /skipping git hooks with --no-verify/);
 		for (const command of ["/usr/bin/git status", "/usr/bin/git merge-base a b", "/usr/bin/git tag -l", "ls /usr/bin/git", "echo /usr/bin/git push"]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
+	});
+	test("redirections and a trailing comment are not git config or git tag arguments", () => {
+		allowedForAll(["git config core.hooksPath 2>/dev/null || echo unset", "git config core.hooksPath >/dev/null 2>&1 && echo set", "git config hook.lint.command 2> /dev/null", "git config core.hooksPath &>/dev/null", "git config core.hooksPath > /tmp/out", "git config core.hooksPath # read it", "git config --get core.hooksPath </dev/null"]);
+		refusedForAll(["git config core.hooksPath /dev/null 2>/dev/null", "git config core.hooksPath >/tmp/log /dev/null", "git config core.hooksPath > /tmp/log x", "git config core.hooksPath x # set it"], /skipping git hooks by setting or unsetting core.hooksPath/);
+		for (const command of ["git tag 2>/dev/null", "git tag -l >/tmp/tags 2>&1", "git tag 2> /dev/null | head", "git tag # list them"]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
+		for (const command of ["git tag v1 2>/dev/null", "git tag 2>/dev/null v1", "git tag > /tmp/out v1"]) expect([command, blockReason(command, child)]).toEqual([command, expect.stringContaining("child publication/integration command: git tag.")]);
+	});
+	test("-n counts only after git commit's or git am's boolean short flags, and not in a word git refuses as a misspelled long option", () => {
+		allowedForAll(["git commit -m \"Build with -fno-exceptions\"", "git commit -m \"Silence -Wno-unused-parameter\"", "git commit -m \"Add -json output\"", "git commit -m \"Fix -version banner\"", "git commit -m \"Pass -include to clang\"", "git commit -m \"Keep -only for now\"", "git commit -m \"Drop -no-op\"", "git commit -m \"Note -tn\""]);
+		refusedForAll(["git commit -n -m x", "git commit -nm x", "git commit -anm x", "git commit -an", "git commit -on file", "git commit -in file", "git commit -svn -m x", "git commit -m \"fix -n handling\"", "git am -3n patch", "git am -kn patch", "git am -mn patch"], /skipping git hooks with -n/);
+		amAllowed(["git am -include patch", "git am -pn1 patch"]);
+	});
+	test("--no-verify after git counts when the command runs onto later lines through a quoted string or a backslash", () => {
+		refusedForAll(["git commit -m \"$(cat <<'EOF'\nDon't skip hooks\nEOF\n)\" --no-verify", "git commit -m x \\\n  --no-verify", "git commit -m 'first\nsecond' --no-verify", "git commit -m \"Title\n\nRefuse --no-verify\"", "/usr/bin/git -C repo commit -m \"a\nb\" --no-verify"], /skipping git hooks with --no-verify.*git commit -F <file>/);
+		allowedForAll(["git commit -m x\necho --no-verify", "git commit -m \"a\nb\"\necho --no-verify", "git commit -m x # it's\necho it's --no-verify", "echo \"git\nx\" --no-verify"]);
+	});
+	test("many quoted -C options are read in linear time", () => {
+		const options = ' -C "x"'.repeat(40);
+		const started = performance.now();
+		for (const command of [`git${options} status`, `git${options} commit -m x`, `git${options} config user.name x`, `git${options} --no-verify-signatures`]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
+		expect(blockReason(`git${options} push`, child)).toMatch(/git push/);
+		expect(performance.now() - started).toBeLessThan(500);
 	});
 	test("shells, plain commits, patches, config, and a child's reads stay allowed", () => {
 		allowedForAll(["printf 'echo hi\\n' | sh", "bash -l", "exec zsh", "echo \"unterminated", "git commit -m x", "git config user.name x"]);

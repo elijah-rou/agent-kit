@@ -8,8 +8,9 @@
 // git commit or am -n, a hook manager's skip variable, a core.hooksPath or hook.* override or config
 // write, and gh pr merge. They find git or gh, by name or absolute path, at the start of a line or after
 // ;, &, or |, so they also match a mention in a quoted message or a search, and each reason says how to
-// rephrase one. They do not read the shell: git reached another way (a wrapper, a substitution, a
-// `sh -c` string) is not seen.
+// rephrase one. --no-verify also counts on a later line that a quoted string or a line-ending backslash
+// carries git's command onto. They do not read the shell otherwise: git reached another way (a wrapper,
+// a substitution, a `sh -c` string) is not seen.
 
 /** Who issued the command. The coordinating session publishes; a child publishes only as an autopilot-full owner. */
 export type Actor = { kind: "main" } | { kind: "child"; role: string | undefined };
@@ -22,8 +23,9 @@ const START = String.raw`(?:^|[;&|\n]\s*)`;
 /** A program by name or by absolute path (/usr/bin/git). */
 const program = (name: string) => String.raw`(?:(?:/[^\s/;&|<>()'"]*)*/)?${name}`;
 const GIT = program("git");
-// git's -C <path> options, the only options the patterns skip before a subcommand.
-const GIT_DASH_C = String.raw`(?:\s+-C\s+(?:'[^']*'|"[^"]*"|\S+))*`;
+// git's -C <path> options, the only options the patterns skip before a subcommand. A path is quoted or
+// bare, never both, so a run of options reads one way and cannot backtrack exponentially.
+const GIT_DASH_C = String.raw`(?:\s+-C\s+(?:'[^']*'|"[^"]*"|[^\s'"]\S*))*`;
 // One word: quoted, or up to whitespace or a separator.
 const WORD = String.raw`(?:'[^'\n]*'|"[^"\n]*"|[^\s;&|'"]+)`;
 // An assignment's value: quoted parts and unquoted characters, read to the whole value (up to whitespace,
@@ -31,16 +33,36 @@ const WORD = String.raw`(?:'[^'\n]*'|"[^"\n]*"|[^\s;&|'"]+)`;
 const VALUE = String.raw`(?:'[^'\n]*'|"[^"\n]*"|[^\s;&|'"])*(?![^\s;&|])`;
 const ASSIGNMENT = String.raw`[A-Za-z_]\w*=${VALUE}`;
 
-// --no-verify after a git at the start of a line, but not git's own --no-verify-signatures.
-const NO_VERIFY = new RegExp(String.raw`${START}${GIT}\s+[^\n]*--no-verify(?![\w-])`);
-// -n (--no-verify) on git commit or git am, alone or in a cluster of short flags before any flag that
-// takes the rest of the cluster as its value (in -nm the n is a flag, in -mn it is the message). The
-// search stops at ;, &, or | so a later command's -n (git log -n 3) is not taken for it.
-const NO_VERIFY_SHORT = new RegExp(String.raw`${START}${GIT}${GIT_DASH_C}\s+(?:commit(?![\w-])[^\n;&|]*?\s-(?:(?![mFcCtSuU])[A-Za-z0-9])*n|am(?![\w-])[^\n;&|]*?\s-(?:(?![CpS])[A-Za-z0-9])*n)`);
+// --no-verify, but not git's own --no-verify-signatures.
+const NO_VERIFY_FLAG = new RegExp(String.raw`--no-verify(?![\w-])`);
+// --no-verify after a git at the start of a line.
+const NO_VERIFY = new RegExp(String.raw`${START}${GIT}\s+[^\n]*${NO_VERIFY_FLAG.source}`);
+// A git at the start of a line, and the rest of its command: unquoted text up to a newline or a comment,
+// with quoted strings and backslash escapes that may carry it onto later lines (a commit message in a
+// here document, or a backslash at a line's end). Each alternative starts with a different character,
+// so the text reads one way.
+const GIT_COMMAND = new RegExp(String.raw`${START}${GIT}[^\S\n]((?:[^\n'"\\\s#]|[^\S\n](?!#)|(?<!\s)#|\\[\s\S]|'[^']*'|"(?:[^"\\]|\\[\s\S])*")*)`, "g");
+// git commit's and git am's short options that take no value, and their long options that begin like a
+// cluster holding n (git refuses a single-dash word of three or more letters that begins a long option's
+// name or begins with no-, as in -include or -no-op, before any hook runs).
+const COMMIT_SHORT_FLAGS = "qvseaipoz";
+const AM_SHORT_FLAGS = "iqsukmcr3";
+const COMMIT_LONG_LIKE_N = ["include", "inter-hunk-context", "interactive", "only"];
+const AM_LONG_LIKE_N = ["include", "interactive"];
+/** -n in a cluster of `flags` (alone, -an, -nm), unless git refuses the word as a misspelled long option. */
+function shortN(flags: string, longNames: string[]): string {
+	const prefixes = longNames.flatMap((name) => [...name].slice(2).map((_, i) => name.slice(0, i + 3)));
+	return String.raw`\s-(?!no-|(?:${prefixes.join("|")})(?![^\s'";&|)]))[${flags}]*n`;
+}
+// -n (--no-verify) on git commit or git am, alone or after short options that take no value (-an), and
+// before any option, which may take the rest of the cluster as its value (-nm). The search stops at ;,
+// &, or | so a later command's -n (git log -n 3) is not taken for it.
+const NO_VERIFY_SHORT = new RegExp(String.raw`${START}${GIT}${GIT_DASH_C}\s+(?:commit(?![\w-])[^\n;&|]*?${shortN(COMMIT_SHORT_FLAGS, COMMIT_LONG_LIKE_N)}|am(?![\w-])[^\n;&|]*?${shortN(AM_SHORT_FLAGS, AM_LONG_LIKE_N)})`);
 // Variables hook managers read to skip hooks: husky, pre-commit, lefthook, overcommit.
 const SKIP_VARIABLES = ["HUSKY_SKIP_HOOKS", "HUSKY", "SKIP", "PRE_COMMIT_ALLOW_NO_CONFIG", "LEFTHOOK_EXCLUDE", "LEFTHOOK", "OVERCOMMIT_DISABLE"];
 // A skip variable assigned where a command starts (alone, among other assignments, or after export and
-// its kin), with git run on the same line: as that command (HUSKY=0 git commit) or after a separator.
+// its kin), with git run on the same line, as that command (HUSKY=0 git commit) or after a separator, or
+// starting the next line when only assignments come between (export HUSKY=0, then git commit).
 const SKIP_VARIABLE = new RegExp(String.raw`${START}(?:(?:export|declare|typeset|local|readonly)(?:\s+-\w+)*\s+)?(?:${ASSIGNMENT}\s+)*(?:${SKIP_VARIABLES.join("|")})=${VALUE}(?:(?:\s+${ASSIGNMENT})*\s+|[^\n]*?[;&|]\s*)${GIT}\s`);
 /** One option: a `valued` option and the next word, or any other option word. The two never overlap, so a run of options reads one way and cannot backtrack exponentially. */
 function option(valued: string[]): string {
@@ -139,10 +161,25 @@ function configWritesHookKey(args: string[]): boolean {
 	return keyAt + 1 < positional.length || positional[0] === "set" || args.some((arg) => arg === "--add" || arg === "--replace-all");
 }
 
-/** The words after a pattern's match up to the next separator, with a quote at either end removed. */
+// A redirection word (2>/dev/null, >&2, 2>&1, &>log, <in); one that is only its operator takes the next word as its target.
+const REDIRECTION = /^(?:\d*[<>]|&>)/;
+const REDIRECTION_OPERATOR = /^(?:\d*(?:[<>]|>>|<<<?|<>|>\||[<>]&)|&>>?)$/;
+
+/**
+ * The words after a pattern's match up to the next separator or comment, with a quote at either end
+ * removed and redirections and their targets dropped. The & of a redirection (2>&1, &>) is not a separator.
+ */
 function wordsAfter(command: string, match: RegExpMatchArray): string[] {
-	const rest = command.slice(match.index! + match[0].length).split(/[;&|\n)]/)[0]!;
-	return rest.trim().split(/\s+/).filter(Boolean).map((word) => word.replace(/^['"]|['"]$/g, ""));
+	const rest = command.slice(match.index! + match[0].length).split(/[;|\n)]|(?<![<>])&(?!>)/)[0]!;
+	const words: string[] = [];
+	let target = false;
+	for (const word of rest.trim().split(/\s+/).filter(Boolean)) {
+		if (word.startsWith("#")) break;
+		if (target) target = false;
+		else if (REDIRECTION.test(word)) target = REDIRECTION_OPERATOR.test(word);
+		else words.push(word.replace(/^['"]|['"]$/g, ""));
+	}
+	return words;
 }
 
 /** How a command's text skips git hooks. */
@@ -151,6 +188,7 @@ export type HookSkip = "no-verify" | "short-n" | "skip-variable" | "hooks-config
 /** How the text skips git hooks, if it does: --no-verify, -n on commit or am, a skip variable, or a hook key override or config write. */
 export function hookSkip(command: string): HookSkip | undefined {
 	if (NO_VERIFY.test(command)) return "no-verify";
+	for (const match of command.matchAll(GIT_COMMAND)) if (NO_VERIFY_FLAG.test(match[1]!)) return "no-verify";
 	if (NO_VERIFY_SHORT.test(command)) return "short-n";
 	if (SKIP_VARIABLE.test(command)) return "skip-variable";
 	if (HOOKS_OVERRIDE.test(command)) return "hooks-config";
@@ -180,9 +218,9 @@ export function mayPublish(actor: Actor): boolean {
 
 const MENTION = "If the text only mentions it, as in a commit message, write the message to a file with the editor tool and run git commit -F <file>";
 const HOOK_SKIP_REASONS: Record<HookSkip, string> = {
-	"no-verify": "git guard blocked skipping git hooks with --no-verify after git on one line: commit and push with hooks running, and fix what a hook reports instead of skipping it. If the text only mentions the flag, as in a commit message or a search, write the message to a file with the editor tool and run git commit -F <file>, or search for the flag without its leading dashes",
+	"no-verify": "git guard blocked skipping git hooks with --no-verify after git, on its line or on a later line that a quoted string or a line-ending backslash carries the command onto: commit and push with hooks running, and fix what a hook reports instead of skipping it. If the text only mentions the flag, as in a commit message or a search, write the message to a file with the editor tool and run git commit -F <file>, or search for the flag without its leading dashes",
 	"short-n": `git guard blocked skipping git hooks with -n (--no-verify) on git commit or git am, alone or among short flags such as -nm: commit with hooks running, and fix what a hook reports instead of skipping it. ${MENTION}`,
-	"skip-variable": `git guard blocked skipping git hooks with a hook manager's skip variable (HUSKY, SKIP, LEFTHOOK, and the like) assigned on a line that runs git: let the hooks run, and fix what a hook reports instead of skipping it. ${MENTION}`,
+	"skip-variable": `git guard blocked skipping git hooks with a hook manager's skip variable (HUSKY, SKIP, LEFTHOOK, and the like) assigned on or just before a line that runs git: let the hooks run, and fix what a hook reports instead of skipping it. ${MENTION}`,
 	"hooks-config": `git guard blocked skipping git hooks by setting or unsetting core.hooksPath or a hook.* key with git -c, --config-env, or git config: let the hooks run, and fix what a hook reports instead of skipping it; ask the user to change the key if the repository needs other hooks. ${MENTION}`,
 };
 

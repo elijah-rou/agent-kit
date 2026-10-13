@@ -22,14 +22,20 @@ Code 2.1.296's tools that execute code and take a command). The policy is text p
 read the command as a shell would. They find `git` or `gh`, by name or by absolute path (`/usr/bin/git`), at
 the start of a line or after `;`, `&`, or `|`. In every session they refuse skipping hooks:
 
-- `--no-verify` after `git` on the same line (but not `--no-verify-signatures`);
-- `-n`, alone or among short flags (`-nm`, `-anm`), on `git commit` or `git am`, up to the next `;`, `&`,
-  or `|`;
+- `--no-verify` after `git` (but not `--no-verify-signatures`), on the same line or on a later line that a
+  quoted string or a line-ending backslash carries the command onto, as in Claude Code's usual commit form
+  `git commit -m "$(cat <<'EOF' ... EOF\n)" --no-verify`;
+- `-n` on `git commit` or `git am`, alone or after short flags that take no value (`-an`, `-nm`, `-anm`),
+  up to the next `;`, `&`, or `|`; a word git itself refuses as a misspelled long option (`-include`,
+  `-only`, `-no-op`) does not count;
 - a hook manager's skip variable (`HUSKY`, `HUSKY_SKIP_HOOKS`, `SKIP`, `PRE_COMMIT_ALLOW_NO_CONFIG`,
   `LEFTHOOK`, `LEFTHOOK_EXCLUDE`, `OVERCOMMIT_DISABLE`) assigned at the start of a command, alone or after
-  `export` and its kin, on a line that runs git (`HUSKY=0 git commit`, `export SKIP=lint && git commit`);
+  `export` and its kin, on a line that runs git, or on a line of only assignments just before a line that
+  starts git (`HUSKY=0 git commit`, `export SKIP=lint && git commit`, `export HUSKY=0` then `git commit` on
+  the next line);
 - `core.hooksPath` or a `hook.*` key set with `git -c` or `--config-env` before the subcommand, or set,
-  unset, or removed with `git config` (reading one with `git config <key>` or `--get` passes).
+  unset, or removed with `git config` (reading one with `git config <key>` or `--get` passes, and
+  redirections such as `2>/dev/null` and a trailing `# comment` are not read as a value).
 
 Inside a subagent (an event carrying `agent_id`), unless its `agent_type` is `autopilot-owner`, they also
 refuse a line, or a command after `;`, `&`, or `|`, that starts `git push`, `pull`, `merge`, `rebase`,
@@ -41,8 +47,10 @@ mode too, and allows by printing nothing. An event it cannot read is denied.
 What it refuses that it need not (the same list is in ADR 0001 and the verify-agent-kit `git-guard` feature):
 
 - Mentions. The patterns see a git command at the start of any line or after `;`, `&`, or `|`, even inside
-  a quoted commit message, a here document, or a search pattern (`rg "error|git push"`), and `-n` anywhere
-  in a `git commit` command before its next `;`, `&`, or `|` (`git commit -m "fix -n handling"`). The
+  a quoted commit message, a here document, or a search pattern (`rg "error|git push"`); `--no-verify`
+  anywhere in a quoted message that spans lines after `git`; and a word that git would read as `-n`
+  anywhere in a `git commit` or `git am` command before its next `;`, `&`, or `|`
+  (`git commit -m "fix -n handling"`). The
   reason says the text may be a mention: commit such a message from a file (write it with the editor tool,
   then `git commit -F <file>`), and search for `--no-verify` without its leading dashes, or for a command
   without `git` or `gh` in front.
@@ -83,16 +91,20 @@ agent-kit checkout:
 What the guard does not stop (the same list is in ADR 0001 and the verify-agent-kit `git-guard` feature):
 
 - A git or gh command the patterns do not see in the text: one not at the start of a line or after `;`,
-  `&`, or `|` (leading spaces, a relative path such as `./git`, an assignment other than a skip variable, a
-  redirection, or a keyword before it, a wrapper such as `command`, `env`, `sh -c`, `eval`, or `xargs`, a
-  subshell or substitution, PowerShell's call operator or backtick escapes), git options before the
-  subcommand other than `-C` (`git --git-dir=x push`; `-c` and `--config-env` are read only for hook keys),
-  `--no-verify` on a later line than its `git` (after a here document in a commit message), shell aliases
-  and functions, git and gh aliases, and script files.
-- Hooks skipped another way: a prefix of `--no-verify` such as `--no-veri`, `-n` after a quoted `;`, `&`,
-  or `|` in its `git commit` command, a `GIT_CONFIG_*` variable carrying a hook key, a skip variable set on
-  an earlier line or through a wrapper (`env HUSKY=0 git commit`), and editing `.git/hooks` or
-  `.git/config`.
+  `&`, or `|` (leading spaces, a path that does not start with `/` such as `./git` or `~/bin/git`, a name
+  with an extension such as `git.exe push`, an assignment other than a skip variable, a redirection, or a
+  keyword before it, a wrapper such as `command`, `env`, `sh -c`, `eval`, or `xargs`, a subshell or
+  substitution, PowerShell's call operator or backtick escapes), git options before the subcommand other
+  than `-C` (`git --git-dir=x push`; `-c` and `--config-env` are read only for hook keys), `--no-verify` on
+  a later line that the command reaches another way (an unquoted `$(...)` spanning lines, or a here
+  document inside a quoted string that holds an unpaired double quote), shell aliases and functions, git
+  and gh aliases, and script files.
+- Hooks skipped another way: a prefix of `--no-verify` such as `--no-veri`; `-n` after a quoted `;`, `&`,
+  or `|` in its `git commit` command, or on a later line than its `git commit` (after a commit message in a
+  here document); a `GIT_CONFIG_*` variable carrying a hook key; a skip variable set through a wrapper
+  (`env HUSKY=0 git commit`), set on an earlier line that is not a line of only assignments just before
+  git's line (`export HUSKY=0`, then `make`, then `git commit`, one per line), or set the PowerShell way (`$env:HUSKY = '0'; git commit`,
+  `Set-Item env:HUSKY 0; git commit`); and editing `.git/hooks` or `.git/config`.
 - Other programs that publish: `git send-pack`, `git http-push`, `git subtree push`, `pull`, or `merge`,
   `gh pr create` or `comment`, and `gh api`.
 - Identity it cannot tell: a nested `claude -p` started from a subagent's shell has no `agent_id`, so it is

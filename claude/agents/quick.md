@@ -1,6 +1,6 @@
 ---
 name: quick
-description: Bounded work that writes, on a small fast model: mechanical or bulk edits across files, renames, format conversions, and summaries with a known shape. Not for design decisions, diagnosis, or review.
+description: "Bounded work that writes, on a small fast model: mechanical or bulk edits across files, renames, format conversions, and summaries with a known shape. Not for design decisions, diagnosis, or review."
 model: claude-haiku-5-5
 effort: high
 disallowedTools: Agent

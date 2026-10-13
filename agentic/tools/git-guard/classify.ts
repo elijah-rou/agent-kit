@@ -28,10 +28,12 @@ const SUBTREE_PUBLICATION = new Set(["push", "pull", "merge"]);
 // `git tag` options: those that make it list or verify tags, those that create or delete one, and
 // those that take the next word as their value.
 const TAG_LISTS = new Set(["-l", "--list", "--contains", "--no-contains", "--points-at", "--merged", "--no-merged", "-v", "--verify"]);
+// Options that only change how a listing looks (-i is --ignore-case): neither a listing mode nor a creation.
 const TAG_WRITES = new Set(["-a", "--annotate", "-s", "--sign", "-f", "--force", "-d", "--delete", "-e", "--edit", "-m", "--message", "-F", "--file", "-u", "--local-user", "--create-reflog", "--trailer", "--cleanup"]);
-const TAG_VALUED = new Set(["-m", "--message", "-F", "--file", "-u", "--local-user", "--cleanup", "--trailer", "--sort", "--format", "--contains", "--no-contains", "--points-at", "--merged", "--no-merged", "--color"]);
-// Short tag options that list or only change how a listing looks.
-const TAG_LIST_SHORT = /^-(l|i|v|n\d*)$/;
+// --color takes only an attached =value, never the next word.
+const TAG_VALUED = new Set(["-m", "--message", "-F", "--file", "-u", "--local-user", "--cleanup", "--trailer", "--sort", "--format", "--contains", "--no-contains", "--points-at", "--merged", "--no-merged"]);
+// Short tag options that select a listing mode.
+const TAG_LIST_SHORT = /^-(l|v|n\d*)$/;
 
 // git's options before the subcommand that take the next word as their value.
 const GIT_VALUED = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix", "--attr-source"]);
@@ -95,9 +97,12 @@ function writesHookKey(args: string[]): boolean {
 		else if (!arg.startsWith("-")) positional.push(arg);
 	}
 	if (positional[0] === "unset") unsets = true;
+	// git 2.46+ subcommands that write: set, unset (above), remove-section, rename-section.
+	const sectionWrite = positional[0] === "remove-section" || positional[0] === "rename-section";
 	const keyAt = positional.findIndex(isHookKey);
 	if (keyAt === -1) return false;
 	const key = positional[keyAt]!.toLowerCase();
+	if (sectionWrite) return true;
 	if (unsets) return key !== HOOKS_PATH;
 	if (reads || CONFIG_READ_ACTIONS.has(positional[0] ?? "")) return false;
 	// `git config <key>` alone reads it; a value after the key, or a section command, writes it.
@@ -114,8 +119,22 @@ function clusterHasNoVerify(arg: string, valued: Set<string>): boolean {
 	return false;
 }
 
-/** How an invocation skips git hooks: a flag, a core.hooksPath override for one command, or a config write. */
-type HookSkip = "flag" | "override" | "config-write";
+/** How an invocation skips git hooks: a flag, a hook-key override for one command, a config write, or a hook manager's skip variable. */
+type HookSkip = "flag" | "override" | "config-write" | "skip-variable";
+
+// Variables hook managers read to skip hooks: husky, pre-commit, lefthook, overcommit.
+const SKIP_VARIABLES = new Set(["HUSKY", "HUSKY_SKIP_HOOKS", "SKIP", "PRE_COMMIT_ALLOW_NO_CONFIG", "LEFTHOOK", "LEFTHOOK_EXCLUDE", "OVERCOMMIT_DISABLE"]);
+const EXPORTERS = new Set(["export", "declare", "typeset", "local", "readonly"]);
+
+/** The hook-skip variables a command sets: on a git command, alone, or through export and its kin. */
+function skipVariablesSet(calls: Invocation[]): boolean {
+	const named = (assignment: string) => SKIP_VARIABLES.has(assignment.slice(0, assignment.indexOf("=")));
+	return calls.some((call) => {
+		const name = programName(call.program);
+		if (name === "git" || name === "") return call.assignments.some(named);
+		return EXPORTERS.has(name) && call.args.some((arg) => arg.includes("=") && named(arg));
+	});
+}
 
 function invocationHookSkip(invocation: Invocation): HookSkip | undefined {
 	if (invocation.assignments.some(assignsHookKey)) return "override";
@@ -224,8 +243,10 @@ type Findings = { reader: { skip: HookSkip | undefined; publication: string | un
 function findings(command: string, dialect: Dialect): Findings {
 	const calls = invocations(command, dialect);
 	for (const call of calls) checkPatterns(call);
+	const runsGit = calls.some((call) => programName(call.program) === "git");
+	const skip = calls.map(invocationHookSkip).find((found) => found !== undefined) ?? (runsGit && skipVariablesSet(calls) ? "skip-variable" : undefined);
 	return {
-		reader: { skip: calls.map(invocationHookSkip).find((skip) => skip !== undefined), publication: calls.map(invocationPublication).find((found) => found !== undefined) },
+		reader: { skip, publication: calls.map(invocationPublication).find((found) => found !== undefined) },
 		pattern: { skip: NO_VERIFY.test(command), publication: patternPublication(command) },
 	};
 }
@@ -270,6 +291,8 @@ export function blockReason(command: string, actor: Actor, dialect: Dialect = "p
 		case "flag":
 		case "override":
 			return "git guard blocked skipping git hooks (--no-verify, commit or am -n, or a core.hooksPath or hook.* override): commit and push with hooks running, and fix what a hook reports instead of skipping it";
+		case "skip-variable":
+			return "git guard blocked a hook manager's skip variable (HUSKY, SKIP, LEFTHOOK, and the like) on a git command: let the hooks run, and fix what they report instead of skipping them";
 		case "config-write":
 			return "git guard blocked changing core.hooksPath or a hook.* key with git config, because it can switch hooks off: ask the user to set it if the repository needs its own hooks";
 		case undefined:

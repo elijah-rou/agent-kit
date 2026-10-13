@@ -21,10 +21,14 @@ const USAGE = `Usage: git-guard --claude-hook
 
 Claude Code PreToolUse hook for the tools that run a shell command (${[...SHELL_TOOLS.keys()].join(", ")}).
 Reads the event JSON on stdin and denies:
-  - skipping git hooks (--no-verify, git commit -n, a core.hooksPath override), in every session;
-  - git push, pull, merge, rebase, cherry-pick, revert, am, apply, and tag, and gh pr merge, inside a
-    subagent (the event carries agent_id), unless its agent_type is autopilot-owner.
-The main session may publish. An event it cannot read is denied. Exit 0 except for a usage error (2).
+  - skipping git hooks, in every session: --no-verify, git commit -n or git am -n, an override or
+    git config change of core.hooksPath or a hook.* key, or a hook manager's skip variable (HUSKY, SKIP,
+    LEFTHOOK, ...) on a git command;
+  - git push, pull, merge, rebase, cherry-pick, revert, am, apply, tag (except listing), send-pack, and
+    http-push, git subtree push, pull, and merge, and gh pr merge, inside a subagent (the event carries
+    agent_id), unless its agent_type is autopilot-owner.
+The main session may publish. An event or command it cannot read is denied. Exit 0 except for a usage
+error (2).
 `;
 
 /** Claude Code's events are a few kilobytes; anything near this is not an event. */

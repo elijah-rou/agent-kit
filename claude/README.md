@@ -50,8 +50,11 @@ What it refuses that it need not (the same list is in ADR 0001 and the verify-ag
   `Invoke-Expression`) from anything but a here document, a here-string, or `cat <<EOF |`, such as
   `printf ... | sh`, `curl ... | sh`, `bash <(...)`, or `source <(...)`; a shell started with no input
   (`bash -l`, `exec zsh`); a single-quoted span holding `}` or `"` inside a double-quoted `${...}`, which
-  bash and zsh read differently; a PowerShell option abbreviation that could name two options (`-in`); and a
-  PowerShell value option whose value names `-Command`, `-EncodedCommand`, or `-File` (`-wd /c`). The
+  bash and zsh read differently; a PowerShell option abbreviation that could name two options (`-in`); a
+  PowerShell value option whose value names `-Command`, `-EncodedCommand`, or `-File` (`-wd /c`); a `wsl`
+  argument holding spaces or quotes without `-e` (wsl joins its words into one line); `wsl -e` running a
+  shell that reads its input; and a `[[ ]]` holding a process substitution or `$'...'`, or followed by a
+  redirection. The
   reason asks for a plainer command; a shell given a script operand reads its input as data and passes.
 
 Bootstrap does not wire it yet: that is a pending bootstrap change, and until it lands no Claude Code

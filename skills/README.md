@@ -115,7 +115,7 @@ A resync advances a row's commit; [`RESYNC.md`](RESYNC.md) records what each res
 | `skills/correct` | `pstack/skills/correct` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/git-workflow/references/pr-review.md` | `pstack/skills/interrogate/references/reviewer-prompt.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/git-workflow/references/pr-review.md` | `pstack/skills/interrogate/references/rubric.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
-| `skills/create-verification` | `pstack/skills/create-verification-skill` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/create-verification` | `pstack/skills/create-verification-skill` | `997ffc7fe26bdaa6478a14e7f5b8d5f9ed747102` |
 | `skills/create-verification/references/web.md` | `cursor-team-kit/skills/control-ui/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/create-verification/references/cli-tui.md` | `cursor-team-kit/skills/control-cli/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/maintain-verification` | `pstack/skills/maintain-verification-skill` | `11713c683fe4add4fd403ea880580abbc9e0875f` |

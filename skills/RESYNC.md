@@ -128,3 +128,13 @@ Upstream commits: 00b14f1 (`refactor(pstack): distill skill prompts to cut token
 | `how`, `why`, `reflect` | Merge the per-step subagent settings into one line, cut repeated posture and process text in the prompts | No local change | The local skills replaced the subagent and MCP pipelines, so none of the cut text exists here. |
 | `technical-writing`, `unslop` | Wording cuts inside existing rules | No local change | The local rewrites do not contain the edited sentences. |
 | none (new `ketchup` skill) | A command that catches the user up since their last message, with an executive summary for each action item | Not adopted | The instructions' "Needs you" opening and question contract, and `show-me-your-work`'s catch-up on a run, cover it. |
+
+## 2026-10-13: create-verification resynced from 11713c6 to 997ffc7
+
+Upstream: `pstack/skills/create-verification-skill`, `11713c6..997ffc7` (commit c49b37a, `fix(pstack): create-verification-skill readiness means the app is usable`, #573).
+
+| Upstream change | Decision | Reason |
+| --- | --- | --- |
+| Launch reaches a usable state from an empty data directory, including migrations and seed data; ready means usable, not that a process answers; drop "a port answering" from the readiness examples | Taken | A port or health check can answer while initialization still runs, so a drive could start against an unready app. Adapted into the Launch bullet. |
+| A journey whose seed data lacks a precondition reports a failure, with the reason in that feature's `Gotchas`; never weaken the journey | Taken | Adapted to the local result lines: a missing seed precondition is `FAIL`, not `SKIP`, because seed data is state the run creates, while `SKIP` stays for absent external prerequisites. |
+| A proof run on a stand-in for the real target lists every setup step the stand-in did that the target will not; those stay unverified | Taken | Added to the proof step and to the reply's proof-run item. |

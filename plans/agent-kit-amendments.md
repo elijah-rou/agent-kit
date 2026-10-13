@@ -125,7 +125,7 @@ The audit thread needed nine user interventions and ended with six of its eleven
 
 Outer-loop decisions (approved 2026-10-14):
 
-- **D8. Long-lived token for unattended runs:** approved. The user runs `claude setup-token`; agents never handle the token. Unverified: whether T3's Claude provider picks it up; the first unattended run tests it.
+- **D8. Long-lived token for unattended runs:** approved and done 2026-10-14. The token is in the macOS keychain item `claude-code-oauth` (tested with `claude -p`), and `launchctl setenv CLAUDE_CODE_OAUTH_TOKEN` exposes it to GUI apps launched afterwards, T3 included, until reboot. Slice 3 makes that persistent: a bootstrap LaunchAgent sets it from the keychain at login, following the `typesafe-jev` pattern.
 - **D9. Standing approval for upkeep and intake schedules:** approved, as an exception to "Do not silently create schedules". L8 writes it into the instructions.
 - **D10. Intake scope:** approved: owned repos with a verify skill.
 

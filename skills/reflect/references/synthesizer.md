@@ -17,7 +17,7 @@ Apply every criterion to every finding:
 - **Existing skill first:** propose `new skill: <kebab-name>` only when no existing skill is a real home, the pattern recurs, and the topic deserves its own skill.
 - **Convergent:** findings from two or more reviewers carry more weight. A singleton must clear a higher bar on the other criteria.
 - **Decision-changing:** a future agent acts differently because of the edit, not just reads more text.
-- **Structural:** route to Backlog, marked enforceable, when a lint, type, test, script, hook, or policy enforces the rule or could enforce it cheaply. Prose is only for what no mechanism can enforce.
+- **Structural:** route to Backlog, marked enforceable, when a lint, type, test, script, hook, or policy enforces the rule or could enforce it cheaply, or when it is a judgment call a pull-request reviewer can check against a changed line though no lint can (a review rule). Prose is only for what neither a mechanism nor a reviewer can enforce.
 - **Skill was used:** accept only findings routed to a skill or tool the session used, `tune description: <skill path>` for one that should have triggered, or `new skill: <kebab-name>` that meets Existing skill first. Otherwise reject as `skill-not-used`.
 - **Not already covered:** read the target skill before accepting a body edit. If clear, well-placed guidance already says it, reject as `already-covered`. If the guidance exists but is buried or weak, accept the row as a wording or placement change.
 
@@ -44,4 +44,4 @@ For each rejected finding:
 
 | # | Pattern | What was hit | Suggested mechanism | Scope |
 |---|---|---|---|---|
-| 1 | <the repeated mistake> | <the transcript moment> | <lint, type, test, script, hook, or Cedar policy> | repo or global |
+| 1 | <the repeated mistake> | <the transcript moment> | <lint, type, test, script, hook, Cedar policy, or review rule> | repo or global |

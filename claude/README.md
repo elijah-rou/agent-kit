@@ -48,7 +48,8 @@ What it refuses that it need not (the same list is in ADR 0001 and the verify-ag
 
 - Mentions. The patterns see a git command at the start of any line or after `;`, `&`, or `|`, even inside
   a quoted commit message, a here document, or a search pattern (`rg "error|git push"`); `--no-verify`
-  anywhere in a quoted message that spans lines after `git`; and a word that git would read as `-n`
+  anywhere in a quoted message or here document that spans lines after `git` (including a
+  `gh pr create --body` after `git push` on the same command, whose reason also names `--body-file`); and a word that git would read as `-n`
   anywhere in a `git commit` or `git am` command before its next `;`, `&`, or `|`
   (`git commit -m "fix -n handling"`). The
   reason says the text may be a mention: commit such a message from a file (write it with the editor tool,
@@ -102,8 +103,8 @@ What the guard does not stop (the same list is in ADR 0001 and the verify-agent-
 - Hooks skipped another way: a prefix of `--no-verify` such as `--no-veri`; `-n` after a quoted `;`, `&`,
   or `|` in its `git commit` command, or on a later line than its `git commit` (after a commit message in a
   here document); a `GIT_CONFIG_*` variable carrying a hook key; a skip variable set through a wrapper
-  (`env HUSKY=0 git commit`), set on an earlier line that is not a line of only assignments just before
-  git's line (`export HUSKY=0`, then `make`, then `git commit`, one per line), or set the PowerShell way (`$env:HUSKY = '0'; git commit`,
+  (`env HUSKY=0 git commit`), set on an earlier line unless that line holds only assignments and the next line starts
+  with git (`export HUSKY=0`, then `make`, then `git commit`, one per line), or set the PowerShell way (`$env:HUSKY = '0'; git commit`,
   `Set-Item env:HUSKY 0; git commit`); and editing `.git/hooks` or `.git/config`.
 - Other programs that publish: `git send-pack`, `git http-push`, `git subtree push`, `pull`, or `merge`,
   `gh pr create` or `comment`, and `gh api`.

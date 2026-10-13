@@ -23,8 +23,9 @@ const START = String.raw`(?:^|[;&|\n]\s*)`;
 /** A program by name or by absolute path (/usr/bin/git). */
 const program = (name: string) => String.raw`(?:(?:/[^\s/;&|<>()'"]*)*/)?${name}`;
 const GIT = program("git");
-// git's -C <path> options, the only options the patterns skip before a subcommand. A path is quoted or
-// bare, never both, so a run of options reads one way and cannot backtrack exponentially.
+// git's -C <path> options, the only options the patterns skip before a subcommand. A path is a run of
+// quoted and bare parts; each part starts with a different character and a bare part holds no
+// whitespace, so a run of options reads one way and cannot backtrack exponentially.
 const GIT_DASH_C = String.raw`(?:\s+-C\s+(?:'[^']*'|"[^"]*"|[^\s'"])+)*`;
 // One word: quoted, or up to whitespace or a separator.
 const WORD = String.raw`(?:'[^'\n]*'|"[^"\n]*"|[^\s;&|'"]+)`;
@@ -218,7 +219,7 @@ export function mayPublish(actor: Actor): boolean {
 
 const MENTION = "If the text only mentions it, as in a commit message, write the message to a file with the editor tool and run git commit -F <file>";
 const HOOK_SKIP_REASONS: Record<HookSkip, string> = {
-	"no-verify": "git guard blocked skipping git hooks with --no-verify after git, on its line or on a later line that a quoted string or a line-ending backslash carries the command onto: commit and push with hooks running, and fix what a hook reports instead of skipping it. If the text only mentions the flag, as in a commit message or a search, write the message to a file with the editor tool and run git commit -F <file>, or search for the flag without its leading dashes",
+	"no-verify": "git guard blocked skipping git hooks with --no-verify after git, on its line or on a later line that a quoted string or a line-ending backslash carries the command onto: commit and push with hooks running, and fix what a hook reports instead of skipping it. If the text only mentions the flag, as in a commit message or a search, write the message to a file with the editor tool and run git commit -F <file> (or gh pr create --body-file <file> for a pull request body), or search for the flag without its leading dashes",
 	"short-n": `git guard blocked skipping git hooks with -n (--no-verify) on git commit or git am, alone or among short flags such as -nm: commit with hooks running, and fix what a hook reports instead of skipping it. ${MENTION}`,
 	"skip-variable": `git guard blocked skipping git hooks with a hook manager's skip variable (HUSKY, SKIP, LEFTHOOK, and the like) assigned on or just before a line that runs git: let the hooks run, and fix what a hook reports instead of skipping it. ${MENTION}`,
 	"hooks-config": `git guard blocked skipping git hooks by setting or unsetting core.hooksPath or a hook.* key with git -c, --config-env, or git config: let the hooks run, and fix what a hook reports instead of skipping it; ask the user to change the key if the repository needs other hooks. ${MENTION}`,

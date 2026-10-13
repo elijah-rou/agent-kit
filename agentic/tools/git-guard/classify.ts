@@ -146,7 +146,8 @@ const SET_ENVIRONMENT_VARIABLE = /\[\s*(?:System\.)?Environment\s*\]\s*::\s*SetE
 function environmentProviderName(args: string[]): string | undefined {
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i]!;
-		const value = /^-(path|literalpath|p|pspath|lp)$/i.test(arg) ? args[i + 1] : arg.startsWith("-") ? undefined : arg;
+		const colon = /^-(?:path|literalpath|p|pspath|lp):(.+)$/is.exec(arg);
+		const value = colon ? colon[1] : /^-(path|literalpath|p|pspath|lp)$/i.test(arg) ? args[i + 1] : arg.startsWith("-") ? undefined : arg;
 		if (value === undefined || !/^env:/i.test(value)) continue;
 		const name = /^env:([A-Za-z_][\w]*)$/i.exec(value);
 		if (!name) throw new Unreadable(`its environment path ${value} is not a literal variable name`);

@@ -435,6 +435,26 @@ describe("round 12", () => {
 	});
 });
 
+// Round 13: refusals for a mid-word continuation, long assignment chains, and -Path:env:.
+describe("round 13", () => {
+	const build: Actor = { kind: "child", role: "build" };
+	const ps = "powershell" as const;
+	test("a backtick continuing a line from inside a word is unreadable; after a blank it continues", () => {
+		for (const command of ["Write-Output a`\r\ngit commit -n -m x", "Write-Output a`\r\n# x`\r\ngit commit -n -m x", "Write-Output a`\n# x`\ngit commit -n -m x"]) expect(blockReason(command, main, ps)).toMatch(/could not read this command: a backtick continues a line from inside a word/);
+		expect(blockReason("Write-Output a`\r\n# x`\r\ngit.exe push origin x", build, ps)).toMatch(/could not read this command/);
+		expect(blockReason("git push `\n  origin x", build, ps)).toMatch(/git push/);
+		expect(blockReason("git push `\r\n  origin x", build, ps)).toMatch(/git push/);
+		expect(blockReason("Write-Output `\n  hello", main, ps)).toBeUndefined();
+	});
+	test("a long chain of PowerShell assignments is read to its end", () => {
+		expect(blockReason("$a=$b=$c=$d=$e=git push origin x", build, ps)).toMatch(/git push/);
+		expect(blockReason("$a = $b = $c = $d = $e = $f = git push origin x", build, ps)).toMatch(/git push/);
+	});
+	test("-Path:env:NAME and -LiteralPath:env:NAME set a skip variable", () => {
+		for (const command of ["Set-Item -Path:env:HUSKY 0; git commit -m x", "Set-Item -LiteralPath:env:SKIP lint; git commit -m x"]) expect(blockReason(command, main, ps)).toMatch(/hook manager's skip variable/);
+	});
+});
+
 describe("invocations", () => {
 	test("splits quoted words, assignments, and substitutions", () => {
 		expect(invocations(`cd a && FOO=1 git -C "x y" push origin "$(git rev-parse HEAD)" # git merge`, "posix")).toEqual([

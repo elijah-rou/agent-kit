@@ -421,10 +421,12 @@ class Reader {
 				this.pos++;
 				this.heredocBodies(pending);
 			} else if (c === this.escape) {
-				if (this.dialect === "powershell" && next === "\r") {
-					// A backtick before \r\n continues the line; before a lone \r, PowerShell's reading is unclear.
-					if (text[this.pos + 2] !== "\n") throw new Unreadable("a backtick before a lone carriage return");
-					this.pos += 3;
+				if (this.dialect === "powershell" && next === "\r" && text[this.pos + 2] !== "\n") throw new Unreadable("a backtick before a lone carriage return");
+				if (this.dialect === "powershell" && (next === "\n" || next === "\r")) {
+					// A backtick ending a line continues it. Inside a word, the joined line's # or command would be
+					// read as part of that word, which can hide it, so only a continuation after a blank is read.
+					if (word !== undefined) throw new Unreadable("a backtick continues a line from inside a word");
+					this.pos += next === "\r" ? 3 : 2;
 					continue;
 				}
 				if (next !== undefined && next !== "\n") append(next, { quoted: true });
@@ -738,7 +740,8 @@ class Reader {
 		// The environment this command runs with: what its text inherits, then its own assignments.
 		const assignments: string[] = [...base];
 		// PowerShell assignments chain ($a = $b = git push); each pass strips one target.
-		if (this.dialect === "powershell") for (let pass = 0; pass < all.length && this.powerShellAssignment(words, assignments); pass++);
+		// Each pass strips one target and shortens the text, so this ends.
+		if (this.dialect === "powershell") while (this.powerShellAssignment(words, assignments));
 		const texts = words.map((word) => word.text);
 		let i = 0;
 		// Each pass consumes at least one word, so this ends within words.length passes.

@@ -110,7 +110,6 @@ function writesHookKey(args: string[]): boolean {
 	const sectionWrite = positional[0] === "remove-section" || positional[0] === "rename-section";
 	const keyAt = positional.findIndex(isHookKey);
 	if (keyAt === -1) return false;
-	const key = positional[keyAt]!.toLowerCase();
 	if (sectionWrite) return true;
 	// Unsetting a hook key writes too: in a husky repository, unsetting core.hooksPath turns its hooks off.
 	if (unsets) return true;

@@ -348,6 +348,45 @@ describe("round 8", () => {
 	});
 });
 
+// Round-9 re-review cases: refusals restored or added, and the narrowings this round declares.
+describe("round 9", () => {
+	const build: Actor = { kind: "child", role: "build" };
+	const expectDeny = (command: string, actor: Actor, reason: RegExp, dialect: "posix" | "powershell" = "posix") => expect([command, blockReason(command, actor, dialect)]).toEqual([command, expect.stringMatching(reason)]);
+	const expectAllow = (command: string, actor: Actor = main, dialect: "posix" | "powershell" = "posix") => expect([command, blockReason(command, actor, dialect)]).toEqual([command, undefined]);
+	test("N1: an @\"...\"@ here-string's $( ) is read as PowerShell", () => {
+		expectDeny("$m = @\"\n$(Get-Content b.txt | ForEach-Object { git push origin x })\n\"@", build, /git push/, "powershell");
+		expectDeny("$m = @\"\nC:\\logs\\$(git push origin x)\n\"@", build, /git push/, "powershell");
+		expectDeny("$m = @\"\n$($env:HUSKY = '0'; git commit -m x)\n\"@", main, /hook manager's skip variable/, "powershell");
+	});
+	test("N2: wsl -e running a shell that reads its input is unreadable", () => {
+		expectDeny("'git push origin x' | wsl -e bash", build, /could not read this command: wsl -e runs a shell/, "powershell");
+		expectDeny("\"HUSKY=0 git commit -m x\" | wsl -e bash", main, /could not read this command/, "powershell");
+		expectDeny("wsl -e bash <<'EOF'\nHUSKY=0 git commit -m x\nEOF", main, /could not read this command/);
+	});
+	test("N3: submodule foreach past git's global options", () => {
+		expectDeny("git -C submodule submodule foreach 'git push origin HEAD'", build, /git push/);
+		expectDeny("git -c x=y submodule --quiet foreach 'git push origin HEAD'", build, /git push/);
+	});
+	test("N4: process substitution, $' quotes, and a redirection after ]] are unreadable in [[ ]]", () => {
+		for (const command of ["[[ -s <(git push origin x) ]] && echo ok", "[[ $x == $'a' ]]", "[[ -n x ]] >out"]) expectDeny(command, build, /could not read this command: a \[\[ conditional/);
+	});
+	test("N5: non-exec wsl with an argument holding spaces or quotes is unreadable", () => {
+		expectDeny("wsl bash -c 'git push origin x'", build, /could not read this command: wsl joins its arguments/, "powershell");
+		expectDeny("wsl git push origin x", build, /git push/, "powershell");
+	});
+	test("N6: ${env:NAME} = sets a skip variable", () => {
+		expectDeny("${env:HUSKY} = '0'; git commit -m x", main, /hook manager's skip variable/, "powershell");
+	});
+	test("N7 and B6: intended narrowings", () => {
+		expectAllow("$m = 'Switch the hook to /bin/sh'; git commit -m $m", main, "powershell");
+		expectAllow("$m='Switch the hook to /bin/sh'; git commit -m $m", main, "powershell");
+		expectAllow("$env:HUSKY; git commit -m x", main, "powershell");
+		expectAllow("$env:HUSKY=0; git commit -m x", main);
+		expectAllow("wsl -e 'git push origin x'", build, "powershell");
+		expectDeny("$env:HUSKY = 'Switch the hook to /bin/sh'; git commit -m x", main, /hook manager's skip variable/, "powershell");
+	});
+});
+
 describe("invocations", () => {
 	test("splits quoted words, assignments, and substitutions", () => {
 		expect(invocations(`cd a && FOO=1 git -C "x y" push origin "$(git rev-parse HEAD)" # git merge`, "posix")).toEqual([

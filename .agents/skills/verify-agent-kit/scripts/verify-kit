@@ -818,6 +818,8 @@ function driveGitGuard(run: RunInfo, rec: Recorder): void {
 		{ id: "subagent-quote-in-parameter", stdin: event("echo \"${x:-'}\"'}\" ; command git push origin x ; echo \"' #\"", worker), deny: /could not read this command: a single quote inside a double-quoted/ },
 		{ id: "main-skip-into-sh", stdin: event("HUSKY=0 sh -c 'git commit -m x'"), deny: /hook manager's skip variable/ },
 		{ id: "main-powershell-env-skip", stdin: event("$env:HUSKY = '0'; git commit -m x", undefined, "PowerShell"), deny: /hook manager's skip variable/ },
+		{ id: "subagent-pwsh-value-names-command", stdin: event("pwsh -wd /c -c 'git push origin x'", worker, "PowerShell"), deny: /could not read this command: its PowerShell option -wd takes \/c as a value/ },
+		{ id: "main-skip-into-find-exec", stdin: event("HUSKY=0 find . -maxdepth 0 -exec sh -c 'git commit -m x' \\;"), deny: /hook manager's skip variable/ },
 		{ id: "subagent-merge-base", stdin: event("git merge-base HEAD origin/main", worker) },
 		{ id: "subagent-tag-list", stdin: event("git tag -l", worker) },
 		{ id: "owner-push", stdin: event("git push --force-with-lease=agent/x:abc origin agent/x", owner) },

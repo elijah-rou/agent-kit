@@ -16,6 +16,7 @@ Before Claude Code runs a shell command through Bash, Monitor, or PowerShell, ag
 - `main-remove-section` refuses `git config remove-section hook.lint`; `main-husky-skip` and `main-exported-skip` refuse `HUSKY=0` and an exported `SKIP=` on a git command, and `main-skip-without-git` lets `SKIP=lint pre-commit run` through.
 - `subagent-pwsh-ambiguous` refuses `pwsh -in -c ...`, whose `-in` could be two options; `subagent-quote-in-parameter` refuses a single quote holding `}` or `"` inside a double-quoted `${...}`, which bash and zsh read differently.
 - `main-skip-into-sh` refuses `HUSKY=0 sh -c 'git commit ...'`, and `main-powershell-env-skip` refuses PowerShell's `$env:HUSKY = '0'` before a git command.
+- `subagent-pwsh-value-names-command` refuses `pwsh -wd /c -c ...`, whose `/c` is a value that also names -Command, and `main-skip-into-find-exec` refuses `HUSKY=0 find ... -exec sh -c 'git commit ...'`.
 - `main-case-patterns` lets case patterns such as `*A*)` through, and `subagent-case-in-substitution` refuses a push inside a case inside `"$( )"`.
 - `subagent-push`, `subagent-rebase`, and `subagent-absolute-git` refuse publication and integration in a subagent, including after `cd`, past `-C`, and through an absolute path to git.
 - `subagent-gh-merge` refuses `gh pr merge` in a subagent.

@@ -5,7 +5,11 @@ description: Design rules for writing or restructuring code, in the spirit of Ti
 
 # Code design
 
-Safety first, then performance, then the experience of everyone who reads and runs the code. Repository conventions and the language's own idioms take precedence; apply these where the codebase leaves the choice open. The exception is a known workaround or anti-pattern, one the repository or the user has marked as such: a code comment, a tracking issue, a `rules.toml` row, a lint suppression, or something the user said. Never extend one, even when it is the nearest example. This skill's own preferences never make a repository convention an anti-pattern. Fix the cause in this change when that stays in scope; otherwise take the paved path and report the workaround as a `correct` candidate, or as a blocker if the task cannot be done without extending it. Read a reference only when the task reaches it:
+Safety first, then performance, then the experience of everyone who reads and runs the code. Repository conventions and the language's own idioms take precedence; apply these where the codebase leaves the choice open.
+
+The exception is a known workaround or anti-pattern, one the repository or the user has marked as such: a code comment that names it or cites its tracking issue, a `rules.toml` row, a lint suppression, or something the user said about this code. This skill's own preferences never make a repository convention an anti-pattern. Never extend a known workaround, which means never add a new copy of it, even when a copy is the nearest example; routing new code through the one existing site that holds it is the paved path. Fix the cause in this change when that stays in scope; otherwise take the paved path and report the workaround as a `correct` candidate, or as a blocker if the task cannot be done without a new copy. A workaround whose cause lies outside the repository, kept under the comment rule below, is not a blocker: reuse it through its one site, or move it into one site that cites the same issue.
+
+Read a reference only when the task reaches it:
 
 | Situation | Read |
 | --- | --- |

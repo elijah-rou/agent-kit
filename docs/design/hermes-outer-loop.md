@@ -23,7 +23,7 @@ Hermes starts coding work only by posting a job to a T3 webhook task: `schedule_
 
 Hermes never drives coding agents itself. Its bundled `claude-code` and `codex` skills could, but that would create a second executor beside V2. `pi-t3-runtime`'s design gives V2 sole ownership of "delegated launches, task IDs, lifecycle, cancellation, results and app persistence", and replaces its Pi fork's own subprocess fleet in T3 mode. Results flow back the other way: the T3 thread finishes, and Hermes relays the outcome to the user.
 
-Jev routing is built, with its notes in shadow (`jev-task-routing.md`). A job may later carry an explicit work class for it; until a job does, the T3 side classifies the job like any other task.
+Jev routing is built, with its notes delivered on trial since 2026-10-14 (`jev-task-routing.md`). A job may later carry an explicit work class for it; until a job does, the T3 side classifies the job like any other task.
 
 ## The line for coding work
 

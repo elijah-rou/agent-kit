@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { apiKey, httpClassifier, isPublic, originSlug, OPT_OUT_FILE, promptOrigin, repoOf, sendable } from "./egress.ts";
 import { HOLD_ABOVE, prDecision, prRisk, prState } from "./pr-risk.ts";
-import { appendRecord, routeTask, type RouteDeps, type Runtime } from "./route-task.ts";
+import { appendRecord, routeTask, type RouteDeps, type RouteRecord, type Runtime } from "./route-task.ts";
 import { POLICY } from "./route.ts";
 
 const USAGE = `Usage: jev <pr-risk | task-class> ...
@@ -32,15 +32,23 @@ function routeDeps(env: Record<string, string | undefined>): RouteDeps {
 	return { policy: POLICY, classify: httpClassifier(() => apiKey(env, 1000)), repo: repoOf, env, now: Date.now, skillsDir: SKILLS_DIR };
 }
 
+/**
+ * The hook's whole answer for a note: added context and nothing else. It never carries a decision,
+ * `continue`, or a stop reason, so a note is advice the agent reads and never blocks the prompt.
+ */
+export function hookAnswer(note: string | undefined): string | undefined {
+	return note === undefined ? undefined : JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: note } });
+}
+
 /** A UserPromptSubmit hook: Claude Code and Codex send the same prompt, cwd, and session_id fields. */
-async function promptHook(runtime: Runtime): Promise<void> {
-	const event: unknown = JSON.parse(await Bun.stdin.text());
+export async function promptHook(runtime: Runtime, eventText: string, deps: RouteDeps): Promise<{ answer?: string; record: RouteRecord }> {
+	const event: unknown = JSON.parse(eventText);
 	const field = (name: string) => (typeof event === "object" && event !== null && typeof (event as Record<string, unknown>)[name] === "string" ? ((event as Record<string, unknown>)[name] as string) : undefined);
 	const prompt = field("prompt") ?? "";
 	const input = { prompt, cwd: field("cwd") ?? process.cwd(), runtime, sessionId: field("session_id") ?? "unknown", origin: promptOrigin(prompt), queued: false };
-	const { note, record } = await routeTask(input, routeDeps(process.env));
-	if (note) console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: note } }));
-	appendRecord(record, process.env);
+	const { note, record } = await routeTask(input, deps);
+	const answer = hookAnswer(note);
+	return answer === undefined ? { record } : { answer, record };
 }
 
 function run(command: string, args: string[], input?: string): string {
@@ -57,7 +65,9 @@ async function main(args: string[]): Promise<number> {
 		const hook = rest[0] === "--claude-hook" ? "claude" : rest[0] === "--codex-hook" ? "codex" : undefined;
 		if (hook) {
 			try {
-				await promptHook(hook);
+				const { answer, record } = await promptHook(hook, await Bun.stdin.text(), routeDeps(process.env));
+				if (answer) console.log(answer);
+				appendRecord(record, process.env);
 			} catch {
 				// Routing is optional; a failure must never block the prompt. A missing record shows in route-report.
 			}

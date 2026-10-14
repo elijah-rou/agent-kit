@@ -1,6 +1,6 @@
 # Prompt routing
 
-Every prompt typed in Claude Code or Codex passes through agent-kit's UserPromptSubmit hook. The hook never blocks the prompt: it screens it, asks Jev to classify a real task, appends one record without the prompt's text to the task-route ledger, and answers with a note only when a calibrated note applies. Prompts that are not tasks, that the runtime started itself, that carry credential-shaped text, or that come from an opted-out repository are recorded without any request.
+Every prompt typed in Claude Code or Codex passes through agent-kit's UserPromptSubmit hook. The hook never blocks the prompt: it screens it, asks Jev to classify a real task, appends one record without the prompt's text to the task-route ledger, and answers with a note as added context when a delivered note applies (on trial or calibrated; see `POLICY` in `agentic/tools/jev/route.ts`). Prompts that are not tasks, that the runtime started itself, that carry credential-shaped text, or that come from an opted-out repository are recorded without any request.
 
 ## Sub-features
 
@@ -40,7 +40,7 @@ Preconditions:
 
 ## Gotchas
 
-- The hook's stdout is the note. An empty stdout is correct while every note is in shadow (`agentic/tools/jev/route.ts`); a note appears only after a note's policy becomes advisory.
+- The hook's stdout is the note. Since policy `task-route@2` every note is delivered on trial, so the Jev step's real task often gets the door note; a note in shadow, or a session with `AGENTIC_ROUTE=shadow`, leaves stdout empty.
 - An inherited `AGENTIC_ROUTE` from the shell would change every case; the drive sets it explicitly for each step.
 - The opt-out check is the file's presence at the checkout root, committed or not, although the help text says "commits".
 - The Jev steps make two real TypeSafe requests per run (the hook and the manual route). Classifications can differ between runs; only their shape is checked.

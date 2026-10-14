@@ -36,17 +36,27 @@ const input = (prompt: string, fields: Partial<RouteInput> = {}): RouteInput => 
 
 const calibrated: Calibration = { threshold: 0.9, questionsDigest: digestQuestion(QUESTIONS.level), model: "jev-1.13.0", samples: 200, positives: 20, precision: 0.95, recall: 0.8, date: "2026-10-30", source: "test" };
 const doorCalibrated: Calibration = { ...calibrated, threshold: 0.8, questionsDigest: digestQuestion(QUESTIONS.door) };
-const DOOR: Policy = { ...POLICY, notes: { ...POLICY.notes, door: { mode: "advisory", calibration: doorCalibrated } } };
+const SHADOW: Policy = { ...POLICY, notes: { door: { mode: "shadow", threshold: 0.8 }, lookup: { mode: "shadow", threshold: 0.9 }, loop: { mode: "shadow", threshold: 0.9 } } };
+const DOOR: Policy = { ...SHADOW, notes: { ...SHADOW.notes, door: { mode: "advisory", calibration: doorCalibrated } } };
 const ADVISORY: Policy = { ...DOOR, notes: { ...DOOR.notes, lookup: { mode: "advisory", calibration: calibrated }, loop: { mode: "advisory", calibration: calibrated } } };
 const oneWay = { choice: "one-way-door", confidence: 0.99 } as const;
 
 describe("routeTask", () => {
-	test("the shipped policy records every answer and delivers no note", async () => {
+	test("the shipped policy delivers every note as advice and records it", async () => {
 		const { deps, calls } = harness({ answer: answers("rigor", 0.99, "one-way-door", 0.99) });
 		const shipped = await routeTask(input(MIGRATE), deps);
 		expect(calls.classify.length).toBe(1);
-		expect(shipped.note).toBeUndefined();
-		expect(shipped.record).toMatchObject({ advised: { level: "rigor", door: oneWay }, delivered: { level: "rigor" }, noted: false, fallbacks: [] });
+		expect(shipped.note).toBe(doorNote(oneWay));
+		expect(shipped.record).toMatchObject({ policy: "task-route@2", advised: { level: "rigor", door: oneWay }, delivered: { level: "rigor", door: oneWay }, noted: true, fallbacks: [] });
+		const lookup = await routeTask(input("Where does the config loader read XDG paths from?"), harness({ answer: answers("lookup", 0.97, "reversible", 0.95, "jev-latest") }).deps);
+		expect(lookup.note).toContain("Task-route note, advisory: Jev rates this a lookup.");
+		expect(lookup.record).toMatchObject({ delivered: { level: "lookup" }, noted: true, fallbacks: [] });
+		const loop = await routeTask(input("Going to bed, keep fixing the flaky tests until CI is green"), harness({ answer: answers("loop", 0.97) }).deps);
+		expect(loop.note).toContain(`read the background-run skill at ${SKILL}`);
+		expect(loop.record).toMatchObject({ delivered: { level: "loop" }, noted: true, fallbacks: [] });
+		const shadow = await routeTask(input(MIGRATE), harness({ answer: answers("rigor", 0.99, "one-way-door", 0.99), policy: SHADOW }).deps);
+		expect(shadow.note).toBeUndefined();
+		expect(shadow.record).toMatchObject({ delivered: { level: "rigor" }, noted: false, fallbacks: [] });
 	});
 
 	test("a turn the runtime started is recorded as system and never sent", async () => {
@@ -59,14 +69,14 @@ describe("routeTask", () => {
 		}
 	});
 
-	test("an advisory one-way door gets the door note, while lookup and loop are only recorded", async () => {
+	test("an advisory one-way door gets the door note, while shadow lookup and loop notes are only recorded", async () => {
 		const door = await routeTask(input(MIGRATE), harness({ answer: answers("rigor", 0.99, "one-way-door", 0.99), policy: DOOR }).deps);
 		expect(door.note).toBe(doorNote(oneWay));
 		expect(door.record).toMatchObject({ advised: { level: "rigor", door: oneWay }, delivered: { level: "rigor", door: oneWay }, noted: true, fallbacks: [] });
-		const lookup = await routeTask(input("Where does the config loader read XDG paths from?"), harness({ answer: answers("lookup", 0.97) }).deps);
+		const lookup = await routeTask(input("Where does the config loader read XDG paths from?"), harness({ answer: answers("lookup", 0.97), policy: DOOR }).deps);
 		expect(lookup.note).toBeUndefined();
 		expect(lookup.record).toMatchObject({ advised: { level: "lookup" }, delivered: { level: "rigor" }, noted: false });
-		const loop = await routeTask(input("Going to bed, keep fixing the flaky tests until CI is green"), harness({ answer: answers("loop", 0.97) }).deps);
+		const loop = await routeTask(input("Going to bed, keep fixing the flaky tests until CI is green"), harness({ answer: answers("loop", 0.97), policy: DOOR }).deps);
 		expect(loop.note).toBeUndefined();
 		expect(loop.record).toMatchObject({ advised: { level: "loop" }, delivered: { level: "rigor" } });
 	});
@@ -75,7 +85,7 @@ describe("routeTask", () => {
 		const { record } = await routeTask(input(MIGRATE, { sessionId: "s".repeat(96) }), harness({ answer: answers("rigor", 0.99, "one-way-door", 0.99), repo: { slug: "some-long-owner-name/some-long-repository-name", optedOut: false }, env: { T3CODE_CLI_PATH: "/t3" } }).deps);
 		const line = JSON.stringify(record);
 		for (const word of MIGRATE.split(" ").filter((w) => w.length > 3)) expect(line).not.toContain(word);
-		expect(record).toMatchObject({ v: 1, policy: "task-route@1", machine: machineName(), runtime: "claude", launcher: "t3", repo: "some-long-owner-name/some-long-repository-name", optedOut: false, mode: "policy", words: 10, chars: MIGRATE.length, digest: promptDigest(MIGRATE) });
+		expect(record).toMatchObject({ v: 1, policy: "task-route@2", machine: machineName(), runtime: "claude", launcher: "t3", repo: "some-long-owner-name/some-long-repository-name", optedOut: false, mode: "policy", words: 10, chars: MIGRATE.length, digest: promptDigest(MIGRATE) });
 		expect(record.answers?.level.probabilities).toEqual({ lookup: 0, rigor: 0.99, loop: 0 });
 		expect(Buffer.byteLength(`${line}\n`)).toBeLessThan(RECORD_MAX_BYTES);
 	});

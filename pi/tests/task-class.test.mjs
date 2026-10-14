@@ -11,7 +11,7 @@ const DOOR = {
   probabilities: { reversible: 0, experiment: 0.01, "one-way-door": 0.99 },
 };
 const RIGOR = { type: "choice", choice: "rigor", confidence: 0.98, probabilities: { lookup: 0.01, rigor: 0.98, loop: 0.01 } };
-// The shipped policy delivers no note, so delivery is tested with an advisory door note.
+// Delivery is tested with an advisory door note, so these tests do not move with the shipped policy.
 const DOOR_ADVISORY = {
   ...POLICY,
   notes: { ...POLICY.notes, door: { mode: "advisory", calibration: { threshold: 0.8, questionsDigest: digestQuestion(QUESTIONS.door), model: "jev-1.13.0", samples: 180, positives: 60, precision: 0.78, recall: 0.93, date: "2026-10-07", source: "test" } } },
@@ -81,12 +81,13 @@ test("a T3 wake-up arriving as input is recorded as system and never sent", asyn
   assert.deepEqual(records().map((r) => [r.fallbacks, r.noted]), [[["system"], false]]);
 });
 
-test("the shipped policy records the door answer and delivers no note", async () => {
+test("the shipped policy delivers the door note on trial, although Pi reports only jev-latest", async () => {
   const { input, start, records } = fixture({ policy: POLICY });
   await input(MIGRATE);
-  assert.equal(await start(MIGRATE), undefined);
+  const result = await start(MIGRATE);
+  assert.match(result.message.content, /^Task-class hint, advisory: Jev classifies it as a one-way door/);
   const [record] = records();
-  assert.deepEqual([record.advised.door?.choice, record.delivered, record.noted], ["one-way-door", { level: "rigor" }, false]);
+  assert.deepEqual([record.policy, record.advised.door?.choice, record.delivered.door?.choice, record.noted, record.answers.model], ["task-route@2", "one-way-door", "one-way-door", true, "jev-latest"]);
 });
 
 test("a prompt queued while the agent works is recorded without a note, so nothing is drained ahead of it", async () => {

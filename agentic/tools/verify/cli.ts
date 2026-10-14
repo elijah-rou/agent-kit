@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
 import { openStore } from "../../vendor/orch/store.ts";
-import { countersignEvidence, evidenceCell, gate, githubSlug, isVerdict, orchStore, readLedger, VERDICTS } from "./verify.ts";
+import { changedPaths, countersignEvidence, evidenceCell, gate, githubSlug, isVerdict, orchStore, patchIdOf, POLICY_PATHS, policyFiles, policyRefusal, readLedger, VERDICTS } from "./verify.ts";
 
 const USAGE = `Usage: verify <record | status> <pr> [options]
 
@@ -11,8 +11,13 @@ merge gate: every merging mode runs status right before each merge, and merges o
   record <pr> --verdict <verdict> --evidence <path or https URL> [--patch <patch ID>] [--repo owner/repo]
       Run only as a fresh verifier that did not write the change, after running the repository's
       verification skill against the pull request's head. Writes the ledger row bound to the
-      head SHA and patch ID. Local only: it publishes nothing.
+      head SHA and patch ID (git patch-id --verbatim, so whitespace counts). Local only: it
+      publishes nothing.
       Verdicts: ${VERDICTS.join(", ")}.
+      A pull request whose diff touches a policy path sets the verification policy its own verdict
+      rests on: record refuses every passing verdict for it but countersigned. Policy paths (a
+      trailing / covers everything below it, * matches within one path segment, case ignored):
+        ${POLICY_PATHS.join("\n        ")}
       countersigned is the coordinator's, not the verifier's: it records the user's approval in
       words of a pull request a fresh verifier marked verifier-blocked, and is refused unless a
       verifier-blocked verdict covers the same patch and --patch names that patch in full: the
@@ -58,14 +63,10 @@ async function main(args: string[]): Promise<number> {
 
 	const head = JSON.parse(run("gh", ["pr", "view", String(pr), "-R", slug, "--json", "headRefOid,headRefName,state"])) as { headRefOid: string; headRefName: string; state: string };
 
-	const patchId = (): string => {
-		const id = run("git", ["patch-id", "--stable"], run("gh", ["pr", "diff", String(pr), "-R", slug])).split(" ")[0]?.trim();
-		if (!id) throw new Error("the pull request has no diff to bind a verdict to");
-		return id;
-	};
+	const diff = (): string => run("gh", ["pr", "diff", String(pr), "-R", slug]);
 
 	if (command === "status") {
-		const result = gate(readLedger(store), pr, head.headRefOid, patchId);
+		const result = gate(readLedger(store), pr, head.headRefOid, () => patchIdOf(diff()));
 		const state = result.patchChanged ? "void, patch changed" : result.state;
 		console.log(`${slug}#${pr} (${head.state}, ${head.headRefName} at ${head.headRefOid.slice(0, 12)}): ledger ${state}${result.verdict ? ` (${result.verdict} on ${result.sha?.slice(0, 12)})` : ""}`);
 		return result.state === "pass" ? 0 : 1;
@@ -76,7 +77,11 @@ async function main(args: string[]): Promise<number> {
 	const verdict = option(args, "--verdict");
 	const evidence = option(args, "--evidence");
 	if (!verdict || !isVerdict(verdict) || !evidence || (verdict !== "countersigned" && args.includes("--patch"))) return console.error(USAGE), 2;
-	const patch = patchId();
+	// The patch and the policy files come from one fetch of the diff, so they describe the same patch.
+	const diffText = diff();
+	const patch = patchIdOf(diffText);
+	const refusal = policyRefusal(verdict, policyFiles(changedPaths(diffText)));
+	if (refusal) throw new Error(`${slug}#${pr}: ${refusal}`);
 	let recorded = evidence;
 	if (verdict === "countersigned") {
 		const signed = countersignEvidence(readLedger(store), pr, head.headRefOid, patch, option(args, "--patch"), evidence);

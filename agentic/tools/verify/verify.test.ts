@@ -87,6 +87,85 @@ describe("verdicts", () => {
 		expect(blockedBy("no mark")).toBeUndefined();
 	});
 
+	test("the patch ID keeps whitespace, so a verdict never covers a whitespace-only change", () => {
+		const diff = (line: string) => `diff --git a/build.sh b/build.sh\nindex 0000001..0000002 100644\n--- a/build.sh\n+++ b/build.sh\n@@ -1 +1 @@\n-echo build\n+${line}\n`;
+		const id = verify.patchIdOf(diff("rm -rf /tmp/build"));
+		expect(id).toMatch(/^[0-9a-f]{40}$/);
+		expect(verify.patchIdOf(diff("rm -rf /tmp/build"))).toBe(id);
+		expect(verify.patchIdOf(diff("rm -rf / tmp/build"))).not.toBe(id);
+		expect(verify.patchIdOf(diff("    rm -rf /tmp/build"))).not.toBe(id);
+		expect(verify.patchIdOf(diff("rm -rf /tmp/build "))).not.toBe(id);
+		expect(() => verify.patchIdOf("")).toThrow("no diff");
+	});
+
+	test("the policy paths are one list, matched by directory, segment wildcard, and case", () => {
+		expect(verify.policyFiles([
+			".agents/skills/verify-app/SKILL.md",
+			".agents/skills/verify-app/features/README.md",
+			".agents/skills/verify-app/scripts/verify-app",
+			".agents/skills/verify-app",
+			".Agents/Skills/VERIFY-app/SKILL.md",
+			"skills/babysit-and-ship/SKILL.md",
+			"skills/babysit-and-ship/references/shipping.md",
+			"skills/babysit-and-ship/references/pr-body.md",
+			"claude/agents/autopilot-owner.md",
+			"agentic/tools/verify/cli.ts",
+			"agentic/tools/verify",
+			"agentic/vendor/orch/store.ts",
+			"agentic/bin/agentic",
+		])).toHaveLength(13);
+		expect(verify.policyFiles([
+			".agents/skills/other/SKILL.md",
+			"skills/verify-app/SKILL.md",
+			"x/.agents/skills/verify-app/SKILL.md",
+			"skills/create-verification/SKILL.md",
+			"skills/babysit-and-ship/SKILLS.md",
+			"claude/agents/build.md",
+			"agentic/tools/verifyx/cli.ts",
+			"agentic/tools/rulesets/cli.ts",
+			"agentic/bin/agentic-old",
+		])).toEqual([]);
+	});
+
+	test("a passing verdict other than a countersign is refused for a pull request that touches a policy path", () => {
+		const touched = ["agentic/tools/verify/cli.ts"];
+		for (const verdict of ["live-ui-verified", "unit-test-verified"]) expect(verify.policyRefusal(verdict, touched)).toContain("countersigned");
+		for (const verdict of ["countersigned", "verifier-blocked", "verifier-failed", "type-check-only"]) expect(verify.policyRefusal(verdict, touched)).toBeUndefined();
+		expect(verify.policyRefusal("live-ui-verified", [])).toBeUndefined();
+	});
+
+	test("changed paths come from each file's header, old and new names alike, never from hunk content", () => {
+		const diff = [
+			"diff --git a/.agents/skills/verify-x/SKILL.md b/moved.md",
+			"similarity index 100%",
+			"rename from .agents/skills/verify-x/SKILL.md",
+			"rename to moved.md",
+			"diff --git a/agentic/bin/agentic b/agentic/bin/agentic",
+			"old mode 100644",
+			"new mode 100755",
+			"diff --git a/bin.dat b/bin.dat",
+			"index bdc955b..8835708 100644",
+			"Binary files a/bin.dat and b/bin.dat differ",
+			"diff --git a/sp ace.md b/sp ace.md",
+			"index 6178079..9ddeb5c 100644",
+			"--- a/sp ace.md\t",
+			"+++ b/sp ace.md\t",
+			"@@ -1,2 +1,2 @@",
+			"--- a/agentic/tools/verify/cli.ts",
+			"+++ b/claude/agents/autopilot-owner.md",
+			"rename from skills/babysit-and-ship/SKILL.md",
+			"diff --git \"a/tab\\tname.md\" \"b/tab\\tname.md\"",
+			"deleted file mode 100644",
+			"--- \"a/tab\\tname.md\"",
+			"+++ /dev/null",
+			"@@ -1 +0,0 @@",
+			"-z",
+			"",
+		].join("\n");
+		expect(verify.changedPaths(diff).sort()).toEqual([".agents/skills/verify-x/SKILL.md", "agentic/bin/agentic", "bin.dat", "moved.md", "sp ace.md", "tab\tname.md"]);
+		expect(() => verify.changedPaths("diff --git a/x b/y\nold mode 100644\nnew mode 100755\n")).toThrow("cannot read the changed path");
+	});
+
 	test("reads the ledger orch writes, and treats a missing ledger as no verdicts", async () => {
 		const dir = join(mkdtempSync(join(tmpdir(), "verify-")), "orch");
 		expect(readLedger(dir)).toEqual([]);
@@ -122,15 +201,17 @@ describe("verdicts", () => {
 describe("agentic verify, end to end", () => {
 	const DIFF = "diff --git a/x b/x\nindex 0000001..0000002 100644\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n";
 	const OTHER_DIFF = DIFF.replace("+b", "+c");
+	const WHITESPACE_DIFF = DIFF.replace("+b", "+ b");
+	const POLICY_DIFF = "diff --git a/agentic/tools/verify/verify.ts b/agentic/tools/verify/verify.ts\nindex 0000001..0000002 100644\n--- a/agentic/tools/verify/verify.ts\n+++ b/agentic/tools/verify/verify.ts\n@@ -1 +1 @@\n-a\n+b\n";
 
-	function setup(head = "a".repeat(40), state = "OPEN") {
+	function setup(head = "a".repeat(40), state = "OPEN", diff = DIFF) {
 		const root = mkdtempSync(join(tmpdir(), "verify-cli-"));
 		const bin = join(root, "bin");
 		const repo = join(root, "repo");
 		mkdirSync(bin);
 		mkdirSync(repo);
 		spawnSync("git", ["init", "-q"], { cwd: repo });
-		const fake = { head, state, diff: DIFF };
+		const fake = { head, state, diff };
 		const write = () => writeFileSync(join(root, "view.json"), JSON.stringify({ headRefOid: fake.head, headRefName: "agent/x", state: fake.state }));
 		write();
 		writeFileSync(join(root, "diff.patch"), fake.diff);
@@ -141,8 +222,8 @@ describe("agentic verify, end to end", () => {
 		return {
 			cli,
 			moveHead: (sha: string) => ((fake.head = sha), write()),
-			changePatch: () => writeFileSync(join(root, "diff.patch"), OTHER_DIFF),
-			patchId: () => spawnSync("git", ["patch-id", "--stable"], { input: spawnSync("cat", [join(root, "diff.patch")], { encoding: "utf8" }).stdout, encoding: "utf8" }).stdout.split(" ")[0],
+			changePatch: (text = OTHER_DIFF) => writeFileSync(join(root, "diff.patch"), text),
+			patchId: () => spawnSync("git", ["patch-id", "--verbatim"], { input: spawnSync("cat", [join(root, "diff.patch")], { encoding: "utf8" }).stdout, encoding: "utf8" }).stdout.split(" ")[0],
 			ledger: () => readLedger(join(root, "orch")),
 		};
 	}
@@ -171,6 +252,30 @@ describe("agentic verify, end to end", () => {
 		pr.moveHead("b".repeat(40));
 		const moved = pr.cli(["status", "7"]);
 		expect([moved.status, moved.stdout.includes("ledger void (live-ui-verified on aaaaaaaaaaaa)")]).toEqual([1, true]);
+	});
+
+	test("a whitespace-only change to the patch voids the verdict", () => {
+		const pr = setup();
+		expect(pr.cli(["record", "7", "--verdict", "live-ui-verified", "--evidence", "run.log"]).status).toBe(0);
+		expect(pr.cli(["status", "7"]).status).toBe(0);
+		pr.changePatch(WHITESPACE_DIFF);
+		const changed = pr.cli(["status", "7"]);
+		expect([changed.status, changed.stdout.includes("ledger void, patch changed")]).toEqual([1, true]);
+	});
+
+	test("a pull request that touches a policy path takes no passing verdict but a countersign", () => {
+		const pr = setup("a".repeat(40), "OPEN", POLICY_DIFF);
+		for (const verdict of ["live-ui-verified", "unit-test-verified"]) {
+			const refused = pr.cli(["record", "7", "--verdict", verdict, "--evidence", "run.log"]);
+			expect([refused.status, refused.stderr.includes("changes the verification policy (agentic/tools/verify/verify.ts)"), refused.stderr.includes("countersigned")]).toEqual([1, true, true]);
+		}
+		expect(pr.ledger()).toEqual([]);
+		expect(pr.cli(["record", "7", "--verdict", "type-check-only", "--evidence", "run.log"]).status).toBe(0);
+		expect(pr.cli(["record", "7", "--verdict", "verifier-blocked", "--evidence", "run.log"]).status).toBe(0);
+		expect(pr.cli(["status", "7"]).status).toBe(1);
+		expect(pr.cli(["record", "7", "--verdict", "countersigned", "--patch", pr.patchId(), "--evidence", "user-message.txt"], "coordinator").status).toBe(0);
+		const status = pr.cli(["status", "7"]);
+		expect([status.status, status.stdout.includes("ledger pass (countersigned")]).toEqual([0, true]);
 	});
 
 	test("publish is gone: it is a usage error that touches neither the ledger nor GitHub", () => {

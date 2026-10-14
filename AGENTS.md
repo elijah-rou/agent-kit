@@ -22,12 +22,12 @@ its own repository.
 ## Edit map
 
 - `claude/CLAUDE.md` and `pi/AGENTS.md`: the global working rules, one copy per runtime. Most rules appear in
-  both, word for word or nearly; they differ in delegation mechanics (Claude roles versus Pi subagents), and
-  Pi's copy keeps its own communication style and a few rules Claude's lacks. When you change a rule that both
+  both, word for word or nearly; they differ in delegation mechanics (Claude roles versus Pi subagents), Pi's
+  copy keeps its own communication style, and each holds a few rules the other lacks. When you change a rule that both
   copies hold, change both. `scripts/check-skills.ts` requires `claude/CLAUDE.md` to stay runtime-neutral, to
   name only skills exported to Claude, and to have a role line that matches `claude/agents/`.
 - `claude/agents/*.md`: the subagent roles, the only files that bind a model to a role. `scripts/check-skills.ts`
-  refuses a model ID in `claude/CLAUDE.md`, `skills/`, or `claude/skills/`.
+  refuses a Claude or GPT model ID in the Markdown of `claude/CLAUDE.md`, `skills/`, and `claude/skills/`.
 - `skills/`: the shared library. Pi loads all of it; Claude loads the entries in `claude/skills.txt`, which must
   stay runtime-neutral, and Claude-specific adaptations live in `claude/skills/`. A new skill gets a line in
   `claude/skills.txt` when Claude should have it and a line in `skills/README.md` saying where it came from.

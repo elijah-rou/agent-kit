@@ -48,9 +48,10 @@ Each iteration:
 
 Waking:
 
-- With an event to watch (CI, a merge, a ref advancing, a process exiting), wait on the event, with a long heartbeat (30 to 60 minutes) as fallback. For a pull request, the event source in a T3 thread is `watch_pull_request`, which wakes the thread on a failed check, passing required checks, a new comment or review, or a conflict. A subagent cannot hold that watch; there, and outside T3, use `agentic watch-pr` (see its `--help`).
+- With an event to watch (CI, a merge, a ref advancing, a process exiting), wait on the event, with a long heartbeat (30 to 60 minutes) as fallback. For a pull request, the event source in a T3 thread is `watch_pull_request`, this run's own watch (`babysit-and-ship` section 4), which wakes the thread on a failed check, passing required checks, a new comment or review, or a conflict. A subagent cannot hold that watch; there, and outside T3, use `agentic watch-pr` (see its `--help`).
 - Without one, use a fixed heartbeat sized to when the result is worth rechecking.
-- Keep the heartbeat on a schedule the harness keeps. In T3, that is a `schedule_task` bound to this thread, whose prompt resumes the run from the decision log, so a stalled run restarts on the next beat once the cause clears; delete it when the predicate holds or the user stops the run. Outside T3, use `/loop` or a background command that exits on the event, and say in the framing that it dies with the session. Never run a second sleep loop beside the watcher.
+- Keep the heartbeat on a schedule the harness keeps. In T3, that is a `schedule_task` bound to this thread, whose prompt resumes the run from the decision log, so a stalled run restarts on the next beat once the cause clears. Outside T3, use the harness's recurring facility (`/loop` where the harness has it) or a background command that exits on the event, and say in the framing that it dies with the session; in a harness with neither, say in the framing that the heartbeat cannot be armed. Never run a second sleep loop beside the watcher.
+- The heartbeat and the watch belong to the run: when the run stops, whether the predicate holds, it stops at a dead end or at a budget the user set, or the user says stop, hold, or pause, log the stop as a row and remove both. Each beat first reads the log for such a row and, finding one, removes itself and does nothing else. Resuming takes the user's words and a new heartbeat.
 
 Steering:
 

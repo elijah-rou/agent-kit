@@ -5,7 +5,7 @@ Read before spawning workers for an unattended program. If one agent can finish 
 ## Roles
 
 - **One coordinator** per program. It frames the run, writes briefs, accepts results, and is the only agent that publishes, except an autopilot-full owner, which carries its own pull request through the merge as `babysit-and-ship`'s `autopilot-full.md` defines (see Children).
-- **One owner per pull request.** It builds and babysits that PR. A takeover is explicit and recorded in the PR body. In T3, the link enforces it: the coordinator links each PR to its thread (`link_pull_request`) when the PR opens, and before anyone acts on a PR, it checks every active thread's links (`t3_thread_list`, then `list_thread_pull_requests`). A PR linked to another thread belongs to that thread: leave it and report it, unless the user hands it over in their own words.
+- **One owner per pull request.** It builds and babysits that PR. A takeover is explicit and recorded in the PR body. In T3, the thread link is the owner record (`babysit-and-ship` section 2): the coordinator links each PR to its thread (`link_pull_request`) when the PR opens.
 - **The root is the only writer of branch structure:** rebases, retargets, and stack order. The one exception is an autopilot-full owner rebasing its own branch onto trunk.
 - **Verifiers** are fresh agents that did not write the code. A worker may self-report; a verifier's verdict overrides it.
 
@@ -16,7 +16,7 @@ Read before spawning workers for an unattended program. If one agent can finish 
 - Tell each child it does not push, merge, deploy, or post, and do not hand children credentials that could. The exception is an autopilot-full owner, which carries its own pull request through the merge as `babysit-and-ship`'s `autopilot-full.md` defines: it pushes its own `agent/*` branch, opens its pull request after the first push, answers bot threads on it, and merges it only after the coordinator's clean verdict. It never deploys, messages people, or touches another branch or pull request.
 - Before every fan-out (owners, verifiers, or reviewers), check the resources the children share, launch only as many as those allow, and queue the rest:
   - **Disk:** before launching verifiers or owners that build containers, check free space where the images land (`docker system df`, `df -h` on Docker's data volume) against the largest past build. A Docker disk at 0 bytes has blocked two verifiers at once; a lane that fails for lack of disk is an infrastructure failure, never a verdict on the change.
-  - **Strong-model children:** cap how many children on the strongest model (the `build`, `autopilot-owner`, `review`, and `pr-review` roles) run at once, counting every verification lane, by the usage budget or rate limit they draw on. If the budget cannot be read, the cap is two, and it rises only after a batch reports without hitting a limit; on 2026-10-12 five at once exhausted it.
+  - **Strong-model children:** cap how many children on the strongest model (the `build`, `autopilot-owner`, `review`, and `pr-review` roles) work at once, counting every verification lane, by the usage budget or rate limit they draw on. A child that is `idle` (Liveness) draws on nothing and does not count, so owners waiting on their verdicts never starve the lanes that verify them. If the budget cannot be read, the cap is two, and it rises only after a batch reports without hitting a limit; on 2026-10-12 five at once exhausted it.
 - Record every child in `children.tsv` (Liveness, below) as it starts.
 - Child reports are evidence, not acceptance. Check their artifacts before relying on them.
 
@@ -27,26 +27,38 @@ Read before spawning workers for an unattended program. If one agent can finish 
 
 ## Liveness
 
-The coordinator keeps `.audit/<task-slug>.children.tsv` beside the decision log, uncommitted, as its only writer. Columns: `ts`, `id` (the child's agent or thread ID), `role`, `item` (the PR or lane), `expected` (minutes: at least the longest past run of that kind, or a stated estimate when there is none), and `state` (`running`, `done`, `stuck`, `failed`, `waiting`, `replaced`). Append a row when a child starts and whenever its state changes, and never edit a row: the latest row for an ID is its state.
+The coordinator keeps `.audit/<task-slug>.children.tsv` beside the decision log, uncommitted, as its only writer. Columns: `ts`, `id` (the child's agent or thread ID, or `run` for the program itself), `role`, `item` (the PR or lane), `expected` (minutes: at least the longest past run of that kind, or a stated estimate when there is none), and `state`. Append a row when a child starts and whenever a state changes, and never edit a row: the latest row for an ID is its state.
 
-A child is stuck when it errored, or when it has run past `expected` with no side effect since the last tick. Stop it before launching its replacement, so a branch never has two writers, and give the replacement a fresh brief that carries the original brief, every later directive, and the stuck child's branch and log. A child waiting on a permission prompt is `waiting`: it is blocked, not running, and its prompt goes to the user.
+A child's state is one of:
 
-**Two retries, then replan.** An item whose child failed or stuck twice gets no third child on the same brief: change the approach, split the item, or put it under "Needs you". A stall never counts as proof the work is done or as a reason to drop it.
+- `running`: working on its brief.
+- `idle`: it reported and waits on the coordinator, such as an owner waiting for a verdict or for the word that it is clean. Liveness never replaces it, and it does not count toward the fan-out cap.
+- `waiting`: it sits on a permission prompt. `blocked`: it returned because a permission prompt, guard, or forge rule refused an action. Both go under "Needs you" with the prompt or the refused action, and neither is ever replaced or relaunched on the same brief: a new child would meet the same refusal.
+- `stuck`: it errored, or ran past `expected` with no side effect since the last tick. `failed`: it returned without its deliverable for any other reason.
+- `held`: the run is held, and the child stopped writing and keeps its brief.
+- `done` or `replaced`.
 
-**Budget.** When the user states a budget for the program (time, usage, or a number of pull requests), stop launching new work at about 70% of it, and spend the rest landing what is verified. Report the items left unstarted.
+**Replace, then replan.** A `stuck` or `failed` child is the one kind that is replaced. Stop it first, so a branch never has two writers, and give the replacement a fresh brief that carries the original brief, every later directive, and the old child's report, branch, and log. An item gets its original child plus at most two replacements; when the second replacement also ends `stuck` or `failed`, it gets no further child on the same brief: change the approach, split the item, or put it under "Needs you". A stall never counts as proof the work is done or as a reason to drop it.
+
+**The run's own state.** The `run` row is `running`, `held` when the user says stop or hold (every child stops writing at once and is recorded `held`), `paused` when the run stops itself at a dead end or at the end of its budget, or `done` when the program finishes. Only the user's own words move a `held` or `paused` run back to `running`.
+
+**Budget.** When the user states a budget for the program (time, usage, or a number of pull requests), stop launching new work at about 70% of it, and spend the rest landing what is verified. When it runs out, the run is `paused`. Report the items left unstarted.
 
 ## Audit tick
 
 For unattended programs, run an audit tick about hourly, on a schedule the harness keeps, never from memory:
 
-- **In T3,** create it with `schedule_task`, bound to the coordinator's thread (`bindToCurrentThread`, an hourly interval), so it runs even when no turn is active. Its prompt names the governing skill's path, the decision log, and `children.tsv`, and says to resume the program from them and run this tick: a stalled program restarts on the next tick once the cause clears. Log its scheduled task ID, report it, and delete it (`delete_scheduled_task`) when the program finishes or the user stops it.
-- **Outside T3,** use `/loop` with the same prompt, and say in the report that it dies with the session.
+- **In T3,** create it with `schedule_task`, bound to the coordinator's thread (`bindToCurrentThread`, an hourly interval), so it runs even when no turn is active. Its prompt names the governing skill's path, the decision log, and `children.tsv`, and says to resume the program from them and run this tick: a stalled program restarts on the next tick once the cause clears. Log its scheduled task ID and report it.
+- **Outside T3,** use the harness's recurring facility (`/loop` where the harness has it) with the same prompt, and say in the report that it dies with the session. In a harness with none, say in the report that the tick cannot be armed, so nothing restarts a stalled program.
+
+The tick belongs to the run: delete it (`delete_scheduled_task`, or end the loop) as soon as the `run` row leaves `running`, whether the program is `done`, `held`, or `paused`. Resuming a `held` or `paused` run takes the user's words and a new tick.
 
 Each tick:
 
-1. Re-read the governing skill, not from memory: from the default branch where the program's repository holds it (`git show origin/<trunk>:<path>`), otherwise from its installed copy.
-2. Audit the program against it, and fix drift during the tick.
-3. Count only side effects as progress: commits, pushes, PR or check changes, ledger and store rows. A busy transcript is not progress.
-4. Run the liveness check over every running row of `children.tsv`, and over the harness's own agent list where it has one. Probe read-only first (store, ledger, branches, the child's log); do not resume an agent just to check on it. Replace each stuck child as Liveness describes, and check the budget.
-5. Report each failed or `waiting` child once, in the tick that records it; later ticks repeat it only when its state changes. Never repeat an unchanged ask.
-6. Log one decision row per tick.
+1. Read the `run` row first. Unless it is `running`, launch, replace, and resume nothing, delete this tick if it still exists, and end.
+2. Re-read the governing skill, not from memory: from the default branch where the program's repository holds it (`git show origin/<trunk>:<path>`), otherwise from its installed copy.
+3. Audit the program against it, and fix drift during the tick.
+4. Count only side effects as progress: commits, pushes, PR or check changes, ledger and store rows. A busy transcript is not progress.
+5. Run the liveness check over every `running` row of `children.tsv`, and over the harness's own agent list where it has one. Probe read-only first (store, ledger, branches, the child's log); do not resume an agent just to check on it. Replace or report each child as Liveness describes, and check the budget.
+6. Report each `waiting` or `blocked` child, and each item out of replacements, once, in the tick that records it; later ticks repeat it only when its state changes. Never repeat an unchanged ask.
+7. Log one decision row per tick.

@@ -50,7 +50,7 @@ When opening or editing a PR, write the body as `references/pr-body.md` describe
 ## 2. Work the frontier only
 
 - The lowest unmerged PR of a stack is the only one that matters until it merges. Read upstack threads and batch their fixes; never restart the frontier's checks for them.
-- One babysitter per stack. Before starting, check the PR bodies for an owner; a takeover is explicit and recorded in the PR body. In T3, the thread link is the owner record: link each PR you work on to your thread (`link_pull_request`; a subagent's PRs belong to its parent thread), and before acting on a PR, check every active thread's links (`t3_thread_list`, then `list_thread_pull_requests`). A PR linked to another thread is that thread's: leave it and report it, unless the user hands it over in their own words.
+- One babysitter per stack. Before starting, check the PR bodies for an owner; a takeover is explicit and recorded in the PR body. In T3, the thread link is the owner record: link each PR you work on to your thread (`link_pull_request`; a subagent's PRs belong to its parent thread), and before writing to a PR, check the links of every active thread in its T3 project (`t3_thread_list` lists one project's threads; then `list_thread_pull_requests` for each). A PR linked to another thread is that thread's: do not push to it, comment on it, watch it, or merge it, and report it, unless the user hands it over in their own words. Reading it, including to verify it, needs no handover.
 - Never change stack topology while babysitting: no rebase, retarget, stack-wide resubmit, or force-push. Fix on the owning branch with new commits, and report anything rebase-shaped to the root. The one exception: a fix whose owning PR already merged becomes a new PR on top of the remaining stack.
 
 ## 3. Clear blockers in order: conflicts, then threads, then CI
@@ -63,7 +63,7 @@ Read them with `agentic pr-feedback <pr>`: mergeability, the review decision, un
 
 ## 4. Watch without polling
 
-In a T3 thread, wait on a PR with `watch_pull_request`: T3 checks it every two minutes and wakes the thread when a check fails, the required checks pass, someone comments or reviews, or the branch starts to conflict. A wake is news, not a merge decision: read the state with `agentic pr-feedback` or `agentic watch-pr --status-only` before acting, and call `unwatch_pull_request` before handing the work back. A subagent cannot hold that watch; there, and outside T3, use the vendored watcher.
+`agentic watch-pr` is the default watch. A T3 `watch_pull_request` is a schedule T3 keeps, so use it only inside a mode the user invoked for this run (`autopilot-full`, `ship`, `autopilot-stack`, or `background-run`), as that run's own watch: report it when you start it, and call `unwatch_pull_request` when the run ends or before handing the work back. T3 checks the PR every two minutes and wakes the thread when a check fails, the required checks pass, someone comments or reviews, or the branch starts to conflict. A wake is news, not a merge decision: read the state with `agentic pr-feedback` or `agentic watch-pr --status-only` before acting. A subagent cannot hold that watch; it uses the vendored watcher.
 
 `agentic watch-pr` reports forge state as JSON (`--pretty` for people). Use `--pr <n>` for one PR, `--stack` for a connected stack, `--status-only` in `check` mode. Its verdicts are `READY`, `WAITING`, `ADVANCE`, and `COMPLETE`. In `drive`, stop at `READY`; on `ADVANCE`, move to the new frontier. Rearm after every push wave.
 

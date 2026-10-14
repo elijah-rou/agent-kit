@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkoutRoot, httpClassifier, isPublic, isTask, MAX_TASK_CHARS, OPT_OUT_FILE, promptOrigin, repoOf, screen, sendable, type FetchLike } from "./egress.ts";
+import { checkoutRoot, commonDir, httpClassifier, isPublic, isTask, MAX_TASK_CHARS, OPT_OUT_FILE, promptOrigin, repoOf, screen, sendable, type FetchLike } from "./egress.ts";
 import { QUESTIONS, type Sendable } from "./route.ts";
 import { seededCache } from "./testing.ts";
 
@@ -89,9 +90,33 @@ describe("the repository a prompt was typed in", () => {
 	test("the opt-out file at the checkout root covers every directory below it", async () => {
 		const opted = checkout(true);
 		expect(checkoutRoot(opted.nested)).toBe(opted.root);
-		expect(await repoOf(opted.nested, 1000)).toEqual({ slug: "other", optedOut: true });
+		expect(await repoOf(opted.nested, 1000)).toMatchObject({ optedOut: true });
 		const open = checkout(false);
-		expect(await repoOf(open.nested, 1000)).toEqual({ slug: "other", optedOut: false });
+		expect(await repoOf(open.nested, 1000)).toMatchObject({ optedOut: false });
+	});
+
+	test("each checkout without a GitHub origin is its own bucket, shared by its worktrees", async () => {
+		const git = (cwd: string, ...args: string[]) => {
+			const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
+			if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
+		};
+		const clone = (): string => {
+			const root = mkdtempSync(join(tmpdir(), "jev-local-"));
+			git(root, "init", "-q");
+			git(root, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "--allow-empty", "-m", "init");
+			return root;
+		};
+		const first = clone();
+		const second = clone();
+		const worktree = join(mkdtempSync(join(tmpdir(), "jev-worktree-")), "wt");
+		git(first, "worktree", "add", "-q", worktree);
+		const [a, b, w] = await Promise.all([repoOf(first, 1000), repoOf(second, 1000), repoOf(join(worktree, "."), 1000)]);
+		expect(a.slug).toMatch(/^other:[0-9a-f]{16}$/);
+		expect(b.slug).toMatch(/^other:[0-9a-f]{16}$/);
+		expect(a.slug).not.toBe(b.slug);
+		expect(w.slug).toBe(a.slug);
+		expect(commonDir(worktree)).toBe(commonDir(first));
+		expect(`${a.slug}${b.slug}`).not.toContain("jev-local");
 	});
 
 	test("a directory outside any checkout is sent as repository none", async () => {

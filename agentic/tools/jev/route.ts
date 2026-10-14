@@ -1,4 +1,4 @@
-// Task routing policy task-route@1 (docs/design/jev-task-routing.md). One Jev request per prompt asks
+// Task routing policy task-route@2 (docs/design/jev-task-routing.md). One Jev request per prompt asks
 // two questions: door (the one-way-door question calibrated on 2026-10-07) and level (lookup, rigor,
 // or loop). decide turns the answers into an advised route, applyModes keeps only the notes the
 // policy and the session allow, and noteFor writes fixed note text: no Jev text reaches the model.
@@ -49,7 +49,7 @@ export type DoorNote = ChoiceAnswer<DoorClass>;
 /** A lookup carries no door: "a lookup that might be a one-way door" is not a route. */
 export type Route = { level: "lookup" } | { level: "rigor"; door?: DoorNote } | { level: "loop"; door?: DoorNote };
 
-/** The evidence that lets a note act. Flipping a note to advisory is a reviewed commit adding one. */
+/** The evidence that makes a note advisory. Flipping a note to advisory is a reviewed commit adding one. */
 export type Calibration = {
 	/** door: the note fires on one-way-door or below this confidence. lookup and loop: the level counts at or above it. */
 	threshold: number;
@@ -64,27 +64,38 @@ export type Calibration = {
 	date: string;
 	source: string;
 };
-/** A shadow note is decided and recorded but never delivered, with a provisional threshold. */
-export type NotePolicy = { mode: "shadow"; threshold: number } | { mode: "advisory"; calibration: Calibration };
+/**
+ * A shadow note is decided and recorded but never delivered. A trial note is delivered as advice on
+ * a provisional threshold, with no calibration, so route-report can judge it on live use; it has no
+ * measured model to drift from. An advisory note is delivered on a calibrated threshold.
+ */
+export type NotePolicy = { mode: "shadow"; threshold: number } | { mode: "trial"; threshold: number; since: string } | { mode: "advisory"; calibration: Calibration };
 export type NoteId = "door" | "lookup" | "loop";
 export type Policy = { id: "task-route"; version: number; deadlineMs: number; notes: Record<NoteId, NotePolicy> };
+
+/** The policy as records name it, such as task-route@2. */
+export function policyId(policy: Policy): string {
+	return `${policy.id}@${policy.version}`;
+}
 
 /** The question each note's threshold applies to. */
 export const NOTE_QUESTION: Record<NoteId, QuestionId> = { door: "door", lookup: "level", loop: "level" };
 
+// Version 2 delivers every note on trial (ADR 0002, 2026-10-14): the user chose to run the notes for
+// real and judge them on `agentic jev route-report` rather than wait for labels.
 export const POLICY: Policy = {
 	id: "task-route",
-	version: 1,
+	version: 2,
 	deadlineMs: 3000,
 	notes: {
 		// Advisory from 2026-10-07 to 2026-10-12, calibrated on agentic evals/jev-risk (90 hand-labeled
 		// standalone tasks asked twice each; threshold 0.8, question digest 556d4c822c98335d, jev-1.13.0,
 		// precision 0.78, recall 0.93; 16 of 120 non-door calls hinted). On live prompts, mostly short
-		// follow-ups Jev sees without their conversation, it fired on nearly every reversible prompt, so it
-		// is recorded but not delivered until route-eval recalibrates it on labeled live records.
-		door: { mode: "shadow", threshold: 0.8 },
-		lookup: { mode: "shadow", threshold: 0.9 },
-		loop: { mode: "shadow", threshold: 0.9 },
+		// follow-ups Jev sees without their conversation, it fired on nearly every reversible prompt; it
+		// was in shadow from 2026-10-12 and is on trial since 2026-10-14, judged by route-report.
+		door: { mode: "trial", threshold: 0.8, since: "2026-10-14" },
+		lookup: { mode: "trial", threshold: 0.9, since: "2026-10-14" },
+		loop: { mode: "trial", threshold: 0.9, since: "2026-10-14" },
 	},
 };
 
@@ -109,6 +120,11 @@ function assertConfidence(answer: ChoiceAnswer<string>): void {
 
 function thresholdOf(note: NotePolicy): number {
 	return note.mode === "advisory" ? note.calibration.threshold : note.threshold;
+}
+
+/** Whether a note reaches the agent: advisory and trial notes do, shadow notes never. */
+export function delivers(note: NotePolicy): boolean {
+	return note.mode !== "shadow";
 }
 
 /** The door rule as calibrated: a one-way door, or any answer Jev is unsure of. */
@@ -151,16 +167,17 @@ export function decide(answers: Answers, policy: Policy): Decision {
 export type Delivery = { delivered: Route; fallback?: "model-drift" };
 
 /**
- * The route actually delivered: only advisory notes survive, the session can lower every note, and a
- * level note measured on another model drops to shadow. The door note only adds caution, so it stays.
+ * The route actually delivered: shadow notes are dropped, the session can lower every note, and a
+ * level note calibrated on another model drops to shadow. The door note only adds caution, so it
+ * stays. A trial note was measured on no model, so it has none to drift from.
  */
 export function applyModes(advised: Route, policy: Policy, session: Session, model: string): Delivery {
 	if (session !== "policy") return { delivered: { level: "rigor" } };
-	const door = advised.level !== "lookup" && advised.door && policy.notes.door.mode === "advisory" ? advised.door : undefined;
+	const door = advised.level !== "lookup" && advised.door && delivers(policy.notes.door) ? advised.door : undefined;
 	if (advised.level === "rigor") return { delivered: rigor(door) };
 	const note = policy.notes[advised.level];
-	if (note.mode !== "advisory") return { delivered: rigor(door) };
-	if (note.calibration.model !== model) return { delivered: rigor(door), fallback: "model-drift" };
+	if (!delivers(note)) return { delivered: rigor(door) };
+	if (note.mode === "advisory" && note.calibration.model !== model) return { delivered: rigor(door), fallback: "model-drift" };
 	return { delivered: advised.level === "lookup" ? { level: "lookup" } : loop(door) };
 }
 
@@ -173,14 +190,18 @@ export function doorNote(door: DoorNote): string {
 	return `Task-class hint, advisory: Jev ${why}. Before building, check the task against the one-way-door list in your instructions; if it is one, compare design shapes with design-checkpoint first.`;
 }
 
-/** The note for a delivered route, or undefined for plain rigor. backgroundRunSkill is the path of background-run's SKILL.md. */
+/**
+ * The note for a delivered route, or undefined for plain rigor. backgroundRunSkill is the path of
+ * background-run's SKILL.md. The loop note only suggests background-run: the instructions keep it
+ * the user's to invoke.
+ */
 export function noteFor(delivered: Route, backgroundRunSkill: string): string | undefined {
 	switch (delivered.level) {
 		case "lookup":
 			return `Task-route note, advisory: Jev rates this a lookup. Answer directly: no plan, subagents, or headings. If it turns out to need a change, treat it as a task. ${PRECEDENCE}`;
 		case "loop": {
 			assert(backgroundRunSkill.endsWith("SKILL.md"), `not a skill file: ${backgroundRunSkill}`);
-			const handoff = `Task-route note, advisory: Jev rates this work the user hands off. If the user's words hand the work off, read the background-run skill at ${backgroundRunSkill} and follow it. This invokes no landing mode. ${PRECEDENCE}`;
+			const handoff = `Task-route note, advisory: Jev rates this work the user hands off. If the user's words hand the work off, suggest the \`background-run\` skill to the user (its skill is at ${backgroundRunSkill}, for reference). It stays the user's to invoke: suggest it, never start it yourself. This invokes no landing mode. ${PRECEDENCE}`;
 			return delivered.door ? `${handoff}\n\n${doorNote(delivered.door)}` : handoff;
 		}
 		case "rigor":

@@ -52,8 +52,8 @@ async function routeInput(event: InputEvent, ctx: ExtensionContext, policy: Poli
 // queued while the agent works is recorded without a note: a queued message would be drained ahead
 // of its prompt. A note is a visible custom message, so the system prompt stays byte-stable for
 // the provider cache. This assumes no earlier extension transforms input; the only installed input
-// handler (pi-unveil) never does. Pi loads the shipped policy; tests pass one with advisory notes,
-// since the shipped policy may deliver none.
+// handler (pi-unveil) never does. Pi loads the shipped policy; tests pass one with an advisory door
+// note, so they do not move with it.
 export function taskRoute(policy: Policy): (pi: ExtensionAPI) => void {
 	return (pi) => {
 		let latest: { text: string; note: string | undefined } | undefined;

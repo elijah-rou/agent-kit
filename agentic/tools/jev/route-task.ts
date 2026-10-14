@@ -8,7 +8,7 @@ import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { screen, type Origin, type Repo, type Withheld } from "./egress.ts";
-import { applyModes, decide, explicitCommand, noteFor, sessionFor, type Answers, type Classify, type ClassifyFailure, type Policy, type Route, type Session } from "./route.ts";
+import { applyModes, decide, explicitCommand, noteFor, policyId, sessionFor, type Answers, type Classify, type ClassifyFailure, type Policy, type Route, type Session } from "./route.ts";
 
 export type Runtime = "claude" | "codex" | "pi" | "cli";
 export type RouteInput = {
@@ -62,7 +62,7 @@ export type RouteRecord = {
 export const FIELD_MAX = { machine: 63, session: 128, repo: 140, explicit: 64 } as const;
 
 /** Keeps a record's strings to characters JSON writes as one byte each, cut to max. */
-function recordText(text: string, max: number): string {
+export function recordText(text: string, max: number): string {
 	return text.replace(/[^A-Za-z0-9._:/-]/g, "_").slice(0, max);
 }
 
@@ -92,7 +92,7 @@ export async function routeTask(input: RouteInput, deps: RouteDeps): Promise<{ n
 	const repo = mode === "off" ? { slug: "unknown", optedOut: false } : await deps.repo(input.cwd, left());
 	const record = (fields: Pick<RouteRecord, "delivered" | "fallbacks"> & Partial<Pick<RouteRecord, "answers" | "advised" | "noted">>): RouteRecord => ({
 		v: 1,
-		policy: `${policy.id}@${policy.version}`,
+		policy: policyId(policy),
 		at: new Date(started).toISOString(),
 		machine: machineName(),
 		runtime: input.runtime,
@@ -141,11 +141,15 @@ export async function routeTask(input: RouteInput, deps: RouteDeps): Promise<{ n
 /** Each file has one writer, so the cap only bounds the ledger's growth; the worst-case record is tested under it. */
 export const RECORD_MAX_BYTES = 2048;
 
+/** The ledger's root: one directory per machine below it. */
+export function ledgerRoot(env: Record<string, string | undefined>): string {
+	return join(env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "agentic", "task-route");
+}
+
 /** Where a session's records go: one file per runtime session, one writer each. */
 export function ledgerFile(record: Pick<RouteRecord, "machine" | "runtime" | "session">, env: Record<string, string | undefined>): string {
-	const state = env.XDG_STATE_HOME || join(homedir(), ".local", "state");
 	const session = record.session.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 96) || "unknown";
-	return join(state, "agentic", "task-route", record.machine, `${record.runtime}-${session}.jsonl`);
+	return join(ledgerRoot(env), record.machine, `${record.runtime}-${session}.jsonl`);
 }
 
 export function appendRecord(record: RouteRecord, env: Record<string, string | undefined>): string {

@@ -39,15 +39,31 @@ describe("decide", () => {
 const calibrated = (threshold: number): Calibration => ({ threshold, questionsDigest: digestQuestion(QUESTIONS.level), model: "jev-1.13.0", samples: 200, positives: 20, precision: 0.95, recall: 0.8, date: "2026-10-30", source: "test" });
 const doorCalibrated: Calibration = { ...calibrated(0.8), questionsDigest: digestQuestion(QUESTIONS.door) };
 const ADVISORY: Policy = { ...POLICY, notes: { door: { mode: "advisory", calibration: doorCalibrated }, lookup: { mode: "advisory", calibration: calibrated(0.9) }, loop: { mode: "advisory", calibration: calibrated(0.9) } } };
+const SHADOW: Policy = { ...POLICY, notes: { door: { mode: "shadow", threshold: 0.8 }, lookup: { mode: "shadow", threshold: 0.9 }, loop: { mode: "shadow", threshold: 0.9 } } };
 const door = { choice: "one-way-door", confidence: 0.99 } as const;
 
+describe("the shipped policy", () => {
+	test("puts every note on trial with the thresholds it ran in shadow with", () => {
+		expect(POLICY.version).toBe(2);
+		expect(POLICY.notes).toEqual({ door: { mode: "trial", threshold: 0.8, since: "2026-10-14" }, lookup: { mode: "trial", threshold: 0.9, since: "2026-10-14" }, loop: { mode: "trial", threshold: 0.9, since: "2026-10-14" } });
+	});
+
+	test("delivers each note on any answering model, since a trial note has no model to drift from", () => {
+		for (const model of ["jev-1.13.0", "jev-latest"]) {
+			expect(applyModes({ level: "lookup" }, POLICY, "policy", model)).toEqual({ delivered: { level: "lookup" } });
+			expect(applyModes({ level: "loop", door }, POLICY, "policy", model)).toEqual({ delivered: { level: "loop", door } });
+			expect(applyModes({ level: "rigor", door }, POLICY, "policy", model)).toEqual({ delivered: { level: "rigor", door } });
+		}
+	});
+});
+
 describe("applyModes", () => {
-	test("delivers only advisory notes: the shipped policy holds every note in shadow", () => {
-		expect(applyModes({ level: "lookup" }, POLICY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
-		expect(applyModes({ level: "loop", door }, POLICY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
-		expect(applyModes({ level: "rigor", door }, POLICY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
+	test("delivers advisory and trial notes and drops shadow ones", () => {
+		expect(applyModes({ level: "lookup" }, SHADOW, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
+		expect(applyModes({ level: "loop", door }, SHADOW, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
+		expect(applyModes({ level: "rigor", door }, SHADOW, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
 		expect(applyModes({ level: "rigor", door }, ADVISORY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor", door } });
-		const doorOnly: Policy = { ...POLICY, notes: { ...POLICY.notes, door: ADVISORY.notes.door } };
+		const doorOnly: Policy = { ...SHADOW, notes: { ...SHADOW.notes, door: ADVISORY.notes.door } };
 		expect(applyModes({ level: "loop", door }, doorOnly, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "rigor", door } });
 		expect(applyModes({ level: "lookup" }, ADVISORY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "lookup" } });
 		expect(applyModes({ level: "loop", door }, ADVISORY, "policy", "jev-1.13.0")).toEqual({ delivered: { level: "loop", door } });
@@ -60,8 +76,11 @@ describe("applyModes", () => {
 		expect(sessionFor("shadow")).toBe("shadow");
 		expect(sessionFor("advisory")).toBe("shadow");
 		for (const session of ["shadow", "off"] as const) {
-			expect(applyModes({ level: "rigor", door }, ADVISORY, session, "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
-			expect(applyModes({ level: "lookup" }, ADVISORY, session, "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
+			for (const policy of [ADVISORY, POLICY]) {
+				expect(applyModes({ level: "rigor", door }, policy, session, "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
+				expect(applyModes({ level: "lookup" }, policy, session, "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
+				expect(applyModes({ level: "loop", door }, policy, session, "jev-1.13.0")).toEqual({ delivered: { level: "rigor" } });
+			}
 		}
 	});
 
@@ -81,12 +100,18 @@ describe("noteFor", () => {
 		expect(noteFor({ level: "rigor", door: { choice: "experiment", confidence: 0.5 } }, SKILL)).toContain("Jev is unsure (experiment, confidence 0.50).");
 	});
 
-	test("lookup answers directly, and loop points at background-run without invoking a landing mode", () => {
+	test("lookup answers directly, and loop suggests background-run to the user without starting it", () => {
 		const lookup = noteFor({ level: "lookup" }, SKILL)!;
 		expect(lookup).toContain("Answer directly");
 		const loop = noteFor({ level: "loop" }, SKILL)!;
-		expect(loop).toContain(`read the background-run skill at ${SKILL}`);
-		expect(loop).toContain("This invokes no landing mode.");
+		// The instructions keep background-run the user's to invoke, so the note may only suggest it.
+		expect(loop).toBe(
+			"Task-route note, advisory: Jev rates this work the user hands off. If the user's words hand the work off, " +
+				`suggest the \`background-run\` skill to the user (its skill is at ${SKILL}, for reference). ` +
+				"It stays the user's to invoke: suggest it, never start it yourself. This invokes no landing mode. " +
+				"The user's words and your instructions take precedence over this note.",
+		);
+		expect(loop).not.toMatch(/\b(?:read|follow|run|start) (?:the background-run|it)\b(?! yourself)/);
 		expect(noteFor({ level: "loop", door }, SKILL)).toBe(`${loop}\n\n${noteFor({ level: "rigor", door }, SKILL)}`);
 		expect(() => noteFor({ level: "loop" }, "/kit/skills/background-run")).toThrow("not a skill file");
 	});

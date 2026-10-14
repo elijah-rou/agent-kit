@@ -48,9 +48,9 @@ Each iteration:
 
 Waking:
 
-- With an event to watch (CI, a merge, a ref advancing, a process exiting), wait on the event, with a long heartbeat (30 to 60 minutes) as fallback. For pull requests, the event source is `agentic watch-pr` (see its `--help`).
+- With an event to watch (CI, a merge, a ref advancing, a process exiting), wait on the event, with a long heartbeat (30 to 60 minutes) as fallback. For a pull request, the event source in a T3 thread is `watch_pull_request`, which wakes the thread on a failed check, passing required checks, a new comment or review, or a conflict. A subagent cannot hold that watch; there, and outside T3, use `agentic watch-pr` (see its `--help`).
 - Without one, use a fixed heartbeat sized to when the result is worth rechecking.
-- Use the harness's recurring-loop or workflow facility, or a background command that exits on the event. Never run a second sleep loop beside the watcher.
+- Keep the heartbeat on a schedule the harness keeps. In T3, that is a `schedule_task` bound to this thread, whose prompt resumes the run from the decision log, so a stalled run restarts on the next beat once the cause clears; delete it when the predicate holds or the user stops the run. Outside T3, use `/loop` or a background command that exits on the event, and say in the framing that it dies with the session. Never run a second sleep loop beside the watcher.
 
 Steering:
 

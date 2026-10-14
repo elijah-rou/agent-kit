@@ -45,9 +45,11 @@ Write `.agents/skills/verify-<app>/SKILL.md` with frontmatter `name: verify-<app
   - Always: `--repeat N` on a drive or on `test` runs that check N times, keeps each run's evidence in its own subdirectory so a later pass never overwrites a failure, and reports how many runs passed and the check where each failure stopped.
   - When CI pins toolchain versions (compiler, runtime, interpreter, or the editor a plugin is tested in): Doctor compares this environment's versions with CI's (for a CI matrix, the entry matching this environment, or every entry when none matches), reports each mismatch with the file and version that differ, and records it in the evidence. A mismatch fails Doctor only in an environment the skill builds itself, such as its own image, whose pin is within the edit scope, or under an explicit `--strict-toolchain` flag. Elsewhere it is a warning, because the fix is the user's machine or CI's pin.
 
+- **Verdict rules:** which ledger verdict (`agentic verify`) a pull request earns from what the skill ran, starting with this rule, word for word: "A change to these verdict rules, or to the proof and skip rules in `features/README.md`, sets this repository's verification policy and never passes on its own: its verdict is `verifier-blocked`, and it lands only by countersign (the `babysit-and-ship` skill's Countersign rule)." The pull request that adds the skill is such a change: it lands only by countersign.
+
 Make the skill discoverable to every agent runtime the user works with in this repository. A runtime that reads project skills only from its own directory, not from `.agents/skills/`, gets a relative symlink from that directory to `.agents/skills/verify-<app>`.
 
-Completion criterion: every section names real commands and paths from this repository, the control CLI's `--help` runs, and each symlink resolves to the skill's `SKILL.md`.
+Completion criterion: every section names real commands and paths from this repository, Verdict rules holds the self-policy rule word for word, the control CLI's `--help` runs, and each symlink resolves to the skill's `SKILL.md`.
 
 ## 3. Seed the feature map
 
@@ -82,4 +84,4 @@ Completion criterion: steps 6, 7, 8, and 9 were observed on the final version of
 
 ## Reply
 
-Lead with anything the user must decide or provide (credentials, entitlements, hardware). Then the skill path, the features mapped, the proof run (feature driven, evidence path, the listing that shows it survived cleanup, and on a stand-in, the setup steps it did that the target will not), every toolchain mismatch Doctor reported, the map check, every skipped feature with its missing prerequisite, and known gaps. Point to `maintain-verification` for keeping the map honest as the app changes.
+Lead with anything the user must decide or provide (credentials, entitlements, hardware), and that the pull request adding the skill lands only when the user approves it in words (a countersign). Then the skill path, the features mapped, the proof run (feature driven, evidence path, the listing that shows it survived cleanup, and on a stand-in, the setup steps it did that the target will not), every toolchain mismatch Doctor reported, the map check, every skipped feature with its missing prerequisite, and known gaps. Point to `maintain-verification` for keeping the map honest as the app changes.

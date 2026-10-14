@@ -5,7 +5,7 @@
  *   rulesets         plan or apply the GitHub ruleset that backstops agents (tools/rulesets)
  *   upstream-drift   report upstream changes since each adapted skill's recorded commit (tools/upstream-drift)
  *   verify           record or check a fresh verifier's verdict for a pull request (tools/verify)
- *   jev              advisory Jev calls: PR risk for the ship mode, task routing for prompt hooks (tools/jev)
+ *   jev              advisory Jev calls: PR risk for the landing modes, task routing for prompt hooks (tools/jev)
  *   pr-feedback      read-only: a pull request's review threads, checks, and readiness (tools/pr-feedback)
  *   orch             program store and verdict ledger, vendored from pstack (vendor/orch)
  *   watch-pr         pull request and stack watcher, vendored from pstack (vendor/watch-pr)

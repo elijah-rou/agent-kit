@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openStore } from "../../vendor/orch/store.ts";
 import * as verify from "./verify.ts";
-import { countersignable, currentVerdict, evidenceCell, gate, githubSlug, orchStore, parseEvidenceCell, passes, readLedger, rowForHead, VERDICTS } from "./verify.ts";
+import { blockedBy, countersignable, countersignEvidence, currentVerdict, evidenceCell, gate, githubSlug, orchStore, parseEvidenceCell, passes, readLedger, rowForHead, VERDICTS } from "./verify.ts";
 
 describe("verdicts", () => {
 	test("a verdict covers only the head it was recorded on, so a rebase voids it", () => {
@@ -69,6 +69,24 @@ describe("verdicts", () => {
 		expect(countersignable([row("aaa", "verifier-blocked"), row("bbb", "verifier-failed")], 7, "bbb", "f1")).toBe(false);
 	});
 
+	test("a countersign names the approved patch and carries the blocked verdict it replaces", () => {
+		const row = (sha: string, verdict: string, evidence = "run.log", patch = "f1", verifier = "verifier-1") => ({ pr: 7, sha, verdict, evidence: evidenceCell(evidence, patch), verifier });
+		const blocked = [row("aaa", "verifier-blocked")];
+		expect(countersignEvidence([], 7, "aaa", "f1", "f1", "msg")).toEqual({ ok: false, reason: expect.stringContaining("no verifier-blocked verdict covers patch") });
+		expect(countersignEvidence(blocked, 7, "aaa", "f1", undefined, "msg")).toEqual({ ok: false, reason: expect.stringContaining("pass --patch") });
+		expect(countersignEvidence(blocked, 7, "aaa", "f1", "f0", "msg")).toEqual({ ok: false, reason: expect.stringContaining("a changed patch needs new words from the user") });
+		expect(countersignEvidence(blocked, 7, "aaa", "f1", "f", "msg").ok).toBe(false);
+		expect(countersignEvidence(blocked, 7, "aaa", "f1", "f1", "msg | verifier-blocked by me: x").ok).toBe(false);
+		const signed = countersignEvidence(blocked, 7, "aaa", "f1", "f1", "transcript turn 12: \"land it\"");
+		expect(signed).toEqual({ ok: true, evidence: "transcript turn 12: \"land it\" | verifier-blocked by verifier-1: run.log" });
+		if (!signed.ok) throw new Error("unreachable");
+		expect(blockedBy(signed.evidence)).toEqual({ verifier: "verifier-1", evidence: "run.log" });
+		// Carried to a rebased head from the countersigned row, the blocked verdict comes along.
+		const carried = countersignEvidence([row("aaa", "countersigned", signed.evidence, "f1", "coordinator")], 7, "bbb", "f1", "f1", "carry aaa to bbb");
+		expect(carried).toEqual({ ok: true, evidence: "carry aaa to bbb | verifier-blocked by verifier-1: run.log" });
+		expect(blockedBy("no mark")).toBeUndefined();
+	});
+
 	test("reads the ledger orch writes, and treats a missing ledger as no verdicts", async () => {
 		const dir = join(mkdtempSync(join(tmpdir(), "verify-")), "orch");
 		expect(readLedger(dir)).toEqual([]);
@@ -81,8 +99,8 @@ describe("verdicts", () => {
 			await store.close();
 		}
 		expect(readLedger(dir)).toEqual([
-			{ pr: 7, sha: "aaa", verdict: "unit-test-verified", evidence: "run.log patch:p" },
-			{ pr: 8, sha: "bbb", verdict: "countersigned", evidence: "https://x/msg patch:q" },
+			{ pr: 7, sha: "aaa", verdict: "unit-test-verified", evidence: "run.log patch:p", verifier: "v1" },
+			{ pr: 8, sha: "bbb", verdict: "countersigned", evidence: "https://x/msg patch:q", verifier: "coordinator" },
 		]);
 	});
 
@@ -124,6 +142,7 @@ describe("agentic verify, end to end", () => {
 			cli,
 			moveHead: (sha: string) => ((fake.head = sha), write()),
 			changePatch: () => writeFileSync(join(root, "diff.patch"), OTHER_DIFF),
+			patchId: () => spawnSync("git", ["patch-id", "--stable"], { input: spawnSync("cat", [join(root, "diff.patch")], { encoding: "utf8" }).stdout, encoding: "utf8" }).stdout.split(" ")[0],
 			ledger: () => readLedger(join(root, "orch")),
 		};
 	}
@@ -162,30 +181,49 @@ describe("agentic verify, end to end", () => {
 		expect(pr.ledger()).toEqual([]);
 	});
 
-	test("countersigned is refused without a verifier-blocked verdict for the patch, and passes the gate once recorded", () => {
+	test("countersigned is refused without a verifier-blocked verdict for the approved patch, and passes the gate once recorded", () => {
 		const pr = setup();
-		const refused = pr.cli(["record", "7", "--verdict", "countersigned", "--evidence", "user-message.txt"], "coordinator");
+		const sign = (patch: string | undefined, evidence = "user-message.txt") => pr.cli(["record", "7", "--verdict", "countersigned", "--evidence", evidence, ...(patch ? ["--patch", patch] : [])], "coordinator");
+		const approved = pr.patchId();
+		expect(approved).toMatch(/^[0-9a-f]{40}$/);
+		const refused = sign(approved);
 		expect(refused.status).toBe(1);
 		expect(refused.stderr).toContain("no verifier-blocked verdict covers patch");
 		expect(pr.ledger()).toEqual([]);
 
 		expect(pr.cli(["record", "7", "--verdict", "verifier-failed", "--evidence", "run.log"]).status).toBe(0);
-		expect(pr.cli(["record", "7", "--verdict", "countersigned", "--evidence", "user-message.txt"], "coordinator").status).toBe(1);
+		expect(sign(approved).status).toBe(1);
+		// --patch belongs to a countersign only.
+		expect(pr.cli(["record", "7", "--verdict", "verifier-failed", "--evidence", "run.log", "--patch", approved]).status).toBe(2);
 
-		expect(pr.cli(["record", "7", "--verdict", "verifier-blocked", "--evidence", "run.log"]).status).toBe(0);
+		expect(pr.cli(["record", "7", "--verdict", "verifier-blocked", "--evidence", "blocked-run.log"]).status).toBe(0);
 		expect(pr.cli(["status", "7"]).status).toBe(1);
-		const signed = pr.cli(["record", "7", "--verdict", "countersigned", "--evidence", "user-message.txt"], "coordinator");
+		const blockedLedger = pr.ledger();
+		// The user's approval covers the patch shown to them: none named, or another one, is refused.
+		const unnamed = sign(undefined);
+		expect([unnamed.status, unnamed.stderr.includes("pass --patch")]).toEqual([1, true]);
+		const other = sign("0".repeat(40));
+		expect([other.status, other.stderr.includes("a changed patch needs new words from the user")]).toEqual([1, true]);
+		expect(pr.ledger()).toEqual(blockedLedger);
+
+		const signed = sign(approved);
 		expect(signed.status).toBe(0);
 		const status = pr.cli(["status", "7"]);
 		expect([status.status, status.stdout.includes("ledger pass (countersigned")]).toEqual([0, true]);
+		// orch keeps one row per head, so the countersign replaced the blocked row and carries it.
+		const row = pr.ledger().at(-1)!;
+		expect([pr.ledger().length, row.verdict, row.verifier]).toEqual([1, "countersigned", "coordinator"]);
+		expect(blockedBy(parseEvidenceCell(row.evidence).evidence)).toEqual({ verifier: "verifier-1", evidence: "blocked-run.log" });
 
-		// A rebase that keeps the patch can carry the countersign; a changed patch cannot.
+		// A rebase that keeps the patch can carry the countersign, blocked verdict included; a changed patch cannot.
 		pr.moveHead("b".repeat(40));
-		expect(pr.cli(["record", "7", "--verdict", "countersigned", "--evidence", "carry.txt"], "coordinator").status).toBe(0);
+		expect(sign(approved, "carry.txt").status).toBe(0);
 		expect(pr.cli(["status", "7"]).status).toBe(0);
+		expect(blockedBy(parseEvidenceCell(pr.ledger().at(-1)!.evidence).evidence)).toEqual({ verifier: "verifier-1", evidence: "blocked-run.log" });
 		pr.moveHead("c".repeat(40));
 		pr.changePatch();
-		expect(pr.cli(["record", "7", "--verdict", "countersigned", "--evidence", "carry.txt"], "coordinator").status).toBe(1);
+		expect(sign(approved, "carry.txt").status).toBe(1);
+		expect(sign(pr.patchId(), "carry.txt").status).toBe(1);
 	});
 
 	test("a merged pull request reports its ledger state but takes no verdict", () => {

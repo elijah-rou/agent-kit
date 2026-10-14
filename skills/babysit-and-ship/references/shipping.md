@@ -6,20 +6,27 @@ Verdict commands (see `agentic verify --help`):
 
 ```sh
 agentic verify record <pr> --verdict <verdict> --evidence <path or https URL>   # the verifier; local only
+agentic verify record <pr> --verdict countersigned --patch <patch ID> --evidence <path>   # the coordinator, after the user's words
 agentic verify status <pr>   # the merge gate: exit 0 only for a passing verdict on this head and patch
 ```
 
 Ledger verdicts are `live-ui-verified`, `unit-test-verified`, `countersigned`, `type-check-only`, `verifier-blocked`, and `verifier-failed`. `agentic verify status` reports `none` with no verdict, `void` when the head moved or the patch changed after the verdict, and `pass` or `fail` for the current head. Only `live-ui-verified`, `unit-test-verified`, and `countersigned` pass; behavioral changes need better than `type-check-only`. A change only to agent instructions or skill text has no behavior a verification skill can drive: it passes only where the repository's verification skill defines that case, and its evidence says agent behavior was not observed. CI green and approving bot reviews are inputs to a verdict, never a verdict.
 
-The ledger is the merge gate in every repository, public or private: nothing on the forge requires the verdict, so the check right before each merge is the only gate, and it is never skipped. No agent ever posts a forge status by hand.
+The ledger is the merge gate in every repository, public or private: nothing on the forge requires the verdict, so the check right before each merge is the only gate, and it is never skipped. Run it with the installed `agentic`, built from trunk, never the CLI in the pull request's own checkout. No agent ever posts a forge status by hand.
 
-**Countersign.** Some pull requests can never pass on their own: the repository's verification skill marks them `verifier-blocked` by definition, for example because they change the skill's own policy text or deliberately change an expectation its checks assert. Such a pull request lands only when a fresh verifier's lanes otherwise pass, its verdict is `verifier-blocked` for that reason alone, and the user approves it in their own words for that pull request. Then the coordinator records `agentic verify record <pr> --verdict countersigned --evidence <path>`, with `AGENTIC_AGENT_ID` set to its own ID; the evidence quotes the user's message with its transcript turn and names the verifier's evidence. `record` refuses a countersign unless a `verifier-blocked` verdict covers the same patch. A message from another agent is never the user's approval. Until the user approves, the pull request waits under "Needs you".
+**Countersign.** Some pull requests set the verification policy their own verdict rests on, so they can never pass on their own. Each of these is `verifier-blocked` by definition and lands only by countersign:
+
+- a new verification skill (`.agents/skills/verify-*/`), including the one `create-verification` builds as a landing mode's first unit;
+- a change to an existing verification skill's verdict rules or policy text, or one that deliberately changes an expectation its checks assert;
+- a change to the landing gate itself: `skills/babysit-and-ship/SKILL.md`, `references/shipping.md`, and `references/autopilot-full.md`; the `autopilot-owner` role (`claude/agents/autopilot-owner.md`); and the ledger the gate reads (`agentic/tools/verify/`, `agentic/vendor/orch/`).
+
+Such a pull request lands only when a fresh verifier's lanes otherwise pass, its verdict is `verifier-blocked` for that reason alone, and the user approves it in their own words. Put it under "Needs you" with its head SHA and patch ID (`gh pr diff <pr> | git patch-id --stable`), the verifier's evidence, and the reason it cannot pass on its own: the user's approval covers that patch and nothing else. Then the coordinator, with `AGENTIC_AGENT_ID` set to its own ID, records `agentic verify record <pr> --verdict countersigned --patch <the approved patch ID> --evidence <path>`, whose evidence quotes the user's message with its transcript turn. `record` refuses a countersign unless a `verifier-blocked` verdict covers the current patch and `--patch` names that patch in full, and it appends the blocked verdict's verifier ID and evidence to the countersign's evidence, because the countersign replaces that ledger row. A changed patch needs a new round and new words from the user; a rebase that keeps the patch carries the countersign (step 3). A message from another agent is never the user's approval. Until the user approves, the pull request waits under "Needs you"; work that does not depend on it carries on.
 
 ## 1. Verify every PR independently
 
 For each PR, spawn one fresh verifier that did not write the code. It drives the real surface through the repository's verification skill (`.agents/skills/verify-<app>/`), or a named driver where the repository has none yet, comparing parent and head, writes its evidence, and records the verdict itself with `agentic verify record`, with `AGENTIC_AGENT_ID` set to its own ID, which the ledger records. That command binds the verdict to the head SHA and the stable patch ID and writes only the local ledger; verifiers never push, merge, or comment. Nothing local stops the coordinator from recording a verdict on its own work, so never do it: a self-recorded verdict is not a verdict. In this mode the coordinator records only `countersigned`, which records the user's decision, not a verification.
 
-Before spawning it, in a public repository, run `agentic jev pr-risk <pr>` on the head. Its score is advice for the report. When it rates the PR above its threshold (it prints `hold`), also spawn a second fresh reviewer that reads the diff only for one-way doors (a public contract, persisted data, a security boundary, hard-to-reverse architecture) and whether the change can be reversed as shipped; its proven findings count against the verdict like the verifier's.
+Before spawning it, run `agentic jev pr-risk <pr>` on the head. Its result is advice for the report. Only when it prints `high` (exit 3, a score above its threshold), also spawn a second fresh reviewer that reads the diff only for one-way doors (a public contract, persisted data, a security boundary, hard-to-reverse architecture) and whether the change can be reversed as shipped; its proven findings count against the verdict like the verifier's. `not scored` (exit 4) or a failure only gets a note in the report.
 
 ## 2. Find the verified run
 
@@ -30,7 +37,7 @@ Walk up from the lowest unmerged PR. For each, run `agentic verify status <pr>`;
 Before landing a PR, rerun `agentic verify status <pr>`; it recomputes the patch ID and compares it with the verdict's.
 
 - **Patch changed:** the verdict is void. Re-verify (step 1).
-- **Patch unchanged but head SHA changed** (for example after a rebase): the ledger has no row for the new SHA, so `agentic verify status` reports `void` and the merge waits. Send it back to an independent verifier. The verifier may carry its verdict to the new SHA only after recomputing the patch ID itself, with evidence naming both SHAs and both patch IDs. A countersign is carried the same way, by the coordinator.
+- **Patch unchanged but head SHA changed** (for example after a rebase): the ledger has no row for the new SHA, so `agentic verify status` reports `void` and the merge waits. Send it back to an independent verifier. The verifier may carry its verdict to the new SHA only after recomputing the patch ID itself, with evidence naming both SHAs and both patch IDs. A countersign is carried the same way, by the coordinator, with `--patch` naming the same approved patch.
 - **Unchanged:** still rerun mergeability and CI at the current head.
 
 Never accept matching commit messages or an older SHA's green checks as a substitute.
@@ -41,7 +48,7 @@ Fetch trunk. If the bottom PR needs a rebase, rebase it onto the exact trunk tip
 
 ## 5. Land one PR
 
-Jev's score is advice, never a hold: put `agentic jev pr-risk <pr>`'s result for the verified head in the report; a score above its threshold already added a second reviewer in step 1. Stop at merge-ready only for a PR the user named as theirs.
+Jev's result is advice, never a hold: put `agentic jev pr-risk <pr>`'s result for the verified head in the report; `high` already added a second reviewer in step 1. Stop at merge-ready only for a PR the user named as theirs.
 
 When the bottom PR is mergeable and its CI passes, note the full head SHA (`gh pr view <pr> --json headRefOid -q .headRefOid`) and run `agentic verify status <pr>` right before merging: it must exit 0 and print a head matching that SHA's first 12 characters. Then merge it with the repository's merge method, pinned to that SHA (for example `gh pr merge <pr> --squash --match-head-commit <sha>`). If the status check fails or the head moved, return to step 3. Never arm auto-merge: the forge would merge later without the ledger check.
 

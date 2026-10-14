@@ -1,21 +1,24 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
 import { openStore } from "../../vendor/orch/store.ts";
-import { countersignable, evidenceCell, gate, githubSlug, isVerdict, orchStore, readLedger, VERDICTS } from "./verify.ts";
+import { countersignEvidence, evidenceCell, gate, githubSlug, isVerdict, orchStore, readLedger, VERDICTS } from "./verify.ts";
 
 const USAGE = `Usage: verify <record | status> <pr> [options]
 
 Record and check verdicts in the merge ledger, kept in git's common directory. The ledger is the
 merge gate: every merging mode runs status right before each merge, and merges only on exit 0.
 
-  record <pr> --verdict <verdict> --evidence <path or https URL> [--repo owner/repo]
+  record <pr> --verdict <verdict> --evidence <path or https URL> [--patch <patch ID>] [--repo owner/repo]
       Run only as a fresh verifier that did not write the change, after running the repository's
       verification skill against the pull request's head. Writes the ledger row bound to the
       head SHA and patch ID. Local only: it publishes nothing.
       Verdicts: ${VERDICTS.join(", ")}.
       countersigned is the coordinator's, not the verifier's: it records the user's approval in
       words of a pull request a fresh verifier marked verifier-blocked, and is refused unless a
-      verifier-blocked verdict covers the same patch. Its evidence cites the user's message.
+      verifier-blocked verdict covers the same patch and --patch names that patch in full: the
+      patch ID shown to the user with the head they approved. A changed patch needs new words from
+      the user. Its evidence cites the user's message; record appends the blocked verdict's
+      verifier ID and evidence to it, since the countersign replaces that row.
   status <pr> [--repo owner/repo]
       Shows whether the verdict for the current head passes and still covers its patch. A new
       push, rebase, or changed patch voids it.
@@ -72,15 +75,20 @@ async function main(args: string[]): Promise<number> {
 
 	const verdict = option(args, "--verdict");
 	const evidence = option(args, "--evidence");
-	if (!verdict || !isVerdict(verdict) || !evidence) return console.error(USAGE), 2;
+	if (!verdict || !isVerdict(verdict) || !evidence || (verdict !== "countersigned" && args.includes("--patch"))) return console.error(USAGE), 2;
 	const patch = patchId();
-	if (verdict === "countersigned" && !countersignable(readLedger(store), pr, head.headRefOid, patch)) throw new Error(`${slug}#${pr}: no verifier-blocked verdict covers patch ${patch.slice(0, 12)}; a countersign records the user's approval of a fresh verifier's blocked verdict, never a replacement for one`);
+	let recorded = evidence;
+	if (verdict === "countersigned") {
+		const signed = countersignEvidence(readLedger(store), pr, head.headRefOid, patch, option(args, "--patch"), evidence);
+		if (!signed.ok) throw new Error(`${slug}#${pr}: ${signed.reason}`);
+		recorded = signed.evidence;
+	}
 
 	const ledger = openStore(store);
 	try {
 		// Idempotent: a repository's first verdict creates its store.
 		await ledger.init();
-		await ledger.ledger.record({ pr, sha: head.headRefOid, verdict, evidence: evidenceCell(evidence, patch), verifier: process.env.AGENTIC_AGENT_ID ?? "agentic-verify" });
+		await ledger.ledger.record({ pr, sha: head.headRefOid, verdict, evidence: evidenceCell(recorded, patch), verifier: process.env.AGENTIC_AGENT_ID ?? "agentic-verify" });
 	} finally {
 		await ledger.close();
 	}

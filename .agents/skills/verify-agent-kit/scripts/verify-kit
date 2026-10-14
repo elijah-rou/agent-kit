@@ -544,7 +544,7 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 	const contract = rec.step("gate-contract", ["bun", "--eval", `
 		const verify = await import(${JSON.stringify(join(run.checkout, "agentic/tools/verify/verify.ts"))});
 		const rulesets = await import(${JSON.stringify(join(run.checkout, "agentic/tools/rulesets/rulesets.ts"))});
-		const row = (sha, verdict, patch = "f1") => ({ pr: 1, sha, verdict, evidence: verify.evidenceCell("run.log", patch) });
+		const row = (sha, verdict, patch = "f1", evidence = "run.log") => ({ pr: 1, sha, verdict, evidence: verify.evidenceCell(evidence, patch), verifier: "v" });
 		const at = (id) => () => id;
 		const desired = rulesets.desiredRuleset();
 		console.log(JSON.stringify({
@@ -581,12 +581,20 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 				carried: verify.countersignable([row("a", "verifier-blocked")], 1, "b", "f1"),
 				headDecides: verify.countersignable([row("a", "verifier-blocked"), row("b", "verifier-failed")], 1, "b", "f1"),
 			},
+			approvedPatch: {
+				named: verify.countersignEvidence([row("a", "verifier-blocked")], 1, "a", "f1", "f1", "msg"),
+				unnamed: verify.countersignEvidence([row("a", "verifier-blocked")], 1, "a", "f1", undefined, "msg").ok,
+				other: verify.countersignEvidence([row("a", "verifier-blocked")], 1, "a", "f1", "f0", "msg").ok,
+				unblocked: verify.countersignEvidence([row("a", "type-check-only")], 1, "a", "f1", "f1", "msg").ok,
+				carried: verify.countersignEvidence([row("a", "countersigned", "f1", "msg | verifier-blocked by v: run.log")], 1, "b", "f1", "f1", "carry"),
+			},
 		}));`]);
 	const terms = parseJson(contract.stdout) as {
 		forgeExports?: string[]; verdicts?: string[]; passes?: Record<string, boolean>; rules?: { type: string }[];
 		settings?: unknown; settingsSame?: string[]; settingsLoose?: string[]; settingsDisabled?: string[]; settingsBypass?: string[]; settingsExcluded?: string[];
 		latestWins?: string; laterPass?: string; oldHead?: string; noRows?: string; rowForHead?: string; unknown?: boolean[];
 		gate?: Record<string, string>; countersign?: Record<string, boolean>;
+		approvedPatch?: { named?: { ok: boolean; evidence?: string }; unnamed?: boolean; other?: boolean; unblocked?: boolean; carried?: { ok: boolean; evidence?: string } };
 	} | undefined;
 	rec.check(contract.status === 0 && terms !== undefined, `the gate's modules load in the driven checkout (exit ${contract.status})`);
 	rec.check(sameList(terms?.forgeExports, []), `nothing mirrors a verdict to the forge: no status context, status builder, or required verdict check (found ${JSON.stringify(terms?.forgeExports)})`);
@@ -603,6 +611,8 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 	rec.check(g?.none === "none" && g.otherHead === "void" && g.failing === "fail" && g.patchChanged === "void" && g.pass === "pass" && g.countersigned === "pass", `the local gate passes only a passing verdict for the head with an unchanged patch (got ${JSON.stringify(g)})`);
 	const c = terms?.countersign;
 	rec.check(c?.empty === false && c.blocked === true && c.failed === false && c.typeCheck === false && c.otherPatch === false && c.carried === true && c.headDecides === false, `a countersign needs a verifier-blocked verdict for the same patch, the head's own row deciding (got ${JSON.stringify(c)})`);
+	const a = terms?.approvedPatch;
+	rec.check(a?.named?.ok === true && a.named.evidence === "msg | verifier-blocked by v: run.log" && a.unnamed === false && a.other === false && a.unblocked === false && a.carried?.ok === true && a.carried.evidence === "carry | verifier-blocked by v: run.log", `a countersign must name the current patch as the approved one, and its evidence carries the blocked verdict's verifier and evidence, also when carried (got ${JSON.stringify(a)})`);
 
 	if (!ghReady()) return rec.skip("gh is not logged in for the GitHub steps: run gh auth login");
 	const slug = options.slug ?? originSlug(run.checkout);
@@ -641,19 +651,22 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 	const ledgerBefore = realLedger(run.checkout);
 	const status = rec.step("verify-status-merged", ["bun", agentic, "verify", "status", String(merged), "--repo", slug], { env });
 	rec.check(status.status === 1 && status.stdout.startsWith(`${slug}#${merged} (MERGED,`) && status.stdout.includes("ledger none") && !status.stdout.includes("forge"), `verify status on merged #${merged} reports an empty ledger and no forge state, exit 1 (got ${status.status})`);
-	const refused = rec.step("verify-record-merged", ["bun", agentic, "verify", "record", String(merged), "--repo", slug, "--verdict", "type-check-only", "--evidence", rec.dir], { env });
+	// Every record runs from this run's fixture repository (with --repo naming the real one), so even a CLI
+	// that ignored AGENTIC_ORCH_STORE would write the fixture's ledger, never the real one.
+	const fixture = join(runDir(run.runId), "fixture");
+	const refused = rec.step("verify-record-merged", ["bun", agentic, "verify", "record", String(merged), "--repo", slug, "--verdict", "type-check-only", "--evidence", rec.dir], { env, cwd: fixture });
 	rec.check(refused.status === 1 && refused.stderr.includes("verdicts are for open pull requests"), `verify record refuses merged #${merged} (exit ${refused.status})`);
 	rec.check(!existsSync(join(store, "ledger.tsv")), "a refused record writes no ledger");
 
 	if (typesafeKeyPresent()) {
 		const risk = rec.step("pr-risk-merged", ["bun", agentic, "jev", "pr-risk", String(merged), "--repo", slug]);
-		const match = new RegExp(`^${slug.replace(/[.]/g, "\\.")}#${merged}: (clear|hold), P\\(one-way door\\) (\\d\\.\\d\\d) (<=|>) 0\\.3$`).exec(risk.stdout.trim());
+		const match = new RegExp(`^${slug.replace(/[.]/g, "\\.")}#${merged}: (low|high), P\\(one-way door\\) (\\d\\.\\d\\d) (<=|>) 0\\.3$`).exec(risk.stdout.trim());
 		rec.check(match !== null, `jev pr-risk scores merged #${merged} with Jev's probability (printed "${risk.stdout.trim()}")`);
 		if (match) {
 			// The printed P is rounded to two places, so at exactly 0.30 either decision is possible.
 			const p = Number(match[2]);
-			const above = match[1] === "hold";
-			rec.check((p === 0.3 || above === p > 0.3) && match[3] === (above ? ">" : "<=") && risk.status === (above ? 1 : 0), `jev pr-risk marks a score above 0.3 (printed P ${match[2]}, ${match[1]}, exit ${risk.status})`);
+			const above = match[1] === "high";
+			rec.check((p === 0.3 || above === p > 0.3) && match[3] === (above ? ">" : "<=") && risk.status === (above ? 3 : 0), `jev pr-risk marks a score above 0.3 high, exit 3, and one at or below it low, exit 0 (printed P ${match[2]}, ${match[1]}, exit ${risk.status})`);
 		}
 	} else rec.skip("no TypeSafe key for jev pr-risk: set TYPESAFE_API_KEY or, on macOS, add the keychain item typesafe-jev");
 
@@ -666,24 +679,38 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 	if (head?.state !== "OPEN") throw new Error(`#${open} in ${slug} is not open (state ${head?.state ?? "unknown"}); pass --pr with an open pull request`);
 	if (options.pr !== undefined) rec.check(head.headRefOid === run.revision, `the driven checkout is at #${open}'s head (checkout ${run.revision.slice(0, 12)}, head ${head.headRefOid?.slice(0, 12)}); verify a worktree at the head`);
 	else rec.note("smoke-only.txt", `#${open} was picked as the newest open pull request; the driven checkout (${run.revision}) is not necessarily its head, so this record is a ledger smoke check, not evidence about #${open}.\n`);
-	// Every verdict this drive records or attempts never passes, so even a ledger that leaked out of this
-	// run's store could not clear a merge.
+	// Every verdict this drive records never passes, and every countersign it attempts must be refused;
+	// all of them run from the fixture repository, as above.
 	const evidence = join(rec.dir, "verdict-evidence.txt");
 	writeFileSync(evidence, `verify-agent-kit verdict-gate smoke verdict for ${slug}#${open} in run ${run.runId}; ledger at ${store}\n`);
 	const ledgerFile = join(store, "ledger.tsv");
 	const ledgerText = () => (existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : "");
-	const unsigned = rec.step("verify-countersign-unverified", ["bun", agentic, "verify", "record", String(open), "--repo", slug, "--verdict", "countersigned", "--evidence", evidence], { env });
+	const diff = sh(["gh", "pr", "diff", String(open), "-R", slug], { cwd: KIT_CHECKOUT });
+	const patch = diff.status === 0 ? sh(["git", "patch-id", "--stable"], { cwd: KIT_CHECKOUT, input: diff.stdout }).stdout.split(" ")[0] ?? "" : "";
+	rec.check(/^[0-9a-f]{40}$/.test(patch), `the open pull request's patch ID is computed from its diff (got "${patch}")`);
+	const countersign = (name: string, approved: string) => rec.step(name, ["bun", agentic, "verify", "record", String(open), "--repo", slug, "--verdict", "countersigned", "--patch", approved, "--evidence", evidence], { env, cwd: fixture });
+	const unsigned = countersign("verify-countersign-unverified", patch);
 	rec.check(unsigned.status === 1 && unsigned.stderr.includes("no verifier-blocked verdict covers patch") && !existsSync(ledgerFile), `verify record refuses a countersign for open #${open} with no verifier-blocked verdict, and writes no ledger (exit ${unsigned.status})`);
-	const recorded = rec.step("verify-record-open", ["bun", agentic, "verify", "record", String(open), "--repo", slug, "--verdict", "type-check-only", "--evidence", evidence], { env });
+	const recorded = rec.step("verify-record-open", ["bun", agentic, "verify", "record", String(open), "--repo", slug, "--verdict", "type-check-only", "--evidence", evidence], { env, cwd: fixture });
 	rec.check(recorded.status === 0 && recorded.stdout.includes(`recorded type-check-only on ${head.headRefOid?.slice(0, 12)}`) && !recorded.stdout.includes("publish"), `verify record writes the smoke verdict for open #${open} and names no publish step (exit ${recorded.status})`);
 	const ledger = ledgerText();
 	rec.note("ledger.tsv", ledger);
 	const row = ledger.split("\n").filter(Boolean).at(-1)?.split("\t") ?? [];
-	rec.check(row.includes(String(open)) && row.includes(head.headRefOid ?? "?") && row.includes(env.AGENTIC_AGENT_ID) && row.some((cell) => / patch:[0-9a-f]{40}$/.test(cell)), "the run's ledger row binds the PR, its head SHA, the patch ID, and the verifier ID");
-	const overTypeCheck = rec.step("verify-countersign-over-type-check", ["bun", agentic, "verify", "record", String(open), "--repo", slug, "--verdict", "countersigned", "--evidence", evidence], { env });
+	rec.check(row.includes(String(open)) && row.includes(head.headRefOid ?? "?") && row.includes(env.AGENTIC_AGENT_ID) && row.some((cell) => cell.endsWith(` patch:${patch}`)), "the run's ledger row binds the PR, its head SHA, the patch ID, and the verifier ID");
+	const overTypeCheck = countersign("verify-countersign-over-type-check", patch);
 	rec.check(overTypeCheck.status === 1 && overTypeCheck.stderr.includes("no verifier-blocked verdict covers patch") && ledgerText() === ledger, `verify record refuses a countersign over a type-check-only verdict for #${open}, and the ledger is unchanged (exit ${overTypeCheck.status})`);
 	const gateStatus = rec.step("verify-status-open", ["bun", agentic, "verify", "status", String(open), "--repo", slug], { env });
 	rec.check(gateStatus.status === 1 && gateStatus.stdout.includes("ledger fail (type-check-only") && gateStatus.stdout.includes(`at ${head.headRefOid?.slice(0, 12)}`) && !gateStatus.stdout.includes("forge"), `the local gate reads the non-passing smoke verdict back for #${open}'s head and refuses, exit 1`);
+	// Over a verifier-blocked verdict, a countersign naming a patch the user was never shown is refused.
+	const blocked = rec.step("verify-record-blocked", ["bun", agentic, "verify", "record", String(open), "--repo", slug, "--verdict", "verifier-blocked", "--evidence", evidence], { env, cwd: fixture });
+	rec.check(blocked.status === 0 && blocked.stdout.includes(`recorded verifier-blocked on ${head.headRefOid?.slice(0, 12)}`), `verify record writes a verifier-blocked smoke verdict for #${open} (exit ${blocked.status})`);
+	const blockedLedger = ledgerText();
+	rec.note("ledger-blocked.tsv", blockedLedger);
+	const unapproved = countersign("verify-countersign-other-patch", "0".repeat(40));
+	rec.check(unapproved.status === 1 && unapproved.stderr.includes("a changed patch needs new words from the user") && ledgerText() === blockedLedger, `verify record refuses a countersign over verifier-blocked whose --patch is not #${open}'s current patch, and the ledger is unchanged (exit ${unapproved.status})`);
+	const blockedStatus = rec.step("verify-status-blocked", ["bun", agentic, "verify", "status", String(open), "--repo", slug], { env });
+	rec.check(blockedStatus.status === 1 && blockedStatus.stdout.includes("ledger fail (verifier-blocked"), `the local gate refuses the verifier-blocked smoke verdict for #${open}, exit 1`);
+	rec.check(!existsSync(join(git(["rev-parse", "--path-format=absolute", "--git-common-dir"], fixture), "agentic", "orch", "ledger.tsv")), "the fixture repository's ledger stayed empty: every record used this run's store");
 	rec.check(realLedger(run.checkout) === ledgerBefore, "the real verdict ledger is unchanged: every verdict went to this run's store");
 }
 

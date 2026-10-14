@@ -38,6 +38,7 @@ export interface LedgerEntry {
 	sha: string;
 	verdict: string;
 	evidence?: string;
+	verifier?: string;
 }
 
 /** The latest ledger row for a pull request's head, if a verifier recorded one. */
@@ -77,6 +78,12 @@ export function gate(ledger: readonly Required<LedgerEntry>[], pr: number, headS
 
 const COUNTERSIGNABLE: ReadonlySet<string> = new Set<Verdict>(["verifier-blocked", "countersigned"]);
 
+/** The row that decides a countersign: the head's own row, or after a rebase that kept the patch, the latest row for that patch. */
+function countersignDecider(ledger: readonly Required<LedgerEntry>[], pr: number, headSha: string, patchId: string): Required<LedgerEntry> | undefined {
+	const head = rowForHead(ledger, pr, headSha);
+	return head ?? [...ledger].reverse().find((row) => row.pr === pr && parseEvidenceCell(row.evidence).patchId === patchId);
+}
+
 /**
  * Whether the coordinator may record `countersigned` for this head and patch: a fresh verifier must
  * already have recorded `verifier-blocked` for the same patch, so a countersign never stands in for
@@ -85,10 +92,37 @@ const COUNTERSIGNABLE: ReadonlySet<string> = new Set<Verdict>(["verifier-blocked
  * can be carried to the new head.
  */
 export function countersignable(ledger: readonly Required<LedgerEntry>[], pr: number, headSha: string, patchId: string): boolean {
-	const head = rowForHead(ledger, pr, headSha);
-	const samePatch = [...ledger].reverse().find((row) => row.pr === pr && parseEvidenceCell(row.evidence).patchId === patchId);
-	const decider = head ?? samePatch;
+	const decider = countersignDecider(ledger, pr, headSha, patchId);
 	return decider !== undefined && parseEvidenceCell(decider.evidence).patchId === patchId && COUNTERSIGNABLE.has(decider.verdict);
+}
+
+const BLOCKED_MARK = " | verifier-blocked by ";
+
+/**
+ * The evidence a countersign records, or why it is refused. The user approved one patch, named by its
+ * patch ID; a countersign for any other patch needs new words from the user. orch keeps one row per
+ * pull request and head, so the countersign replaces the head's verifier-blocked row: its evidence
+ * carries that row's verifier ID and evidence, and a carried countersign copies them forward.
+ */
+export function countersignEvidence(ledger: readonly Required<LedgerEntry>[], pr: number, headSha: string, patchId: string, approvedPatch: string | undefined, evidence: string): { ok: true; evidence: string } | { ok: false; reason: string } {
+	if (!countersignable(ledger, pr, headSha, patchId)) return { ok: false, reason: `no verifier-blocked verdict covers patch ${patchId.slice(0, 12)}; a countersign records the user's approval of a fresh verifier's blocked verdict, never a replacement for one` };
+	if (approvedPatch === undefined) return { ok: false, reason: `a countersign names the patch the user approved: pass --patch <patch ID> (the current patch is ${patchId})` };
+	if (approvedPatch !== patchId) return { ok: false, reason: `the user approved patch ${approvedPatch}, but the pull request's patch is now ${patchId}; a changed patch needs new words from the user` };
+	if (evidence.includes(BLOCKED_MARK.trim())) return { ok: false, reason: `the countersign's evidence must not contain "${BLOCKED_MARK.trim()}"; the blocked verdict is added to it` };
+	const decider = countersignDecider(ledger, pr, headSha, patchId)!;
+	const decided = parseEvidenceCell(decider.evidence).evidence;
+	const blocked = decider.verdict === "verifier-blocked" ? `${BLOCKED_MARK}${decider.verifier}: ${decided}` : decided.slice(decided.indexOf(BLOCKED_MARK));
+	if (!blocked.startsWith(BLOCKED_MARK)) throw new Error(`countersigned row for ${decider.sha} carries no verifier-blocked evidence: ${decider.evidence}`);
+	return { ok: true, evidence: `${evidence}${blocked}` };
+}
+
+/** The verifier ID and evidence of the verifier-blocked verdict a countersign's evidence carries. */
+export function blockedBy(countersignEvidenceText: string): { verifier: string; evidence: string } | undefined {
+	const at = countersignEvidenceText.indexOf(BLOCKED_MARK);
+	if (at === -1) return undefined;
+	const rest = countersignEvidenceText.slice(at + BLOCKED_MARK.length);
+	const colon = rest.indexOf(": ");
+	return colon === -1 ? undefined : { verifier: rest.slice(0, colon), evidence: rest.slice(colon + 2) };
 }
 
 /**
@@ -108,8 +142,8 @@ export function readLedger(store: string): Required<LedgerEntry>[] {
 	const [header, ...rows] = readFileSync(file, "utf8").split("\n").filter((line) => line.length > 0);
 	if (header !== LEDGER_HEADER) throw new Error(`${file}: unexpected ledger header`);
 	return rows.map((line) => {
-		const [pr, sha, verdict, evidence] = line.split("\t");
-		return { pr: Number(pr.replace(/^#/, "")), sha, verdict, evidence };
+		const [pr, sha, verdict, evidence, verifier] = line.split("\t");
+		return { pr: Number(pr.replace(/^#/, "")), sha, verdict, evidence, verifier };
 	});
 }
 

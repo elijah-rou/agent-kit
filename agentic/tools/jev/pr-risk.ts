@@ -1,12 +1,14 @@
-// PR risk inside the ship mode: a PR whose P(one-way door) is above HOLD_ABOVE waits for the user.
-// It only adds caution; ship never lands anything because Jev said so. The question, the state
-// layout, and the threshold were calibrated together (agentic evals/jev-risk, 2026-10-07):
-// changing any of them means recalibrating. Only public repositories are classified.
+// PR risk inside the landing modes: a PR whose P(one-way door) is above HIGH_ABOVE gets a second
+// audit lane in its verification round. The score never holds a PR, and nothing lands because Jev
+// said so. A PR Jev did not score (unavailable, withheld, or a private repository) gets only a note
+// in the report. The question, the state layout, and the threshold were calibrated together
+// (agentic evals/jev-risk, 2026-10-07): changing any of them means recalibrating. Only public
+// repositories are classified.
 
 import { askJev, isProbability, type Unavailable } from "./egress.ts";
 
-/** A PR scoring above this waits for the user: 73 of 82 one-way doors held, 32 of 99 safe PRs held. */
-export const HOLD_ABOVE = 0.3;
+/** A PR scoring above this is high risk: 73 of 82 one-way doors scored above it, and 32 of 99 safe PRs. */
+export const HIGH_ABOVE = 0.3;
 
 export const PR_RISK_INSTRUCTIONS =
 	"The state is a change about to be merged into a software repository's default branch. " +
@@ -27,12 +29,18 @@ export async function prRisk(state: string, options: Parameters<typeof askJev>[2
 	return answer.type === "noul" && isProbability(answer.noul) ? { kind: "ok", probability: answer.noul } : { kind: "unavailable", detail: "malformed noul answer" };
 }
 
-/** Whether the ship mode may land the PR without the user: only on a confident, low score. */
-export function prDecision(result: Noul): { hold: boolean; reason: string } {
-	if (result.kind === "unavailable") return { hold: true, reason: `Jev unavailable (${result.detail})` };
-	return result.probability > HOLD_ABOVE
-		? { hold: true, reason: `P(one-way door) ${result.probability.toFixed(2)} > ${HOLD_ABOVE}` }
-		: { hold: false, reason: `P(one-way door) ${result.probability.toFixed(2)} <= ${HOLD_ABOVE}` };
+/** A PR's risk: high (above the threshold), low, or not scored (Jev unavailable, the PR withheld, or a private repository). */
+export type Risk = { kind: "high" | "low"; reason: string } | { kind: "not scored"; reason: string };
+
+/** The landing modes add a second audit lane only for high; not scored is only a note in the report. */
+export const RISK_EXIT: Readonly<Record<Risk["kind"], number>> = { low: 0, high: 3, "not scored": 4 };
+
+/** The risk Jev's answer gives a PR; an answer that is not a probability leaves it not scored. */
+export function prDecision(result: Noul): Risk {
+	if (result.kind === "unavailable") return { kind: "not scored", reason: `Jev unavailable (${result.detail})` };
+	return result.probability > HIGH_ABOVE
+		? { kind: "high", reason: `P(one-way door) ${result.probability.toFixed(2)} > ${HIGH_ABOVE}` }
+		: { kind: "low", reason: `P(one-way door) ${result.probability.toFixed(2)} <= ${HIGH_ABOVE}` };
 }
 
 /** The classifier state for a PR, in the layout the thresholds were calibrated on. */

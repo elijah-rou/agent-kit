@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -34,21 +34,50 @@ function scratch(prefix: string): string {
 
 const RECOGNIZING = `# Maintain\n\n${SCHEDULED_RUNS_HEADING}\n\nThis section recognizes ${UPKEEP_MARKER}.\n\n## Reply\n`;
 
-// A copy of the kit's layout: spec.ts beside a maintain-verification skill holding the given text, or none.
-function kit(instructions: string | null = RECOGNIZING): { script: string; instructions: string } {
-	const root = scratch("t3-automation-kit-");
-	mkdirSync(join(root, "skills/t3-automation/scripts"), { recursive: true });
-	copyFileSync(join(import.meta.dir, "spec.ts"), join(root, "skills/t3-automation/scripts/spec.ts"));
-	const path = join(root, "skills/maintain-verification/SKILL.md");
-	if (instructions !== null) {
-		mkdirSync(join(root, "skills/maintain-verification"));
-		writeFileSync(path, instructions);
-	}
-	return { script: join(root, "skills/t3-automation/scripts/spec.ts"), instructions: path };
+type Layout = "detached" | "symlink" | "linked" | "branch";
+interface Kit {
+	script: string;
+	instructions: string;
+	bootstrap: string;
 }
 
-function run(args: string[], cwd?: string, script = kit().script) {
-	const result = spawnSync(process.execPath, [script, ...args], { cwd, encoding: "utf8" });
+// A kit checkout, committed, holding spec.ts beside a maintain-verification skill with the given text, or none.
+function kitCheckout(instructions: string | null, dir = scratch("t3-automation-kit-")): string {
+	mkdirSync(join(dir, "skills/t3-automation/scripts"), { recursive: true });
+	copyFileSync(join(import.meta.dir, "spec.ts"), join(dir, "skills/t3-automation/scripts/spec.ts"));
+	if (instructions !== null) {
+		mkdirSync(join(dir, "skills/maintain-verification"));
+		writeFileSync(join(dir, "skills/maintain-verification/SKILL.md"), instructions);
+	}
+	sh(dir, "init", "-q", "-b", "main");
+	sh(dir, "config", "user.email", "test@example.com");
+	sh(dir, "config", "user.name", "test");
+	sh(dir, "config", "commit.gpgsign", "false");
+	sh(dir, "add", "-A");
+	sh(dir, "commit", "-q", "-m", "kit");
+	return dir;
+}
+
+// A bootstrap root whose tools/agent-kit install holds the kit as bootstrap lays it out (a detached checkout at the
+// pin, or in development mode a symlink to a checkout), or as it must not be (a linked worktree, or on a branch).
+function kit(instructions: string | null = RECOGNIZING, layout: Layout = "detached", bootstrap = scratch("t3-automation-bootstrap-")): Kit {
+	const install = join(bootstrap, "tools/agent-kit");
+	mkdirSync(join(bootstrap, "tools"));
+	if (layout === "detached" || layout === "branch") {
+		mkdirSync(install);
+		kitCheckout(instructions, install);
+		if (layout === "detached") sh(install, "checkout", "-q", "--detach");
+	} else if (layout === "symlink") {
+		const target = kitCheckout(instructions);
+		sh(target, "checkout", "-q", "--detach");
+		symlinkSync(target, install);
+	} else sh(kitCheckout(instructions), "worktree", "add", "-q", "--detach", install);
+	return { script: join(install, "skills/t3-automation/scripts/spec.ts"), instructions: join(install, "skills/maintain-verification/SKILL.md"), bootstrap };
+}
+
+// Runs the kit's script (or another copy of it) with BOOTSTRAP_ROOT set to the kit's bootstrap root.
+function run(args: string[], cwd?: string, copy: Kit = kit(), script = copy.script) {
+	const result = spawnSync(process.execPath, [script, ...args], { cwd, encoding: "utf8", env: { ...process.env, BOOTSTRAP_ROOT: copy.bootstrap } });
 	return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -100,8 +129,9 @@ describe("title and prompt", () => {
 		expect(spec.prompt).not.toMatch(/^\//m);
 	});
 
-	test("the prompt pins every gh call to the repository and repeats the core limits", () => {
-		expect(spec.prompt).toContain("pass -R octo/app to every gh command");
+	test("the prompt names the repository to gh the way each command takes it, and repeats the core limits", () => {
+		expect(spec.prompt).toContain("run every gh command with GH_REPO=octo/app in its environment, and give gh repo commands octo/app as their repository argument");
+		expect(spec.prompt).not.toContain("-R");
 		expect(spec.prompt).toContain("never check out, edit, or commit in /src/app, and work only in a separate worktree off origin/main");
 		expect(spec.prompt).toContain(`open at most one upkeep pull request, from a branch named ${UPKEEP_BRANCH_PREFIX}web-<YYYY-MM-DD> in octo/app`);
 		expect(spec.prompt).toContain("never merge; ask the user nothing; and on any permission prompt, guard, or refusal, end blocked");
@@ -191,7 +221,7 @@ describe("CLI", () => {
 		made.push(linked);
 		sh(dir, "worktree", "add", "-q", "--detach", linked);
 		const copy = kit();
-		const result = run(["upkeep", "--skill", `${SKILL}/`, "--checkout", linked], undefined, copy.script);
+		const result = run(["upkeep", "--skill", `${SKILL}/`, "--checkout", linked], undefined, copy);
 		expect(result.stderr).toBe("");
 		expect(result.code).toBe(0);
 		const spec = JSON.parse(result.stdout) as Spec;
@@ -242,10 +272,10 @@ describe("CLI", () => {
 	});
 
 	test.each([
-		["is missing", null, "maintain-verification is not installed beside this skill"],
+		["is missing", null, "maintain-verification is not installed at"],
 		["does not recognize this version", `${SCHEDULED_RUNS_HEADING}\n\nNo marker.\n`, `has no "${SCHEDULED_RUNS_HEADING}" section naming ${UPKEEP_MARKER}`],
 	])("installed maintain-verification that %s exits 1 and prints nothing", (_, text, message) => {
-		const result = run(["upkeep", "--skill", SKILL], fixture("https://github.com/octo/app"), kit(text).script);
+		const result = run(["upkeep", "--skill", SKILL], fixture("https://github.com/octo/app"), kit(text));
 		expect(result.code).toBe(1);
 		expect(result.stdout).toBe("");
 		expect(result.stderr).toContain(message);
@@ -264,6 +294,60 @@ describe("CLI", () => {
 		const result = run(["upkeep", "--skill", SKILL, "--checkout", dir]);
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("is not a git checkout");
+	});
+
+	test("a symlinked install names the link path, not its target", () => {
+		const copy = kit(RECOGNIZING, "symlink");
+		const result = run(["upkeep", "--skill", SKILL], fixture("https://github.com/octo/app"), copy);
+		expect(result.stderr).toBe("");
+		expect(result.code).toBe(0);
+		expect(copy.instructions).toBe(join(copy.bootstrap, "tools/agent-kit/skills/maintain-verification/SKILL.md"));
+		expect((JSON.parse(result.stdout) as Spec).prompt).toContain(`Read the maintain-verification instructions from ${copy.instructions} now`);
+	});
+
+	test("without BOOTSTRAP_ROOT the install is under ~/.local/share/bootstrap", () => {
+		const home = scratch("t3-automation-home-");
+		const bootstrap = join(home, ".local/share/bootstrap");
+		mkdirSync(bootstrap, { recursive: true });
+		const copy = kit(RECOGNIZING, "detached", bootstrap);
+		const env: Record<string, string | undefined> = { ...process.env, HOME: home };
+		delete env.BOOTSTRAP_ROOT;
+		const result = spawnSync(process.execPath, [copy.script, "upkeep", "--skill", SKILL], { cwd: fixture("https://github.com/octo/app"), encoding: "utf8", env });
+		expect(result.stderr).toBe("");
+		expect(result.status).toBe(0);
+		expect((JSON.parse(result.stdout) as Spec).prompt).toContain(`Read the maintain-verification instructions from ${bootstrap}/tools/agent-kit/skills/maintain-verification/SKILL.md now`);
+	});
+
+	test.each([
+		["a linked worktree", "linked", "is a linked worktree"],
+		["a checkout on a branch", "branch", "has a branch checked out"],
+	] as const)("an install that is %s is refused with exit 1", (_, layout, message) => {
+		const result = run(["upkeep", "--skill", SKILL], fixture("https://github.com/octo/app"), kit(RECOGNIZING, layout));
+		expect(result.code).toBe(1);
+		expect(result.stdout).toBe("");
+		expect(result.stderr).toContain(message);
+	});
+
+	test("a copy of the script outside the install is refused with exit 1", () => {
+		const outside = kitCheckout(RECOGNIZING);
+		sh(outside, "checkout", "-q", "--detach");
+		const result = run(["upkeep", "--skill", SKILL], fixture("https://github.com/octo/app"), kit(), join(outside, "skills/t3-automation/scripts/spec.ts"));
+		expect(result.code).toBe(1);
+		expect(result.stdout).toBe("");
+		expect(result.stderr).toContain("is not inside the agent-kit install");
+	});
+
+	test("a relative BOOTSTRAP_ROOT is refused with exit 1", () => {
+		const copy = kit();
+		const result = run(["upkeep", "--skill", SKILL], fixture("https://github.com/octo/app"), { ...copy, bootstrap: "relative/bootstrap" });
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("BOOTSTRAP_ROOT must be an absolute path");
+	});
+
+	test("SKILL.md describes the prompt's gh repository naming without -R", () => {
+		const text = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
+		expect(text).toContain("GH_REPO=<owner/repo>");
+		expect(text).not.toMatch(/-R\b/);
 	});
 
 	test("--help exits 0", () => {

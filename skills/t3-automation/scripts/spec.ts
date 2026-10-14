@@ -6,7 +6,8 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, join, sep } from "node:path";
 
 const USAGE = `Usage: spec.ts upkeep --skill <dir> [--checkout <path>]
 
@@ -18,8 +19,9 @@ bindToCurrentThread, repo}. Pass title, prompt, schedule, and bindToCurrentThrea
   --checkout <path> Any checkout of the repository; the prompt names its main checkout. Default: the current directory.
 
 The repository is origin's GitHub owner/repo (https or ssh), and the trunk is origin's HEAD. The skill must be on
-origin's trunk, and the maintain-verification skill installed beside this one must have a "## Scheduled runs"
-section naming this version's marker.
+origin's trunk. This script must run from bootstrap's agent-kit install, $BOOTSTRAP_ROOT/tools/agent-kit (default
+~/.local/share/bootstrap), a detached checkout that is not a linked worktree, and that install's maintain-verification
+skill must have a "## Scheduled runs" section naming this version's marker.
 
 Exit status: 0 printed, 1 a git read or precondition failed, 2 usage error.
 `;
@@ -31,8 +33,12 @@ export const SCHEDULED_RUNS_HEADING = "## Scheduled runs";
 export const UPKEEP_BRANCH_PREFIX = "agent/verify-upkeep-";
 export const UPKEEP_TITLE_PREFIX = "Weekly verification upkeep: ";
 // Runs start on a weekday between 04:00 and 06:55 local time, in five-minute slots, picked from the title's hash.
+// T3's fixed_time weekdays number 0 Sunday to 6 Saturday (schedule_task's schema), so [1..5] is Monday to Friday.
 export const UPKEEP_WEEKDAYS = [1, 2, 3, 4, 5] as const;
 export const UPKEEP_WINDOW = { startMinute: 4 * 60, slots: 36, slotMinutes: 5 } as const;
+// Bootstrap installs this kit at <bootstrap root>/tools/agent-kit, its root defaulting as bootstrap's install.sh does.
+const INSTALL_SUBDIR = join("tools", "agent-kit");
+const DEFAULT_BOOTSTRAP_ROOT = join(".local", "share", "bootstrap");
 
 const SKILL_DIR = /^\.agents\/skills\/(verify-([a-z0-9]+(?:-[a-z0-9]+)*))$/;
 const GITHUB_NAME = "([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)/([A-Za-z0-9._-]+?)(?:\\.git)?/?";
@@ -107,7 +113,7 @@ export function upkeepPrompt(input: UpkeepInput, title: string): string {
 		`${UPKEEP_MARKER} Weekly verification upkeep of ${skill} in ${repo}, for schedule "${title}".`,
 		`Read the maintain-verification instructions from ${instructions} now, even if an earlier copy is already in this thread. If that file is missing, has no "${SCHEDULED_RUNS_HEADING}" section, or that section does not contain the marker ${UPKEEP_MARKER}, change nothing and reply only: Schedule "${title}" is obsolete and should be disabled (update_scheduled_task with enabled false, or switch it off in the schedule list).`,
 		`Otherwise follow that Scheduled runs section for repository ${repo}, main checkout ${checkout}, trunk origin/${trunk}, and skill ${skill}.`,
-		`In every case: pass -R ${repo} to every gh command; never check out, edit, or commit in ${checkout}, and work only in a separate worktree off origin/${trunk}; open at most one upkeep pull request, from a branch named ${UPKEEP_BRANCH_PREFIX}${app}-<YYYY-MM-DD> in ${repo}; never merge; ask the user nothing; and on any permission prompt, guard, or refusal, end blocked, naming the action.`,
+		`In every case: run every gh command with GH_REPO=${repo} in its environment, and give gh repo commands ${repo} as their repository argument; never check out, edit, or commit in ${checkout}, and work only in a separate worktree off origin/${trunk}; open at most one upkeep pull request, from a branch named ${UPKEEP_BRANCH_PREFIX}${app}-<YYYY-MM-DD> in ${repo}; never merge; ask the user nothing; and on any permission prompt, guard, or refusal, end blocked, naming the action.`,
 	].join("\n\n");
 }
 
@@ -127,6 +133,25 @@ function git(cwd: string, args: string[]): { ok: boolean; out: string } {
 	return { ok: result.status === 0, out: result.stdout.trim() };
 }
 
+// The maintain-verification path a stored prompt names: under bootstrap's install path, never resolved through a
+// symlink, so a schedule keeps following bootstrap's pin when development mode's link is swapped for the pinned clone.
+// The script must run from inside that install, and the install must be a detached checkout that is not a linked
+// worktree; otherwise a schedule would read a worktree's or a branch's unreviewed instructions every week.
+export function installedInstructions(script: string, env: Record<string, string | undefined>, home: string): string {
+	const root = env.BOOTSTRAP_ROOT || join(home, DEFAULT_BOOTSTRAP_ROOT);
+	if (!isAbsolute(root)) throw new Failure(`BOOTSTRAP_ROOT must be an absolute path, got "${root}"`);
+	const install = join(root, INSTALL_SUBDIR);
+	if (!existsSync(install)) throw new Failure(`agent-kit is not installed at ${install}; run this script from bootstrap's install`);
+	const realInstall = realpathSync(install);
+	if (!realpathSync(script).startsWith(realInstall + sep)) throw new Failure(`${script} is not inside the agent-kit install at ${install}; run the script installed there`);
+	const top = git(install, ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"]);
+	const [toplevel, gitDir, commonDir] = top.out.split("\n");
+	if (!top.ok || toplevel === undefined || realpathSync(toplevel) !== realInstall) throw new Failure(`the agent-kit install at ${install} is not a git checkout`);
+	if (gitDir !== commonDir) throw new Failure(`the agent-kit install at ${install} is a linked worktree; install the kit with bootstrap`);
+	if (git(install, ["symbolic-ref", "-q", "HEAD"]).ok) throw new Failure(`the agent-kit install at ${install} has a branch checked out; bootstrap's install is detached at its pin`);
+	return join(install, "skills", "maintain-verification", "SKILL.md");
+}
+
 // Reads git to fill in the upkeep input; every read that fails stops with the command to run instead.
 export function resolveUpkeep(skillArg: string, checkoutArg: string, instructions: string): UpkeepInput {
 	const skill = parseSkill(skillArg).path;
@@ -142,7 +167,7 @@ export function resolveUpkeep(skillArg: string, checkoutArg: string, instruction
 	if (!head.ok || !head.out.startsWith("origin/")) throw new Failure("origin's HEAD is unknown; run git remote set-head origin --auto");
 	const trunk = head.out.slice("origin/".length);
 	if (!git(main, ["cat-file", "-e", `origin/${trunk}:${skill}/SKILL.md`]).ok) throw new Failure(`${skill}/SKILL.md is not on origin/${trunk}; schedule upkeep once it lands`);
-	if (!existsSync(instructions)) throw new Failure(`maintain-verification is not installed beside this skill: ${instructions}`);
+	if (!existsSync(instructions)) throw new Failure(`maintain-verification is not installed at ${instructions}`);
 	if (!recognizesUpkeep(readFileSync(instructions, "utf8"))) throw new Failure(`${instructions} has no "${SCHEDULED_RUNS_HEADING}" section naming ${UPKEEP_MARKER}; a schedule created now would only report itself obsolete`);
 	return { repo, trunk, checkout: main, skill, instructions };
 }
@@ -170,7 +195,7 @@ export function main(argv: string[]): number {
 	}
 	try {
 		const { skill, checkout } = parseArgs(argv);
-		const instructions = join(realpathSync(join(import.meta.dir, "..", "..")), "maintain-verification", "SKILL.md");
+		const instructions = installedInstructions(import.meta.path, process.env, homedir());
 		process.stdout.write(`${JSON.stringify(renderUpkeep(resolveUpkeep(skill, checkout, instructions)), null, 2)}\n`);
 		return 0;
 	} catch (error) {

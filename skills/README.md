@@ -44,7 +44,7 @@ Local adaptations use narrow automatic triggers, remove Cursor tools, model rout
 MCP assumptions, cross-skill invocation, and publication behavior, and preserve evidence
 and source boundaries. The upstream MIT license is preserved in `PSTACK-LICENSE`.
 
-The `code-design`, `git-workflow`, `github-rulesets`, `repo-baseline`, `technology-selection`, `source-grounded-research`, `spike`, and `verification` skills are original to this repository. `git-workflow`'s `references/pr-review.md` condenses the reviewer prompt and rubric of pstack's `interrogate` (MIT, `PSTACK-LICENSE`) into one fresh reviewer, adds a precedent lens and the repository's review rules, and drops the multi-model panel and Cursor tooling.
+The `code-design`, `git-workflow`, `github-rulesets`, `new-project`, `repo-baseline`, `technology-selection`, `source-grounded-research`, `spike`, and `verification` skills are original to this repository. `git-workflow`'s `references/pr-review.md` condenses the reviewer prompt and rubric of pstack's `interrogate` (MIT, `PSTACK-LICENSE`) into one fresh reviewer, adds a precedent lens and the repository's review rules, and drops the multi-model panel and Cursor tooling.
 
 The `feature-shaping` skill is original to this repository. Its risk-scaled design workflow
 is informed by HumanLayer's
@@ -146,4 +146,4 @@ Every installed skill owns a self-contained primary workflow and may read refere
 its own directory. Global agent policy may run `unslop` as a separate final pass over an
 artifact's prose; the primary skill does not invoke it from within its workflow. The agentic
 judgment skills may name another skill for a step that skill owns (for example, `background-run`
-defers the Attention review to `show-me-your-work`) and never restate that procedure.
+defers the Attention review to `show-me-your-work`) and never restate that procedure. `new-project` is a router on the same terms: each of its steps names the skill that owns it.

@@ -28,3 +28,4 @@ skills/teach
 skills/github-rulesets
 skills/repo-baseline
 skills/spike
+skills/new-project

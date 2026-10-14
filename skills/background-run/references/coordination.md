@@ -40,7 +40,7 @@ A child's state is one of:
 
 **Replace, then replan.** A `stuck` or `failed` child is the one kind that is replaced. Stop it first, so a branch never has two writers, and give the replacement a fresh brief that carries the original brief, every later directive, and the old child's report, branch, and log. An item gets its original child plus at most two replacements; when the second replacement also ends `stuck` or `failed`, it gets no further child on the same brief: change the approach, split the item, or put it under "Needs you". A stall never counts as proof the work is done or as a reason to drop it.
 
-**The run's own state.** The `run` row is `running`, `held` when the user says stop or hold (every child stops writing at once and is recorded `held`), `paused` when the run stops itself at a dead end or at the end of its budget, or `done` when the program finishes. Only the user's own words move a `held` or `paused` run back to `running`.
+**The run's own state.** The `run` row is `running`, `held` when the user says stop, hold, or pause (every child stops writing at once and is recorded `held`), `paused` when the run stops itself at a dead end or at the end of its budget, or `done` when the program finishes. Only the user's own words move a `held` or `paused` run back to `running`.
 
 **Budget.** When the user states a budget for the program (time, usage, or a number of pull requests), stop launching new work at about 70% of it, and spend the rest landing what is verified. When it runs out, the run is `paused`. Report the items left unstarted.
 

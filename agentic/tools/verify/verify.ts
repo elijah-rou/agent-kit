@@ -1,31 +1,24 @@
 // Verdicts for the merge ledger. A fresh verifier that did not write the change records one with
-// `agentic verify record`, a local write; the coordinator mirrors it to the forge with
-// `agentic verify publish`, so the verifier never publishes. Nothing local stops the author from
-// recording: verifier independence rests on the instructions. A verdict covers one head SHA, and
-// status and publish also recompute the patch ID and refuse a verdict whose patch changed.
+// `agentic verify record`, a local write. The ledger is the merge gate: every merging mode runs
+// `agentic verify status` right before each merge and merges only on exit 0 for the head it merges.
+// Nothing posts the verdict to the forge. Nothing local stops the author from recording: verifier
+// independence rests on the instructions. A verdict covers one head SHA, and status recomputes the
+// patch ID and refuses a verdict whose patch changed.
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const STATUS_CONTEXT = "agentic/verdict";
-
-export const VERDICTS = ["live-ui-verified", "unit-test-verified", "type-check-only", "verifier-blocked", "verifier-failed"] as const;
+export const VERDICTS = ["live-ui-verified", "unit-test-verified", "countersigned", "type-check-only", "verifier-blocked", "verifier-failed"] as const;
 export type Verdict = (typeof VERDICTS)[number];
 
 export function isVerdict(value: string): value is Verdict {
 	return (VERDICTS as readonly string[]).includes(value);
 }
 
-const PASSING: ReadonlySet<string> = new Set<Verdict>(["live-ui-verified", "unit-test-verified"]);
+const PASSING: ReadonlySet<string> = new Set<Verdict>(["live-ui-verified", "unit-test-verified", "countersigned"]);
 
 export function passes(verdict: string): boolean {
 	return PASSING.has(verdict);
-}
-
-/** The commit status that mirrors a verdict on the forge; a description is capped at 140 characters. */
-export function statusFor(verdict: Verdict, patchId: string, evidence: string): { state: "success" | "failure"; description: string; targetUrl?: string } {
-	const description = `${verdict}, patch ${patchId.slice(0, 12)}`.slice(0, 140);
-	return { state: passes(verdict) ? "success" : "failure", description, ...(/^https:\/\//.test(evidence) ? { targetUrl: evidence } : {}) };
 }
 
 /** The ledger's evidence cell: the verifier's evidence plus the patch ID the verdict covers. */
@@ -60,6 +53,42 @@ export function currentVerdict(ledger: readonly LedgerEntry[], pr: number, headS
 	const forHead = [...rows].reverse().find((row) => row.sha === headSha);
 	if (!forHead) return { state: "void", verdict: latest.verdict, sha: latest.sha };
 	return { state: passes(forHead.verdict) ? "pass" : "fail", verdict: forHead.verdict, sha: forHead.sha };
+}
+
+export interface Gate {
+	/** pass only when a passing verdict covers the head and its patch is unchanged; a merge needs pass. */
+	state: "pass" | "fail" | "void" | "none";
+	verdict?: string;
+	sha?: string;
+	patchChanged: boolean;
+}
+
+/**
+ * The local merge gate: the verdict for the head decides, and a patch that changed since the verdict
+ * voids it. The current patch ID is computed only when a row covers the head, since it needs the diff.
+ */
+export function gate(ledger: readonly Required<LedgerEntry>[], pr: number, headSha: string, currentPatch: () => string): Gate {
+	const verdict = currentVerdict(ledger, pr, headSha);
+	const row = rowForHead(ledger, pr, headSha);
+	if (!row) return { ...verdict, patchChanged: false };
+	const patchChanged = parseEvidenceCell(row.evidence).patchId !== currentPatch();
+	return patchChanged ? { state: "void", verdict: verdict.verdict, sha: verdict.sha, patchChanged } : { ...verdict, patchChanged };
+}
+
+const COUNTERSIGNABLE: ReadonlySet<string> = new Set<Verdict>(["verifier-blocked", "countersigned"]);
+
+/**
+ * Whether the coordinator may record `countersigned` for this head and patch: a fresh verifier must
+ * already have recorded `verifier-blocked` for the same patch, so a countersign never stands in for
+ * a verification that did not run or that failed. The head's own row decides when there is one;
+ * after a rebase that kept the patch, the latest row for the same patch decides, so a countersign
+ * can be carried to the new head.
+ */
+export function countersignable(ledger: readonly Required<LedgerEntry>[], pr: number, headSha: string, patchId: string): boolean {
+	const head = rowForHead(ledger, pr, headSha);
+	const samePatch = [...ledger].reverse().find((row) => row.pr === pr && parseEvidenceCell(row.evidence).patchId === patchId);
+	const decider = head ?? samePatch;
+	return decider !== undefined && parseEvidenceCell(decider.evidence).patchId === patchId && COUNTERSIGNABLE.has(decider.verdict);
 }
 
 /**

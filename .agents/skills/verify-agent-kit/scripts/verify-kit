@@ -19,7 +19,7 @@ const RUN_ID = /^ak-\d{8}-\d{6}-\d+$/;
 // Versioned so a kit from before the kit-binding check refuses runs this kit launched.
 const MARKER = "verify-kit run v2";
 const STEP_TIMEOUT_MS = 180_000;
-const FEATURES = ["task-route", "merge-gate", "pr-state", "skill-catalog", "claude-surface", "git-guard"] as const;
+const FEATURES = ["task-route", "verdict-gate", "pr-state", "skill-catalog", "claude-surface", "git-guard"] as const;
 type Feature = (typeof FEATURES)[number];
 type Outcome = { state: "PASS" | "FAIL" | "SKIP"; detail?: string };
 type RunInfo = { marker: string; runId: string; checkout: string; revision: string; tree: string; kit: string; kitRevision: string; kitTree: string; dirty: boolean; startedAt: string };
@@ -96,7 +96,7 @@ Features: ${FEATURES.join(", ")}
 
 Examples:
   ${CLI} drive ak-20261012-213000-4242 task-route
-  ${CLI} drive ak-20261012-213000-4242 merge-gate --pr 31
+  ${CLI} drive ak-20261012-213000-4242 verdict-gate --pr 31
   ${CLI} drive ak-20261012-213000-4242 pr-state --merged-pr 22
   ${CLI} drive ak-20261012-213000-4242 skill-catalog
   ${CLI} drive ak-20261012-213000-4242 claude-surface
@@ -372,8 +372,8 @@ function doctor(runId: string | undefined): boolean {
 	const installedFile = join(run.checkout, "node_modules/commander/package.json");
 	const installed = existsSync(installedFile) ? (JSON.parse(readFileSync(installedFile, "utf8")) as { version: string }).version : undefined;
 	need(locked !== undefined && installed === locked, `node_modules has commander ${locked} from bun.lock`, `node_modules has commander ${installed ?? "none"}, bun.lock wants ${locked ?? "?"}; run "${CLI} launch --checkout ${run.checkout} --install"`);
-	lines.push(`info gh login: ${ghReady() ? "ready" : "absent (merge-gate and pr-state skip their GitHub steps)"}`);
-	lines.push(`info TypeSafe key: ${typesafeKeyPresent() ? "present" : "absent (task-route and merge-gate skip their Jev steps)"}`);
+	lines.push(`info gh login: ${ghReady() ? "ready" : "absent (verdict-gate and pr-state skip their GitHub steps)"}`);
+	lines.push(`info TypeSafe key: ${typesafeKeyPresent() ? "present" : "absent (task-route and verdict-gate skip their Jev steps)"}`);
 	const claude = Bun.which("claude");
 	lines.push(`info claude CLI: ${claude ? sh([claude, "--version"], { cwd: KIT_CHECKOUT }).stdout.trim() : "absent (claude-surface skips the Mod steps)"}`);
 	lines.push(`info kit ${run.kit} at ${run.kitRevision.slice(0, 12)}${run.kit === run.checkout ? " drives itself" : ` drives ${run.checkout}`}; bun ${Bun.version}; the agentic on PATH is never used`);
@@ -529,11 +529,13 @@ function realLedger(checkout: string): string {
 
 const BASELINE_RULES = ["deletion", "non_fast_forward", "required_linear_history"];
 const BACKSTOP_SETTINGS = { name: "agentic-backstop", target: "branch", enforcement: "active", conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: [] } }, bypass_actors: [] };
-const GATE_RULES = [...BASELINE_RULES, "pull_request", "required_status_checks"];
+const VERDICTS = ["live-ui-verified", "unit-test-verified", "countersigned", "type-check-only", "verifier-blocked", "verifier-failed"];
+const PASSING = ["live-ui-verified", "unit-test-verified", "countersigned"];
 
-function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
+function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 	const agentic = join(run.checkout, "agentic/bin/agentic");
-	for (const [name, argv] of [["verify-usage", ["verify"]], ["rulesets-usage", ["rulesets"]], ["pr-risk-usage", ["jev", "pr-risk", "0"]]] as const) {
+	// publish and --tier are gone: both must be usage errors that reach neither the ledger nor GitHub.
+	for (const [name, argv] of [["verify-usage", ["verify"]], ["verify-publish-gone", ["verify", "publish", "1"]], ["rulesets-usage", ["rulesets"]], ["rulesets-tier-gone", ["rulesets", "plan", "o/r", "--tier", "merge-gate"]], ["pr-risk-usage", ["jev", "pr-risk", "0"]]] as const) {
 		const usage = rec.step(name, ["bun", agentic, ...argv]);
 		rec.check(usage.status === 2, `agentic ${argv.join(" ")} is a usage error, exit 2 (got ${usage.status})`);
 	}
@@ -542,65 +544,78 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 	const contract = rec.step("gate-contract", ["bun", "--eval", `
 		const verify = await import(${JSON.stringify(join(run.checkout, "agentic/tools/verify/verify.ts"))});
 		const rulesets = await import(${JSON.stringify(join(run.checkout, "agentic/tools/rulesets/rulesets.ts"))});
-		const patch = "0".repeat(40);
+		const row = (sha, verdict, patch = "f1") => ({ pr: 1, sha, verdict, evidence: verify.evidenceCell("run.log", patch) });
+		const at = (id) => () => id;
+		const desired = rulesets.desiredRuleset();
 		console.log(JSON.stringify({
-			statusContext: verify.STATUS_CONTEXT,
-			verdictContext: rulesets.VERDICT_CONTEXT,
+			forgeExports: ["STATUS_CONTEXT", "statusFor"].filter((name) => name in verify).concat(["VERDICT_CONTEXT", "splitChecks"].filter((name) => name in rulesets)),
 			verdicts: verify.VERDICTS,
 			passes: Object.fromEntries(verify.VERDICTS.map((v) => [v, verify.passes(v)])),
-			states: Object.fromEntries(verify.VERDICTS.map((v) => [v, verify.statusFor(v, patch, "local-evidence").state])),
-			baseline: rulesets.desiredRuleset("baseline", ["ci"]).rules,
-			gate: rulesets.desiredRuleset("merge-gate", ["ci"]).rules,
-			settings: Object.fromEntries(["baseline", "merge-gate"].map((tier) => [tier, (({ name, target, enforcement, conditions, bypass_actors }) => ({ name, target, enforcement, conditions, bypass_actors }))(rulesets.desiredRuleset(tier, ["ci"]))])),
-			settingsSame: rulesets.settingsDiff(${JSON.stringify(BACKSTOP_SETTINGS)}, rulesets.desiredRuleset("merge-gate", ["ci"])),
-			settingsLoose: rulesets.settingsDiff({ enforcement: "evaluate", bypass_actors: [{ actor_id: 1, actor_type: "OrganizationAdmin" }], conditions: { ref_name: { include: ["refs/heads/other"], exclude: [] } } }, rulesets.desiredRuleset("merge-gate", ["ci"])),
-			settingsDisabled: rulesets.settingsDiff({ ...${JSON.stringify(BACKSTOP_SETTINGS)}, enforcement: "disabled" }, rulesets.desiredRuleset("merge-gate", ["ci"])),
-			settingsBypass: rulesets.settingsDiff({ ...${JSON.stringify(BACKSTOP_SETTINGS)}, bypass_actors: [{ actor_id: 1, actor_type: "OrganizationAdmin" }] }, rulesets.desiredRuleset("merge-gate", ["ci"])),
-			settingsExcluded: rulesets.settingsDiff({ ...${JSON.stringify(BACKSTOP_SETTINGS)}, conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: ["refs/heads/main"] } } }, rulesets.desiredRuleset("merge-gate", ["ci"])),
+			rules: desired.rules,
+			settings: (({ name, target, enforcement, conditions, bypass_actors }) => ({ name, target, enforcement, conditions, bypass_actors }))(desired),
+			settingsSame: rulesets.settingsDiff(${JSON.stringify(BACKSTOP_SETTINGS)}, desired),
+			settingsLoose: rulesets.settingsDiff({ enforcement: "evaluate", bypass_actors: [{ actor_id: 1, actor_type: "OrganizationAdmin" }], conditions: { ref_name: { include: ["refs/heads/other"], exclude: [] } } }, desired),
+			settingsDisabled: rulesets.settingsDiff({ ...${JSON.stringify(BACKSTOP_SETTINGS)}, enforcement: "disabled" }, desired),
+			settingsBypass: rulesets.settingsDiff({ ...${JSON.stringify(BACKSTOP_SETTINGS)}, bypass_actors: [{ actor_id: 1, actor_type: "OrganizationAdmin" }] }, desired),
+			settingsExcluded: rulesets.settingsDiff({ ...${JSON.stringify(BACKSTOP_SETTINGS)}, conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: ["refs/heads/main"] } } }, desired),
 			latestWins: verify.currentVerdict([{ pr: 1, sha: "a", verdict: "live-ui-verified" }, { pr: 1, sha: "a", verdict: "verifier-failed" }], 1, "a").state,
 			laterPass: verify.currentVerdict([{ pr: 1, sha: "a", verdict: "verifier-failed" }, { pr: 1, sha: "a", verdict: "unit-test-verified" }], 1, "a").state,
 			oldHead: verify.currentVerdict([{ pr: 1, sha: "b", verdict: "live-ui-verified" }], 1, "a").state,
 			noRows: verify.currentVerdict([{ pr: 2, sha: "a", verdict: "live-ui-verified" }], 1, "a").state,
 			rowForHead: verify.rowForHead([{ pr: 1, sha: "a", verdict: "first" }, { pr: 1, sha: "a", verdict: "second" }, { pr: 2, sha: "a", verdict: "other" }], 1, "a")?.verdict,
 			unknown: [verify.isVerdict("passed"), verify.passes("passed")],
+			gate: {
+				none: verify.gate([], 1, "a", at("f1")).state,
+				otherHead: verify.gate([row("b", "live-ui-verified")], 1, "a", at("f1")).state,
+				failing: verify.gate([row("a", "verifier-blocked")], 1, "a", at("f1")).state,
+				patchChanged: verify.gate([row("a", "live-ui-verified")], 1, "a", at("f2")).state,
+				pass: verify.gate([row("a", "live-ui-verified")], 1, "a", at("f1")).state,
+				countersigned: verify.gate([row("a", "countersigned")], 1, "a", at("f1")).state,
+			},
+			countersign: {
+				empty: verify.countersignable([], 1, "a", "f1"),
+				blocked: verify.countersignable([row("a", "verifier-blocked")], 1, "a", "f1"),
+				failed: verify.countersignable([row("a", "verifier-failed")], 1, "a", "f1"),
+				typeCheck: verify.countersignable([row("a", "type-check-only")], 1, "a", "f1"),
+				otherPatch: verify.countersignable([row("a", "verifier-blocked", "f0")], 1, "a", "f1"),
+				carried: verify.countersignable([row("a", "verifier-blocked")], 1, "b", "f1"),
+				headDecides: verify.countersignable([row("a", "verifier-blocked"), row("b", "verifier-failed")], 1, "b", "f1"),
+			},
 		}));`]);
 	const terms = parseJson(contract.stdout) as {
-		statusContext?: string; verdictContext?: string; verdicts?: string[]; passes?: Record<string, boolean>; states?: Record<string, string>;
-		baseline?: { type: string }[]; gate?: { type: string; parameters?: { required_status_checks?: { context: string }[] } }[];
-		settings?: Record<string, unknown>; settingsSame?: string[]; settingsLoose?: string[]; settingsDisabled?: string[]; settingsBypass?: string[]; settingsExcluded?: string[];
+		forgeExports?: string[]; verdicts?: string[]; passes?: Record<string, boolean>; rules?: { type: string }[];
+		settings?: unknown; settingsSame?: string[]; settingsLoose?: string[]; settingsDisabled?: string[]; settingsBypass?: string[]; settingsExcluded?: string[];
 		latestWins?: string; laterPass?: string; oldHead?: string; noRows?: string; rowForHead?: string; unknown?: boolean[];
+		gate?: Record<string, string>; countersign?: Record<string, boolean>;
 	} | undefined;
-	const verdicts = ["live-ui-verified", "unit-test-verified", "type-check-only", "verifier-blocked", "verifier-failed"];
-	const passing = ["live-ui-verified", "unit-test-verified"];
 	rec.check(contract.status === 0 && terms !== undefined, `the gate's modules load in the driven checkout (exit ${contract.status})`);
-	rec.check(terms?.statusContext === "agentic/verdict" && terms.verdictContext === "agentic/verdict", "verify posts, and the merge-gate tier requires, the agentic/verdict status");
-	rec.check(sameList(terms?.verdicts, verdicts), `the verdicts are exactly ${verdicts.join(", ")}`);
-	rec.check(verdicts.every((v) => terms?.passes?.[v] === passing.includes(v) && terms.states?.[v] === (passing.includes(v) ? "success" : "failure")), "only live-ui-verified and unit-test-verified pass, and only they post success");
-	rec.check(sameList(terms?.baseline?.map((rule) => rule.type), BASELINE_RULES), `the baseline tier is exactly ${BASELINE_RULES.join(", ")}`);
-	const gateChecks = terms?.gate?.find((rule) => rule.type === "required_status_checks")?.parameters?.required_status_checks?.map((check) => check.context) ?? [];
-	rec.check(sameList(terms?.gate?.map((rule) => rule.type), GATE_RULES) && gateChecks.includes("agentic/verdict") && gateChecks.includes("ci"), "the merge-gate tier adds a pull request rule and required checks holding agentic/verdict and the passing CI checks");
-	for (const tier of ["baseline", "merge-gate"]) {
-		const got = (terms?.settings as Record<string, unknown> | undefined)?.[tier];
-		rec.check(canonical(got) === canonical(BACKSTOP_SETTINGS), `the ${tier} ruleset is ${canonical(BACKSTOP_SETTINGS)} (got ${canonical(got)})`);
-	}
+	rec.check(sameList(terms?.forgeExports, []), `nothing mirrors a verdict to the forge: no status context, status builder, or required verdict check (found ${JSON.stringify(terms?.forgeExports)})`);
+	rec.check(sameList(terms?.verdicts, VERDICTS), `the verdicts are exactly ${VERDICTS.join(", ")}`);
+	rec.check(VERDICTS.every((v) => terms?.passes?.[v] === PASSING.includes(v)), `only ${PASSING.join(", ")} pass`);
+	rec.check(sameList(terms?.rules?.map((rule) => rule.type), BASELINE_RULES), `the ruleset is exactly ${BASELINE_RULES.join(", ")}: no pull request or required checks`);
+	rec.check(canonical(terms?.settings) === canonical(BACKSTOP_SETTINGS), `the ruleset is ${canonical(BACKSTOP_SETTINGS)} (got ${canonical(terms?.settings)})`);
 	const reports = (got: string[] | undefined, wanted: string[]) => got !== undefined && wanted.every((setting) => got.includes(setting));
 	rec.check(sameList(terms?.settingsSame, []), `the plan reports nothing for the desired settings (got ${JSON.stringify(terms?.settingsSame)})`);
 	rec.check(reports(terms?.settingsLoose, ["enforcement", "bypass_actors", "conditions"]) && reports(terms?.settingsDisabled, ["enforcement"]) && reports(terms?.settingsBypass, ["bypass_actors"]) && reports(terms?.settingsExcluded, ["conditions"]), "the plan reports evaluate or disabled enforcement, a bypass actor on an active ruleset, another branch, and an excluded branch as settings to change");
-	rec.check(terms?.latestWins === "fail" && terms.laterPass === "pass" && terms.oldHead === "void" && terms.noRows === "none" && terms.rowForHead === "second", "the latest verdict for the head decides, a verdict for an old head is void, and publish posts the latest row for the head");
+	rec.check(terms?.latestWins === "fail" && terms.laterPass === "pass" && terms.oldHead === "void" && terms.noRows === "none" && terms.rowForHead === "second", "the latest verdict for the head decides, and a verdict for an old head is void");
 	rec.check(sameList(terms?.unknown?.map(String), ["false", "false"]), "a verdict outside the list is neither recognized nor passing");
+	const g = terms?.gate;
+	rec.check(g?.none === "none" && g.otherHead === "void" && g.failing === "fail" && g.patchChanged === "void" && g.pass === "pass" && g.countersigned === "pass", `the local gate passes only a passing verdict for the head with an unchanged patch (got ${JSON.stringify(g)})`);
+	const c = terms?.countersign;
+	rec.check(c?.empty === false && c.blocked === true && c.failed === false && c.typeCheck === false && c.otherPatch === false && c.carried === true && c.headDecides === false, `a countersign needs a verifier-blocked verdict for the same patch, the head's own row deciding (got ${JSON.stringify(c)})`);
 
 	if (!ghReady()) return rec.skip("gh is not logged in for the GitHub steps: run gh auth login");
 	const slug = options.slug ?? originSlug(run.checkout);
 	if (!slug) return rec.skip("the driven checkout has no GitHub origin: pass --repo owner/name");
 
-	// Plans are dry runs: observe that the live ruleset is unchanged, and check each plan against it.
+	// The plan is a dry run: observe that the live ruleset is unchanged, and check the plan against it.
 	const liveRuleset = (): string => {
 		const id = (ghJson(`repos/${slug}/rulesets`) as { id: number; name: string }[]).find((ruleset) => ruleset.name === "agentic-backstop")?.id;
 		return id === undefined ? "none" : JSON.stringify(ghJson(`repos/${slug}/rulesets/${id}`));
 	};
 	const rulesetBefore = liveRuleset();
-	const liveState = rulesetBefore === "none" ? undefined : (JSON.parse(rulesetBefore) as { enforcement?: string; bypass_actors?: unknown[]; conditions?: { ref_name?: { include?: string[]; exclude?: string[] } }; rules: { type: string; parameters?: { required_status_checks?: { context: string }[] } }[] });
-	const live = liveState?.rules ?? [];
+	const liveState = rulesetBefore === "none" ? undefined : (JSON.parse(rulesetBefore) as { enforcement?: string; bypass_actors?: unknown[]; conditions?: { ref_name?: { include?: string[]; exclude?: string[] } }; rules: { type: string }[] });
+	const types = (liveState?.rules ?? []).map((rule) => rule.type);
 	const sorted = (list: readonly string[] | undefined) => JSON.stringify([...(list ?? [])].sort());
 	const expectSettings = liveState === undefined ? [] : [
 		...(liveState.enforcement !== BACKSTOP_SETTINGS.enforcement ? ["~enforcement"] : []),
@@ -608,25 +623,16 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 		...(sorted(liveState.conditions?.ref_name?.include) !== sorted(BACKSTOP_SETTINGS.conditions.ref_name.include) || sorted(liveState.conditions?.ref_name?.exclude) !== sorted(BACKSTOP_SETTINGS.conditions.ref_name.exclude) ? ["~conditions"] : []),
 	];
 	rec.note("ruleset-before.json", rulesetBefore + "\n");
-	for (const [tier, wanted] of [["baseline", BASELINE_RULES], ["merge-gate", GATE_RULES]] as const) {
-		const plan = rec.step(`rulesets-plan-${tier}`, ["bun", agentic, "rulesets", "plan", slug, "--tier", tier]);
-		const line = plan.stdout.split("\n").find((text) => text.startsWith(`${slug} (`)) ?? "";
-		const changes = /changes (.+)$/.exec(line)?.[1]?.split(" ") ?? [];
-		const types = live.map((rule) => rule.type);
-		const expectAdd = wanted.filter((type) => !types.includes(type)).map((type) => `+${type}`);
-		const expectRemove = types.filter((type) => !(wanted as readonly string[]).includes(type)).map((type) => `-${type}`);
-		const added = changes.filter((change) => change.startsWith("+"));
-		const removed = changes.filter((change) => change.startsWith("-"));
-		rec.check(plan.status === 0 && line.includes(`tier ${tier}`), `rulesets plan --tier ${tier} prints its plan for ${slug} (exit ${plan.status})`);
-		rec.check(sameList(added.sort(), expectAdd.sort()) && sameList(removed.sort(), expectRemove.sort()), `rulesets plan --tier ${tier} adds ${JSON.stringify(expectAdd)} and removes ${JSON.stringify(expectRemove)} against the live ruleset (printed "${line}")`);
-		const settingChanges = changes.filter((change) => ["~enforcement", "~bypass_actors", "~conditions"].includes(change));
-		rec.check(sameList(settingChanges.sort(), [...expectSettings].sort()), `rulesets plan --tier ${tier} changes exactly the settings ${JSON.stringify(expectSettings)} against the live ruleset (printed "${line}")`);
-		if (tier === "merge-gate" && types.includes("required_status_checks")) {
-			const contexts = live.find((rule) => rule.type === "required_status_checks")?.parameters?.required_status_checks?.map((check) => check.context) ?? [];
-			if (!contexts.includes("agentic/verdict")) rec.check(changes.includes("~required_status_checks"), "rulesets plan --tier merge-gate changes the required checks to include agentic/verdict");
-		}
-	}
-	rec.check(liveRuleset() === rulesetBefore, `the live ruleset on ${slug} is unchanged after the plans`);
+	const plan = rec.step("rulesets-plan", ["bun", agentic, "rulesets", "plan", slug]);
+	const line = plan.stdout.split("\n").find((text) => text.startsWith(`${slug} (`)) ?? "";
+	const changes = /changes (.+)$/.exec(line)?.[1]?.split(" ") ?? [];
+	const expectAdd = BASELINE_RULES.filter((type) => !types.includes(type)).map((type) => `+${type}`);
+	const expectRemove = types.filter((type) => !BASELINE_RULES.includes(type)).map((type) => `-${type}`);
+	rec.check(plan.status === 0 && line !== "" && !line.includes("tier"), `rulesets plan prints its plan for ${slug} with no tier (exit ${plan.status})`);
+	rec.check(sameList(changes.filter((change) => change.startsWith("+")).sort(), expectAdd.sort()) && sameList(changes.filter((change) => change.startsWith("-")).sort(), expectRemove.sort()), `rulesets plan adds ${JSON.stringify(expectAdd)} and removes ${JSON.stringify(expectRemove)} against the live ruleset (printed "${line}")`);
+	rec.check(sameList(changes.filter((change) => change.startsWith("~")).sort(), [...expectSettings].sort()), `rulesets plan changes exactly the settings ${JSON.stringify(expectSettings)} against the live ruleset (printed "${line}")`);
+	rec.check(!plan.stdout.includes("required checks"), "rulesets plan names no required checks");
+	rec.check(liveRuleset() === rulesetBefore, `the live ruleset on ${slug} is unchanged after the plan`);
 
 	const merged = options.mergedPr ?? newestPr(slug, "merged");
 	if (merged === undefined) return rec.skip(`no merged pull request in ${slug}: pass --merged-pr N`);
@@ -634,7 +640,7 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 	const env = { AGENTIC_ORCH_STORE: store, AGENTIC_AGENT_ID: `verify-agent-kit-smoke-${run.runId}` };
 	const ledgerBefore = realLedger(run.checkout);
 	const status = rec.step("verify-status-merged", ["bun", agentic, "verify", "status", String(merged), "--repo", slug], { env });
-	rec.check(status.status === 1 && status.stdout.startsWith(`${slug}#${merged} (MERGED,`) && status.stdout.includes("ledger none"), `verify status on merged #${merged} reports an empty ledger, exit 1 (got ${status.status})`);
+	rec.check(status.status === 1 && status.stdout.startsWith(`${slug}#${merged} (MERGED,`) && status.stdout.includes("ledger none") && !status.stdout.includes("forge"), `verify status on merged #${merged} reports an empty ledger and no forge state, exit 1 (got ${status.status})`);
 	const refused = rec.step("verify-record-merged", ["bun", agentic, "verify", "record", String(merged), "--repo", slug, "--verdict", "type-check-only", "--evidence", rec.dir], { env });
 	rec.check(refused.status === 1 && refused.stderr.includes("verdicts are for open pull requests"), `verify record refuses merged #${merged} (exit ${refused.status})`);
 	rec.check(!existsSync(join(store, "ledger.tsv")), "a refused record writes no ledger");
@@ -646,8 +652,8 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 		if (match) {
 			// The printed P is rounded to two places, so at exactly 0.30 either decision is possible.
 			const p = Number(match[2]);
-			const held = match[1] === "hold";
-			rec.check((p === 0.3 || held === p > 0.3) && match[3] === (held ? ">" : "<=") && risk.status === (held ? 1 : 0), `jev pr-risk holds exactly when P(one-way door) > 0.3 (printed P ${match[2]}, ${match[1]}, exit ${risk.status})`);
+			const above = match[1] === "hold";
+			rec.check((p === 0.3 || above === p > 0.3) && match[3] === (above ? ">" : "<=") && risk.status === (above ? 1 : 0), `jev pr-risk marks a score above 0.3 (printed P ${match[2]}, ${match[1]}, exit ${risk.status})`);
 		}
 	} else rec.skip("no TypeSafe key for jev pr-risk: set TYPESAFE_API_KEY or, on macOS, add the keychain item typesafe-jev");
 
@@ -660,18 +666,24 @@ function driveMergeGate(run: RunInfo, rec: Recorder, options: Options): void {
 	if (head?.state !== "OPEN") throw new Error(`#${open} in ${slug} is not open (state ${head?.state ?? "unknown"}); pass --pr with an open pull request`);
 	if (options.pr !== undefined) rec.check(head.headRefOid === run.revision, `the driven checkout is at #${open}'s head (checkout ${run.revision.slice(0, 12)}, head ${head.headRefOid?.slice(0, 12)}); verify a worktree at the head`);
 	else rec.note("smoke-only.txt", `#${open} was picked as the newest open pull request; the driven checkout (${run.revision}) is not necessarily its head, so this record is a ledger smoke check, not evidence about #${open}.\n`);
-	// The smoke verdict never passes, so even a ledger that leaked out of this run's store could not clear a merge.
+	// Every verdict this drive records or attempts never passes, so even a ledger that leaked out of this
+	// run's store could not clear a merge.
 	const evidence = join(rec.dir, "verdict-evidence.txt");
-	writeFileSync(evidence, `verify-agent-kit merge-gate smoke verdict for ${slug}#${open} in run ${run.runId}; ledger at ${store}\n`);
-	const recorded = rec.step("verify-record-open", ["bun", agentic, "verify", "record", String(open), "--repo", slug, "--verdict", "type-check-only", "--evidence", evidence], { env });
-	rec.check(recorded.status === 0 && recorded.stdout.includes(`recorded type-check-only on ${head.headRefOid?.slice(0, 12)}`), `verify record writes the smoke verdict for open #${open} (exit ${recorded.status})`);
+	writeFileSync(evidence, `verify-agent-kit verdict-gate smoke verdict for ${slug}#${open} in run ${run.runId}; ledger at ${store}\n`);
 	const ledgerFile = join(store, "ledger.tsv");
-	const ledger = existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : "";
+	const ledgerText = () => (existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : "");
+	const unsigned = rec.step("verify-countersign-unverified", ["bun", agentic, "verify", "record", String(open), "--repo", slug, "--verdict", "countersigned", "--evidence", evidence], { env });
+	rec.check(unsigned.status === 1 && unsigned.stderr.includes("no verifier-blocked verdict covers patch") && !existsSync(ledgerFile), `verify record refuses a countersign for open #${open} with no verifier-blocked verdict, and writes no ledger (exit ${unsigned.status})`);
+	const recorded = rec.step("verify-record-open", ["bun", agentic, "verify", "record", String(open), "--repo", slug, "--verdict", "type-check-only", "--evidence", evidence], { env });
+	rec.check(recorded.status === 0 && recorded.stdout.includes(`recorded type-check-only on ${head.headRefOid?.slice(0, 12)}`) && !recorded.stdout.includes("publish"), `verify record writes the smoke verdict for open #${open} and names no publish step (exit ${recorded.status})`);
+	const ledger = ledgerText();
 	rec.note("ledger.tsv", ledger);
 	const row = ledger.split("\n").filter(Boolean).at(-1)?.split("\t") ?? [];
 	rec.check(row.includes(String(open)) && row.includes(head.headRefOid ?? "?") && row.includes(env.AGENTIC_AGENT_ID) && row.some((cell) => / patch:[0-9a-f]{40}$/.test(cell)), "the run's ledger row binds the PR, its head SHA, the patch ID, and the verifier ID");
-	const after = rec.step("verify-status-open", ["bun", agentic, "verify", "status", String(open), "--repo", slug], { env });
-	rec.check(after.status === 1 && after.stdout.includes("ledger fail (type-check-only"), `verify status reads the non-passing smoke verdict back for #${open} and exits 1`);
+	const overTypeCheck = rec.step("verify-countersign-over-type-check", ["bun", agentic, "verify", "record", String(open), "--repo", slug, "--verdict", "countersigned", "--evidence", evidence], { env });
+	rec.check(overTypeCheck.status === 1 && overTypeCheck.stderr.includes("no verifier-blocked verdict covers patch") && ledgerText() === ledger, `verify record refuses a countersign over a type-check-only verdict for #${open}, and the ledger is unchanged (exit ${overTypeCheck.status})`);
+	const gateStatus = rec.step("verify-status-open", ["bun", agentic, "verify", "status", String(open), "--repo", slug], { env });
+	rec.check(gateStatus.status === 1 && gateStatus.stdout.includes("ledger fail (type-check-only") && gateStatus.stdout.includes(`at ${head.headRefOid?.slice(0, 12)}`) && !gateStatus.stdout.includes("forge"), `the local gate reads the non-passing smoke verdict back for #${open}'s head and refuses, exit 1`);
 	rec.check(realLedger(run.checkout) === ledgerBefore, "the real verdict ledger is unchanged: every verdict went to this run's store");
 }
 
@@ -890,7 +902,7 @@ function drive(runId: string | undefined, feature: string | undefined, options: 
 		else {
 			switch (feature as Feature) {
 				case "task-route": driveTaskRoute(run, rec); break;
-				case "merge-gate": driveMergeGate(run, rec, options); break;
+				case "verdict-gate": driveVerdictGate(run, rec, options); break;
 				case "pr-state": drivePrState(run, rec, options); break;
 				case "skill-catalog": driveSkillCatalog(run, rec); break;
 				case "claude-surface": driveClaudeSurface(run, rec); break;

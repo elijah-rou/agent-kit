@@ -127,7 +127,7 @@ Upstream commits: 00b14f1 (`refactor(pstack): distill skill prompts to cut token
 | `design-checkpoint` (architect), `design-checkpoint/references` (arena) | Merge phase paragraphs; arena's Start list becomes one line; the synthesis note gains the cross-judge verdict and convergence | No local change | The local skill has no multi-model arena, and its rationale template already records the chosen shape and rejected candidates. |
 | `how`, `why`, `reflect` | Merge the per-step subagent settings into one line, cut repeated posture and process text in the prompts | No local change | The local skills replaced the subagent and MCP pipelines, so none of the cut text exists here. |
 | `technical-writing`, `unslop` | Wording cuts inside existing rules | No local change | The local rewrites do not contain the edited sentences. |
-| none (new `ketchup` skill) | A command that catches the user up since their last message, with an executive summary for each action item | Not adopted | The instructions' "Needs you" opening and question contract, and `show-me-your-work`'s catch-up on a run, cover it. |
+| none (new `ketchup` skill) | A command that catches the user up since their last message, with an executive summary for each action item | Not adopted | The instructions' "Needs you" opening and their rule on asking only the user's decisions and reporting the rest, and `show-me-your-work`'s catch-up on a run, cover it. |
 
 ## 2026-10-13: create-verification resynced from 11713c6 to 997ffc7
 

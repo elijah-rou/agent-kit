@@ -28,7 +28,7 @@ Resolve applicable concerns in this order, combining those already understood:
 3. **Program shape:** important files, key types/signatures, success and failure paths, state ownership, bounds, and tests. Show enough to challenge consequential placement decisions, not every private helper.
 4. **Slices:** small end-to-end increments with observable outcomes and the affected checks. Exercise the most consequential uncertain path early. Each increment leaves working behavior unless an approved migration requires another boundary.
 
-Ask only for unresolved product decisions, one-way doors (through `design-checkpoint`), and any checkpoints the user requested. Silence is not approval of a new decision. Reversible implementation details within the agreed scope remain the agent's responsibility.
+Ask only for one-way doors (through `design-checkpoint`), any checkpoints the user requested, and, outside a mode the user invoked for the run, unresolved product or preference decisions no experiment settles. Under such a mode, a product or preference decision gets a default you apply and report, as the instructions' rule on asking only the user's decisions says. Silence is not approval of a new decision. Reversible implementation details within the agreed scope remain the agent's responsibility.
 
 ## Implement through acceptance
 

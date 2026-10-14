@@ -6,7 +6,9 @@ One fresh reviewer tries to break each change before it is published and applies
 
 Once per pull request whose diff changes code, configuration, or agent instructions, as part of verifying it: before opening it, or marking a draft ready. After a later push that changes its behavior, whether it fixes a finding or not, run a focused re-review of what changed, at most two per pull request (step 6). A rebase with no conflicts or a formatting-only change needs none; a conflict resolution does.
 
-In `autopilot-full`, an owner opens its pull request early by design and does not spawn reviewers. The coordinator's verification round provides this review through its audit lane, before merge, and a later round's audit lane is a focused re-review that counts toward the cap.
+In `autopilot-full`, an owner opens its pull request early by design and does not spawn reviewers. The coordinator's verification round provides this review through its audit lane, before merge.
+
+In the `autopilot-full` and `ship` modes, the mode's procedure (`babysit-and-ship`'s `autopilot-full.md` and `shipping.md`) governs review rounds, findings, and fix-forwards until it adopts this file's cap (step 6) and notes rule (a preference, a nit, or a problem the change neither contains nor causes is a note or a follow-up, never a fix pass; step 5 and the brief); outside those modes, both apply.
 
 ## Run it
 
@@ -22,7 +24,7 @@ In `autopilot-full`, an owner opens its pull request early by design and does no
    - A problem the change neither contains nor causes becomes a follow-up, listed in the report and in the body's `## Scope`, not a fix pass.
 
    Fix accepted blocking findings in one pass, rerun the affected checks, and run a focused re-review of the fix.
-6. **Cap the rounds.** At most two focused re-reviews per pull request. After the second, the change goes forward as `PASS+NOTES` with its remaining notes listed, or the part a blocking finding still holds moves into a follow-up pull request; there is no third round. When two fixes that share one premise have failed the same check or review, write the premise down and test it before a third fix, instead of writing another fix that assumes it.
+6. **Cap the rounds.** At most two focused re-reviews per pull request. After the second, the change goes forward as `PASS+NOTES` with its remaining notes listed, or the part a blocking finding still holds moves into a follow-up pull request; there is no third round. When two fixes that share one premise have failed the same check or review, write the premise down and test it before a third fix, instead of writing another fix that assumes it. After the cap, a later push that changes behavior still gets a review scoped to that push: it raises only findings the push contains or causes and does not reopen earlier notes.
 7. **Record** the review in the `## Review record` section of the pull request body (defined by `babysit-and-ship`'s pull-request body format): the reviewer's `reviewed by` line, then one line per accepted finding, fixed or open, with its class. `correct` reads these lines to find repeated mistake classes, so record fixed findings too. Put the verdict, the reviewer's "Needs you" items, any finding left open, and any follow-up in the report to the user.
 
 Completion criterion: the reviewer returned a verdict, every blocking finding is fixed, moved into a follow-up, or recorded as open, and the review record lists each accepted finding with its class.

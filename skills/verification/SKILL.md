@@ -34,6 +34,17 @@ A reproducible command or runtime journey can substitute for a conventional test
 
 When you write, change, or keep a test, read `references/test-behavior-not-implementation.md` first. A test that pins required phrases in instruction or skill files is a deliberate contract test, not a restated prompt string. Before you trust, report, or act on a number you measured (a speedup, latency, throughput, or eval result), read `references/explain-the-number.md`. To time a whole command (a CLI, script, build, or test suite), read `references/command-benchmarks.md`.
 
+## Validate before every push
+
+Every repository has one local validate entry point, and CI runs the same command: the one the repository's `AGENTS.md` names, which `repo-baseline` creates as `scripts/validate`. It is the repository's definition of "the checks pass", so run it rather than assembling its parts yourself.
+
+- Commit first, then run validate on the committed head with a clean worktree, so the result describes a commit rather than uncommitted edits. Note its short SHA (`git rev-parse --short HEAD`) and the outcome.
+- Push only a head that validate passed. On a failure, fix it and run validate again. When it cannot run here (a missing tool, or a platform the host is not), say in the notes what did not run; that is not a pass, and CI is then the only check.
+- Where the repository provides a container mode of validate for another platform its CI covers, run that too when the change could behave differently there (paths, shells, filesystems, native code).
+- In the pull request's verification notes, name the command, its outcome, and the short SHA it ran on, and update them for each new head you push.
+- CI then confirms the local result. A CI failure on a SHA whose local validate passed is environment or flake until shown otherwise: rerun it once, then diagnose it by comparing the two runs' toolchain versions, platform, and environment before changing code (`babysit-and-ship`'s CI rule).
+- A repository with no validate entry point gets one from `repo-baseline`. Until then, run the checks its CI runs and report the missing entry point as a gap.
+
 ## Accept the integrated result
 
 Workers use the fastest sufficient inner loop. The root parent independently runs and inspects the authoritative affected boundary on the final integrated workspace. Checked child evidence is useful feedback, not runtime proof. Review does not replace this acceptance step.

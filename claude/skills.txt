@@ -26,3 +26,4 @@ skills/reflect
 skills/show-me-your-work
 skills/teach
 skills/github-rulesets
+claude/skills/spike

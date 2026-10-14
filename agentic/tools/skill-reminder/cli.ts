@@ -18,9 +18,10 @@ export const EDIT_TOOLS: ReadonlyMap<string, string> = new Map([
 
 /** Extensions of source code, where code-design's rules apply; prose and configuration files are not listed. */
 export const SOURCE_EXTENSIONS: ReadonlySet<string> = new Set([
-	".c", ".cc", ".clj", ".cljs", ".cpp", ".cs", ".css", ".ex", ".exs", ".gleam", ".go", ".h", ".hpp",
-	".ipynb", ".java", ".js", ".jsx", ".kt", ".lua", ".m", ".mjs", ".ml", ".mm", ".odin", ".php", ".py",
-	".rb", ".rs", ".scala", ".sh", ".sql", ".swift", ".ts", ".tsx", ".zig", ".zsh",
+	".bash", ".c", ".cc", ".cjs", ".clj", ".cljs", ".cpp", ".cs", ".css", ".cts", ".dart", ".ex", ".exs",
+	".fish", ".gd", ".gleam", ".glsl", ".go", ".h", ".hlsl", ".hpp", ".hs", ".ipynb", ".java", ".js", ".jsx",
+	".kt", ".lua", ".m", ".mjs", ".ml", ".mm", ".mts", ".odin", ".php", ".ps1", ".py", ".rb", ".rs", ".scala",
+	".sh", ".sql", ".svelte", ".swift", ".ts", ".tsx", ".vue", ".wgsl", ".zig", ".zsh",
 ]);
 
 export const REMINDER =
@@ -31,10 +32,11 @@ const USAGE = `Usage: skill-reminder --claude-hook
 Claude Code PreToolUse hook for ${[...EDIT_TOOLS.keys()].join(", ")}. Reads the event JSON on stdin. The
 first edit of a source file (${SOURCE_EXTENSIONS.size} extensions, such as .ts and .py) in a session, and in
 each subagent, gets a reminder to load the code-design skill, as additionalContext. It never denies.
-Markers live in $XDG_STATE_HOME/agentic/skill-reminder/. Exit 0 except for a usage error (2).
+Markers live in $XDG_STATE_HOME/agentic/skill-reminder/. Exit 0; a usage error exits 1, which Claude Code
+treats as a non-blocking error, so a miswired hook never stops an edit.
 `;
 
-/** Claude Code's events are a few kilobytes; anything near this is not an event. */
+/** A Write event carries the whole file; one larger than this gets no reminder. */
 const STDIN_LIMIT_BYTES = 8 * 1024 * 1024;
 
 type Edit = { session: string; agent: string; path: string };
@@ -91,7 +93,7 @@ async function main(args: string[]): Promise<number> {
 	if (args.length !== 1 || args[0] !== "--claude-hook") {
 		const help = args[0] === "--help" || args[0] === "-h";
 		(help ? console.log : console.error)(USAGE);
-		return help ? 0 : 2;
+		return help ? 0 : 1;
 	}
 	try {
 		const bytes = await Bun.stdin.bytes();

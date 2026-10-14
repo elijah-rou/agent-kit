@@ -19,7 +19,7 @@ const RUN_ID = /^ak-\d{8}-\d{6}-\d+$/;
 // Versioned so a kit from before the kit-binding check refuses runs this kit launched.
 const MARKER = "verify-kit run v2";
 const STEP_TIMEOUT_MS = 180_000;
-const FEATURES = ["task-route", "verdict-gate", "pr-state", "skill-catalog", "claude-surface", "git-guard"] as const;
+const FEATURES = ["task-route", "verdict-gate", "pr-state", "skill-catalog", "claude-surface", "git-guard", "skill-reminder"] as const;
 type Feature = (typeof FEATURES)[number];
 type Outcome = { state: "PASS" | "FAIL" | "SKIP"; detail?: string };
 type RunInfo = { marker: string; runId: string; checkout: string; revision: string; tree: string; kit: string; kitRevision: string; kitTree: string; dirty: boolean; startedAt: string };
@@ -101,6 +101,7 @@ Examples:
   ${CLI} drive ak-20261012-213000-4242 skill-catalog
   ${CLI} drive ak-20261012-213000-4242 claude-surface
   ${CLI} drive ak-20261012-213000-4242 git-guard
+  ${CLI} drive ak-20261012-213000-4242 skill-reminder
 `,
 	cleanup: `Usage: ${CLI} cleanup RUN_ID
 
@@ -1054,6 +1055,62 @@ function driveGitGuard(run: RunInfo, rec: Recorder): void {
 	rec.check(readFileSync(join(project, ".git", "config"), "utf8") === configBefore, "the hook ran none of the git config commands: the scratch project's .git/config is unchanged");
 }
 
+function driveSkillReminder(run: RunInfo, rec: Recorder): void {
+	const project = join(runDir(run.runId), "skill-reminder-project");
+	mkdirSync(project, { recursive: true });
+	writeFileSync(join(project, "preload.ts"), 'console.log("project preload ran");\n');
+	writeFileSync(join(project, "bunfig.toml"), 'preload = ["./preload.ts"]\n');
+	const state = join(runDir(run.runId), "skill-reminder-state");
+	const hookCli = join(run.checkout, "agentic/tools/skill-reminder/cli.ts");
+	// The documented command: --cwd keeps Bun from loading the project's bunfig.toml.
+	const hook = ["bun", "--cwd", run.checkout, hookCli];
+	const session = `${run.runId}-skill-reminder`;
+	const child = "a-verify-worker";
+	const event = (tool: string, input: Record<string, unknown>, agent?: string) =>
+		JSON.stringify({
+			session_id: session,
+			transcript_path: "/dev/null",
+			cwd: project,
+			permission_mode: "bypassPermissions",
+			hook_event_name: "PreToolUse",
+			tool_name: tool,
+			tool_input: input,
+			tool_use_id: "toolu_verify_agent_kit",
+			...(agent === undefined ? {} : { agent_id: agent, agent_type: "general-purpose" }),
+		});
+	const file = (name: string) => ({ file_path: join(project, name), old_string: "1", new_string: "2" });
+	// Order matters: each case reads the markers the cases before it left.
+	const cases: { id: string; stdin: string; remind: boolean }[] = [
+		{ id: "main-markdown", stdin: event("Edit", file("README.md")), remind: false },
+		{ id: "main-config", stdin: event("Write", { file_path: join(project, "package.json"), content: "{}" }), remind: false },
+		{ id: "main-first-source", stdin: event("Edit", file("a.ts")), remind: true },
+		{ id: "main-second-source", stdin: event("MultiEdit", file("b.py")), remind: false },
+		{ id: "subagent-first-source", stdin: event("Write", { file_path: join(project, "c.rs"), content: "fn main() {}" }, child), remind: true },
+		{ id: "subagent-second-source", stdin: event("Edit", file("c.rs"), child), remind: false },
+		{ id: "subagent-notebook", stdin: event("NotebookEdit", { notebook_path: join(project, "n.ipynb"), new_source: "x = 1" }, "a-verify-notebook"), remind: true },
+		{ id: "main-bash", stdin: event("Bash", { command: "vim a.ts" }), remind: false },
+		{ id: "malformed", stdin: "not json", remind: false },
+	];
+	const exposed = rec.step("hook-project-bunfig-without-cwd", ["bun", hookCli, "--claude-hook"], { cwd: project, env: { XDG_STATE_HOME: join(runDir(run.runId), "skill-reminder-exposed") }, input: event("Edit", file("a.ts")) });
+	rec.check(exposed.stdout.startsWith("project preload ran"), "project-bunfig: without --cwd, the project's preload prints before the hook's output, so the fixture bites");
+	for (const c of cases) {
+		const result = rec.step(`hook-${c.id}`, [...hook, "--claude-hook"], { cwd: project, env: { XDG_STATE_HOME: state }, input: c.stdin });
+		rec.check(result.status === 0, `${c.id}: the hook exits 0 (got ${result.status})`);
+		if (!c.remind) {
+			rec.check(result.stdout.trim() === "", `${c.id}: the hook prints nothing (got "${result.stdout.trim()}")`);
+			continue;
+		}
+		const output = parseJson(result.stdout) as { hookSpecificOutput?: Record<string, unknown> } | undefined;
+		const fields = output?.hookSpecificOutput;
+		rec.check(output !== undefined && Object.keys(output).length === 1 && fields?.hookEventName === "PreToolUse" && Object.keys(fields).length === 2, `${c.id}: the hook prints only PreToolUse additionalContext, never a permission decision (got "${result.stdout.trim()}")`);
+		rec.check(typeof fields?.additionalContext === "string" && /load it now/.test(fields.additionalContext) && /code-design/.test(fields.additionalContext), `${c.id}: the context tells the agent to load code-design (got ${JSON.stringify(fields?.additionalContext)})`);
+	}
+	const markers = join(state, "agentic", "skill-reminder", session);
+	rec.check(["main", child, "a-verify-notebook"].every((agent) => existsSync(join(markers, agent))), "the main session and each subagent left their own marker under XDG_STATE_HOME/agentic/skill-reminder");
+	const usage = rec.step("hook-usage", hook, { cwd: project, env: { XDG_STATE_HOME: state } });
+	rec.check(usage.status === 1 && usage.stdout.trim() === "", `the hook without --claude-hook is a usage error, exit 1 (non-blocking for Claude Code) with no output (got ${usage.status})`);
+}
+
 function drive(runId: string | undefined, feature: string | undefined, options: Options): Outcome {
 	const run = loadRun(runId);
 	if (!FEATURES.includes(feature as Feature)) throw new Usage(`unknown feature "${feature ?? ""}"; choose one of ${FEATURES.join(", ")}`);
@@ -1069,6 +1126,7 @@ function drive(runId: string | undefined, feature: string | undefined, options: 
 				case "skill-catalog": driveSkillCatalog(run, rec); break;
 				case "claude-surface": driveClaudeSurface(run, rec); break;
 				case "git-guard": driveGitGuard(run, rec); break;
+				case "skill-reminder": driveSkillReminder(run, rec); break;
 			}
 			const after = bound(run);
 			if (after) rec.check(false, after);

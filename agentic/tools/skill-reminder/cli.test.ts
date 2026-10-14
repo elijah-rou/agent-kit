@@ -72,8 +72,8 @@ describe("skill-reminder --claude-hook", () => {
 		expect(hook(edit("/repo/a.ts"), "/dev/null")).toEqual({ status: 0, stdout: "" });
 	});
 
-	test("a missing or unknown flag is a usage error", () => {
-		expect(hook(edit("/repo/a.ts"), freshState(), []).status).toBe(2);
-		expect(hook(edit("/repo/a.ts"), freshState(), ["--codex-hook"]).status).toBe(2);
+	test("a missing or unknown flag is a usage error that exits 1, which Claude Code does not treat as a block", () => {
+		expect(hook(edit("/repo/a.ts"), freshState(), [])).toEqual({ status: 1, stdout: "" });
+		expect(hook(edit("/repo/a.ts"), freshState(), ["--codex-hook"])).toEqual({ status: 1, stdout: "" });
 	});
 });

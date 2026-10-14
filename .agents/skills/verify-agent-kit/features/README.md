@@ -4,7 +4,7 @@ This directory is the maintained source for verifying what agent-kit does for th
 
 ## Baseline preconditions
 
-- Only the driven checkout's entry points run: its `agentic/bin/agentic`, `agentic/tools/jev/cli.ts`, `agentic/tools/git-guard/cli.ts`, `claude/statusline.ts`, and `claude/mods/trial-tools`. The `agentic` installed on `PATH` is never used.
+- Only the driven checkout's entry points run: its `agentic/bin/agentic`, `agentic/tools/jev/cli.ts`, `agentic/tools/git-guard/cli.ts`, `agentic/tools/skill-reminder/cli.ts`, `claude/statusline.ts`, and `claude/mods/trial-tools`. The `agentic` installed on `PATH` is never used.
 - To verify a pull request, the kit runs from a checkout of the base branch and drives the head's worktree through `--checkout`.
 - `scripts/verify-kit launch` created this run and printed its `RUN_ID`, and `scripts/verify-kit doctor RUN_ID` ends with `DOCTOR PASS`. Every drive refuses a checkout that moved since launch.
 - The run directory `$TMPDIR/verify-agent-kit/<RUN_ID>/` holds this run's `XDG_STATE_HOME` (`state/`), orch store (`orch/`), and two scratch git repositories: `fixture/`, and `fixture-optout/`, which holds `.agents/jev-opt-out`. No drive writes to the user's real task-route ledger or to any repository's verdict ledger.
@@ -39,6 +39,7 @@ Each feature file starts with an H1 title and one paragraph describing the behav
 - [Skill catalog](./skill-catalog.md): the skills and subagent roles each runtime receives, and repository skill discovery.
 - [Claude Code surface](./claude-surface.md): the quota status line and the trial-tools Mod.
 - [Git guard](./git-guard.md): the PreToolUse hook that matches command text to refuse skipping hooks (`--no-verify`, `-n` on `commit` or `am`, skip variables, `core.hooksPath` and `hook.*` changes) everywhere and git publication and `gh pr merge` from subagents other than an `autopilot-owner`, and what it over-refuses and misses.
+- [Skill reminder](./skill-reminder.md): the PreToolUse hook that reminds a session, and each subagent, to load `code-design` on its first source edit, and never refuses an edit.
 
 ## Not mapped yet
 

@@ -10,6 +10,7 @@ import {
 	SCHEDULED_RUNS_HEADING,
 	UPKEEP_BRANCH_PREFIX,
 	UPKEEP_MARKER,
+	UPKEEP_TITLE_PREFIX,
 	UPKEEP_WEEKDAYS,
 	upkeepSchedule,
 	upkeepTitle,
@@ -165,29 +166,49 @@ describe("recognizing the upkeep version", () => {
 	});
 });
 
+// The values stored upkeep prompts hold, per VERSION, as literals: a schedule keeps the values it was created with, so
+// changing one in spec.ts or maintain-verification breaks it unless VERSION is bumped and a new entry added here.
+// Never edit an existing entry.
+const STORED: Record<number, { marker: string; heading: string; branchPrefix: string; titlePrefix: string }> = {
+	1: { marker: "[t3-automation upkeep v1]", heading: "## Scheduled runs", branchPrefix: "agent/verify-upkeep-", titlePrefix: "Weekly verification upkeep: " },
+};
+const stored = STORED[VERSION];
+if (stored === undefined) throw new Error(`spec.test.ts has no STORED entry for VERSION ${VERSION}; add one holding the new version's literals`);
+const BRANCH_PATTERN = `${stored.branchPrefix}<app>-<YYYY-MM-DD>`;
+const STORED_CHANGED = `existing stored upkeep schedules depend on it and keep firing after this change; keep it, or bump VERSION in skills/t3-automation/scripts/spec.ts (adding its STORED entry here) so they report themselves obsolete`;
+
 // What stored upkeep prompts need from the kit's maintain-verification, one failure message each; empty while it holds.
-// A stored schedule outlives the change that breaks it, so the message names that and the two ways out.
-const BRANCH_PATTERN = `${UPKEEP_BRANCH_PREFIX}<app>-<YYYY-MM-DD>`;
+// A stored schedule outlives the change that breaks it, so the message names that and the two ways out. The marker
+// check goes through recognizesUpkeep, which reads spec.ts's constants; the test below holds those to the literals.
 function upkeepContractProblems(text: string): string[] {
-	const stored = `existing stored upkeep schedules depend on it and keep firing after this change; keep it, or bump VERSION in skills/t3-automation/scripts/spec.ts so they report themselves obsolete`;
 	const problems: string[] = [];
-	if (!text.split("\n").includes(SCHEDULED_RUNS_HEADING)) problems.push(`skills/maintain-verification/SKILL.md lost the "${SCHEDULED_RUNS_HEADING}" heading: ${stored}`);
-	else if (!recognizesUpkeep(text)) problems.push(`skills/maintain-verification/SKILL.md's "${SCHEDULED_RUNS_HEADING}" section no longer names ${UPKEEP_MARKER}: ${stored}`);
-	if (!text.includes(BRANCH_PATTERN)) problems.push(`skills/maintain-verification/SKILL.md no longer names the upkeep branch ${BRANCH_PATTERN} that stored prompts open pull requests from: ${stored}`);
+	if (!text.split("\n").includes(stored!.heading)) problems.push(`skills/maintain-verification/SKILL.md lost the "${stored!.heading}" heading: ${STORED_CHANGED}`);
+	else if (!recognizesUpkeep(text)) problems.push(`skills/maintain-verification/SKILL.md's "${stored!.heading}" section no longer names ${stored!.marker}: ${STORED_CHANGED}`);
+	if (!text.includes(BRANCH_PATTERN)) problems.push(`skills/maintain-verification/SKILL.md no longer names the upkeep branch ${BRANCH_PATTERN} that stored prompts open pull requests from: ${STORED_CHANGED}`);
 	return problems;
 }
 
-describe("the kit's maintain-verification keeps what stored upkeep prompts depend on", () => {
-	const kit = readFileSync(join(import.meta.dir, "..", "..", "maintain-verification", "SKILL.md"), "utf8");
+describe("stored upkeep prompts keep working", () => {
+	test("spec.ts renders this VERSION's stored values", () => {
+		const rendered = { marker: UPKEEP_MARKER, heading: SCHEDULED_RUNS_HEADING, branchPrefix: UPKEEP_BRANCH_PREFIX, titlePrefix: UPKEEP_TITLE_PREFIX };
+		expect(rendered, `spec.ts changed a value VERSION ${VERSION} schedules hold: ${STORED_CHANGED}`).toEqual(stored);
+		const spec = renderUpkeep(input);
+		expect(spec.prompt.startsWith(`${stored.marker} `)).toBe(true);
+		expect(spec.prompt).toContain(`"${stored.heading}" section`);
+		expect(spec.prompt).toContain(`from a branch named ${stored.branchPrefix}web-<YYYY-MM-DD> in octo/app`);
+		expect(spec.title.startsWith(stored.titlePrefix)).toBe(true);
+	});
 
-	test("its Scheduled runs section names the marker, and it names the upkeep branch pattern", () => {
-		expect(upkeepContractProblems(kit)).toEqual([]);
+	const skillText = readFileSync(join(import.meta.dir, "..", "..", "maintain-verification", "SKILL.md"), "utf8");
+
+	test("the kit's maintain-verification names the marker in its Scheduled runs section, and the upkeep branch pattern", () => {
+		expect(upkeepContractProblems(skillText)).toEqual([]);
 	});
 
 	test.each([
-		["the marker removed", kit.replaceAll(UPKEEP_MARKER, ""), "no longer names [t3-automation upkeep v"],
-		["the heading renamed", kit.replace(`\n${SCHEDULED_RUNS_HEADING}\n`, "\n## Scheduled upkeep\n"), `lost the "${SCHEDULED_RUNS_HEADING}" heading`],
-		["the branch prefix changed", kit.replaceAll(UPKEEP_BRANCH_PREFIX, "agent/upkeep-"), "no longer names the upkeep branch"],
+		["the marker removed", skillText.replaceAll(stored.marker, ""), `no longer names ${stored.marker}`],
+		["the heading renamed", skillText.replace(`\n${stored.heading}\n`, "\n## Scheduled upkeep\n"), `lost the "${stored.heading}" heading`],
+		["the branch prefix changed", skillText.replaceAll(stored.branchPrefix, "agent/upkeep-verify-"), "no longer names the upkeep branch"],
 	])("%s fails, saying stored schedules depend on it", (_, text, message) => {
 		const problems = upkeepContractProblems(text);
 		expect(problems).toHaveLength(1);

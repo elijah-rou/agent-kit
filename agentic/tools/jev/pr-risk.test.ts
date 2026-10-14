@@ -20,6 +20,12 @@ describe("PR risk", () => {
 		expect(await prRisk("s", options(answering({ type: "noul", noul: 0.12 })))).toEqual({ kind: "ok", probability: 0.12 });
 	});
 
+	test("the request carries the long-context flag", async () => {
+		let flag: string | null = null;
+		await prRisk("s", options(async (_url, init) => ((flag = new Headers(init.headers).get("TypeSafe-Danger-Zone-Long-Context")), new Response(JSON.stringify({ answers: { q: { type: "noul", noul: 0.1 } } })))));
+		expect(flag).toBe("true");
+	});
+
 	test("the state uses the calibrated layout", () => {
 		expect(prState({ repo: "o/r", title: "T", body: "  line one\r\nline two\r\n", stat: "", diff: "" })).toContain("Body: line one\nline two\nFiles changed (0):");
 		const state = prState({ repo: "o/r", title: "T", body: "b".repeat(700), stat: " a | 1 +\n b | 2 +-\n 2 files changed\n", diff: "d".repeat(6001) });

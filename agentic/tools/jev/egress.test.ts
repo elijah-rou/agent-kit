@@ -135,13 +135,13 @@ describe("Jev over HTTP", () => {
 	const live = () => new AbortController().signal;
 
 	test("sends both questions in one request with the task as state", async () => {
-		let sent: { url: string; body: unknown; auth: string | null } | undefined;
+		let sent: { url: string; body: unknown; auth: string | null; longContext: string | null } | undefined;
 		const fetch: FetchLike = async (url, init) => {
-			sent = { url, body: JSON.parse(String(init.body)), auth: new Headers(init.headers).get("Authorization") };
+			sent = { url, body: JSON.parse(String(init.body)), auth: new Headers(init.headers).get("Authorization"), longContext: new Headers(init.headers).get("TypeSafe-Danger-Zone-Long-Context") };
 			return new Response(JSON.stringify({ model: "jev-1.13.0", answers: answer }));
 		};
 		const outcome = await httpClassifier(async () => "test-key", fetch)(state, live());
-		expect(sent).toEqual({ url: "https://api.typesafe.ai/v1/systemone", body: { model: "jev-latest", state: { task: "Migrate the ledger store to SQLite" }, questions: JSON.parse(JSON.stringify(QUESTIONS)) }, auth: "Bearer test-key" });
+		expect(sent).toEqual({ url: "https://api.typesafe.ai/v1/systemone", body: { model: "jev-latest", state: { task: "Migrate the ledger store to SQLite" }, questions: JSON.parse(JSON.stringify(QUESTIONS)) }, auth: "Bearer test-key", longContext: "true" });
 		expect(outcome).toMatchObject({ kind: "answered", answers: { door: { choice: "one-way-door" }, level: { choice: "rigor" }, model: "jev-1.13.0" } });
 	});
 

@@ -141,7 +141,7 @@ describe("Jev over HTTP", () => {
 			return new Response(JSON.stringify({ model: "jev-1.13.0", answers: answer }));
 		};
 		const outcome = await httpClassifier(async () => "test-key", fetch)(state, live());
-		expect(sent).toEqual({ url: "https://api.typesafe.ai/v1/systemone", body: { model: "jev-latest", state: { task: "Migrate the ledger store to SQLite" }, questions: JSON.parse(JSON.stringify(QUESTIONS)) }, auth: "Bearer test-key", longContext: "true" });
+		expect(sent).toEqual({ url: "https://api.typesafe.ai/v1/systemone", body: { model: "jev-1.14.0", state: { task: "Migrate the ledger store to SQLite" }, questions: JSON.parse(JSON.stringify(QUESTIONS)) }, auth: "Bearer test-key", longContext: "true" });
 		expect(outcome).toMatchObject({ kind: "answered", answers: { door: { choice: "one-way-door" }, level: { choice: "rigor" }, model: "jev-1.13.0" } });
 	});
 

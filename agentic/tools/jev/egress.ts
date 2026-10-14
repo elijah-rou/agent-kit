@@ -11,7 +11,8 @@ import { dirname, join, resolve } from "node:path";
 import { parseAnswers, QUESTIONS, type Classify, type ClassifyFailure, type Sendable } from "./route.ts";
 
 export const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
-export const JEV_MODEL = "jev-latest";
+/** Pinned, not jev-latest: a threshold holds only for the model it was measured on. */
+export const JEV_MODEL = "jev-1.14.0";
 
 /** Lifts TypeSafe's default context limit (docs.typesafe.ai/models#context-length) on every request. */
 function jevHeaders(key: string): Record<string, string> {

@@ -1,13 +1,13 @@
 // PR risk inside the landing modes: a PR whose P(one-way door) is above HIGH_ABOVE gets a second
 // audit lane in its verification round. The score never holds a PR, and nothing lands because Jev
 // said so. A PR Jev did not score (unavailable, withheld, or a private repository) gets only a note
-// in the report. The question, the state layout, and the threshold were calibrated together on the
-// 2026-10-07 door samples in a separate evaluation repository: changing any of them means
-// recalibrating. Only public repositories are classified.
+// in the report. The question, the state layout, the threshold, and JEV_MODEL were calibrated
+// together on the 2026-10-07 door samples in a separate evaluation repository: changing any of them
+// means recalibrating. Only public repositories are classified.
 
 import { askJev, isProbability, type Unavailable } from "./egress.ts";
 
-/** A PR scoring above this is high risk: 73 of 82 one-way doors scored above it, and 32 of 99 safe PRs. */
+/** A PR scoring above this is high risk: 74 of 82 one-way doors scored above it, and 32 of 99 safe PRs. */
 export const HIGH_ABOVE = 0.3;
 
 export const PR_RISK_INSTRUCTIONS =

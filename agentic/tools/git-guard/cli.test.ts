@@ -4,10 +4,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-// The hook runs as claude/README.md wires it: `bun --cwd <kit> <kit>/agentic/tools/git-guard/cli.ts
-// --claude-hook`, with the PreToolUse event on stdin. Claude Code starts it in the session's project, so
-// every case runs from a scratch project whose bunfig.toml preloads a script that prints, as an ordinary
-// Bun project's might. Without --cwd, Bun would load it and the printed line would break the decision.
+// Each case runs the guard directly, `bun --cwd <kit> <kit>/agentic/tools/git-guard/cli.ts --claude-hook`
+// with the PreToolUse event on stdin, using the Bun on PATH. Bootstrap's hook entry (in claude/README.md)
+// also passes --cwd set to the kit, but first tests that the guard file exists and runs bootstrap's own Bun;
+// these tests do not run that entry. Claude Code starts the hook in the session's project, so every case
+// runs from a scratch project whose bunfig.toml preloads a script that prints, as an ordinary Bun
+// project's might. Without --cwd, Bun would load it and the printed line would break the decision.
 
 const KIT = resolve(import.meta.dir, "../../..");
 const CLI = join(import.meta.dir, "cli.ts");

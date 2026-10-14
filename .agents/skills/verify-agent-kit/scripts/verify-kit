@@ -974,7 +974,8 @@ function guardProject(run: RunInfo): string {
 function driveGitGuard(run: RunInfo, rec: Recorder): void {
 	const project = guardProject(run);
 	const hookCli = join(run.checkout, "agentic/tools/git-guard/cli.ts");
-	// The documented command: --cwd keeps Bun from loading the project's bunfig.toml.
+	// The guard run directly with --cwd set to the checkout, as bootstrap's entry passes it, not that entry
+	// itself (no guard-file test, Bun from PATH): --cwd keeps Bun from loading the project's bunfig.toml.
 	const hook = ["bun", "--cwd", run.checkout, hookCli];
 	const worker = { id: "a-verify-worker", type: "general-purpose" };
 	const owner = { id: "a-verify-owner", type: "autopilot-owner" };

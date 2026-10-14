@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""Reject account identifiers and secrets in a repository's tracked content, in evidence files, or in commit metadata.
+
+Findings name the location and the kind of literal, never the literal itself, so the report is safe to keep.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ipaddress
+import os
+import pathlib
+import re
+import subprocess
+import sys
+
+MAX_FILE_BYTES = 2_000_000
+ALLOWED_HOME_USERS = {"linuxbrew"}
+ALLOWED_EMAIL_DOMAINS = {
+    "codeberg.org",
+    "example.com",
+    "example.invalid",
+    "github.com",
+    "users.noreply.github.com",
+}
+# A no-reply address names a service, not an account (for example a co-author trailer's bot address).
+ALLOWED_EMAIL_LOCAL_PARTS = {"noreply", "no-reply"}
+PRIVATE_NETWORKS = tuple(
+    ipaddress.ip_network(".".join(map(str, octets)) + f"/{prefix}")
+    for octets, prefix in (
+        ((10, 0, 0, 0), 8),
+        ((172, 16, 0, 0), 12),
+        ((192, 168, 0, 0), 16),
+        ((169, 254, 0, 0), 16),
+    )
+)
+HOME_PATH = re.compile(r"(?<![A-Za-z0-9_$}])/(?:Users|home)/([A-Za-z0-9._-]+)/")
+EMAIL = re.compile(r"([A-Z0-9._%+-]+)@([A-Z0-9.-]+\.[A-Z]{2,})", re.I)
+IPV4 = re.compile(r"(?<![0-9A-Fa-f])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9A-Fa-f])")
+MAC = re.compile(r"(?i)(?<![0-9a-f])(?:[0-9a-f]{2}:){5}[0-9a-f]{2}(?![0-9a-f])")
+PRIVATE_KEY = re.compile(r"-----BEGIN (?:OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----")
+TOKEN = re.compile(r"(?:ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,})")
+
+
+def git(repository: pathlib.Path, *arguments: str) -> bytes:
+    return subprocess.run(
+        ["git", "-C", str(repository), *arguments],
+        check=True,
+        capture_output=True,
+    ).stdout
+
+
+def index_entries(repository: pathlib.Path) -> list[tuple[str, str, bytes]]:
+    entries: list[tuple[str, str, bytes]] = []
+    for raw in git(repository, "ls-files", "-s", "-z").split(b"\0"):
+        if not raw:
+            continue
+        metadata, path_bytes = raw.split(b"\t", 1)
+        mode, object_id, stage = metadata.decode().split()
+        path = path_bytes.decode("utf-8", errors="strict")
+        if stage != "0":
+            raise RuntimeError(f"unmerged index entry: {path}")
+        entries.append((path, mode, git(repository, "cat-file", "blob", object_id)))
+    return entries
+
+
+def worktree_entries(repository: pathlib.Path) -> list[tuple[str, str, bytes]]:
+    entries: list[tuple[str, str, bytes]] = []
+    for raw in git(repository, "ls-files", "-z").split(b"\0"):
+        if not raw:
+            continue
+        path = raw.decode("utf-8", errors="strict")
+        absolute = repository / path
+        if absolute.is_symlink():
+            entries.append((path, "120000", str(absolute.readlink()).encode()))
+        elif absolute.is_file():
+            entries.append((path, "100000", absolute.read_bytes()))
+        elif absolute.exists():
+            raise RuntimeError(f"tracked working-tree path has unsupported type: {path}")
+    return entries
+
+
+def path_entries(paths: list[str]) -> list[tuple[str, str, bytes]]:
+    """Every file under the given files and directories; links are scanned as their target text, never followed."""
+    entries: list[tuple[str, str, bytes]] = []
+
+    def add(path: pathlib.Path) -> None:
+        if path.is_symlink():
+            entries.append((str(path), "120000", str(path.readlink()).encode()))
+        elif path.is_file():
+            data = path.read_bytes()
+            if b"\0" in data[:8192]:
+                print(f"{path}: binary file, only its embedded text was scanned; look at images and recordings yourself", file=sys.stderr)
+            entries.append((str(path), "100000", data))
+        elif not path.exists():
+            raise RuntimeError(f"no such file or directory: {path}")
+        elif not path.is_dir():
+            raise RuntimeError(f"unsupported file type: {path}")
+
+    for argument in paths:
+        root = pathlib.Path(argument)
+        add(root)
+        if root.is_dir() and not root.is_symlink():
+            for directory, subdirectories, files in os.walk(root, followlinks=False):
+                subdirectories.sort()
+                for name in sorted(files) + [name for name in subdirectories if (pathlib.Path(directory) / name).is_symlink()]:
+                    add(pathlib.Path(directory) / name)
+    return entries
+
+
+def commit_entries(repository: pathlib.Path, revisions: str) -> list[tuple[str, str, bytes]]:
+    """Each commit's author, committer, and message, labelled by abbreviated SHA."""
+    entries: list[tuple[str, str, bytes]] = []
+    log = git(repository, "log", "--format=%H%x1f%an <%ae>%x1f%cn <%ce>%x1f%B%x1e", revisions, "--")
+    for record in log.split(b"\x1e"):
+        record = record.strip(b"\n")
+        if not record:
+            continue
+        sha, author, committer, message = record.split(b"\x1f", 3)
+        label = f"commit {sha.decode()[:12]}"
+        entries.append((f"{label} author", "100000", author))
+        entries.append((f"{label} committer", "100000", committer))
+        entries.append((f"{label} message", "100000", message))
+    return entries
+
+
+def report(path: str, line: int, finding: str) -> None:
+    print(f"{path}:{line}: {finding}", file=sys.stderr)
+
+
+def line_findings(line: str) -> list[str]:
+    findings: list[str] = []
+    for match in HOME_PATH.finditer(line):
+        if match.group(1) not in ALLOWED_HOME_USERS:
+            findings.append("literal user home path")
+    for match in EMAIL.finditer(line):
+        if match.group(2).lower() not in ALLOWED_EMAIL_DOMAINS and match.group(1).lower() not in ALLOWED_EMAIL_LOCAL_PARTS:
+            findings.append("personal email address")
+    for match in IPV4.finditer(line):
+        try:
+            address = ipaddress.ip_address(match.group(0))
+        except ValueError:
+            continue
+        if any(address in network for network in PRIVATE_NETWORKS):
+            findings.append("private network address")
+    if MAC.search(line):
+        findings.append("device MAC address")
+    if PRIVATE_KEY.search(line):
+        findings.append("private key material")
+    if TOKEN.search(line):
+        findings.append("recognized token format")
+    return findings
+
+
+def scan(entries: list[tuple[str, str, bytes]], source: str) -> int:
+    failures = 0
+    for path, mode, data in entries:
+        if len(data) > MAX_FILE_BYTES:
+            report(path, 1, f"{source} blob exceeds {MAX_FILE_BYTES} byte scan limit")
+            failures += 1
+            continue
+        if mode not in {"100644", "100755", "100000", "120000"}:
+            report(path, 1, f"unsupported tracked mode {mode}")
+            failures += 1
+            continue
+        text = data.decode("utf-8", errors="replace")
+        for line_number, line in enumerate(text.splitlines(), 1):
+            for finding in line_findings(line):
+                report(path, line_number, finding)
+                failures += 1
+    return failures
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Reject account identifiers and secrets. With no mode, scans the repository's staged index.",
+        epilog="examples: scan-public-safety --worktree | scan-public-safety --paths evidence/ | scan-public-safety --commits origin/main..HEAD",
+    )
+    parser.add_argument("--repo", default=".", help="repository for --index, --worktree, and --commits (default: the current directory's)")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--index", action="store_true", help="scan the staged index (the default)")
+    modes.add_argument("--worktree", action="store_true", help="scan the working tree's tracked files")
+    modes.add_argument("--paths", nargs="+", metavar="PATH", help="scan these files and directories, such as an evidence directory")
+    modes.add_argument("--commits", metavar="RANGE", help="scan the author, committer, and message of each commit in RANGE")
+    arguments = parser.parse_args()
+    try:
+        if arguments.paths:
+            mode, entries = "paths", path_entries(arguments.paths)
+        else:
+            repository = pathlib.Path(git(pathlib.Path(arguments.repo), "rev-parse", "--show-toplevel").decode().strip())
+            if arguments.commits:
+                mode, entries = "commits", commit_entries(repository, arguments.commits)
+            elif arguments.worktree:
+                mode, entries = "worktree", worktree_entries(repository)
+            else:
+                mode, entries = "index", index_entries(repository)
+        failures = scan(entries, mode)
+    except (OSError, RuntimeError, subprocess.CalledProcessError, UnicodeError, ValueError) as error:
+        print(f"public-safety scan error: {error}", file=sys.stderr)
+        return 1
+    if failures:
+        print(f"public-safety scan failed with {failures} finding(s)", file=sys.stderr)
+        return 1
+    print(f"public-safety scan passed ({mode})")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

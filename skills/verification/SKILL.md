@@ -1,6 +1,6 @@
 ---
 name: verification
-description: Select and exercise the affected behavior or integration boundary, tie evidence to the tested workspace, and separate worker feedback from parent acceptance. Use for code behavior changes, defects, reliability claims, integrations, and final acceptance. Simple prose or preference edits need their focused artifact or consumer check, not a separate verification workflow.
+description: Select and exercise the affected behavior or integration boundary, tie evidence to the tested workspace and keep it free of account identifiers and secrets, run the repository's validate command before every push, and separate worker feedback from parent acceptance. Use for code behavior changes, defects, reliability claims, integrations, and final acceptance. Simple prose or preference edits need their focused artifact or consumer check, not a separate verification workflow.
 ---
 
 # Verification
@@ -44,6 +44,14 @@ Every repository has one local validate entry point, and CI runs the same comman
 - In the pull request's verification notes, name the command, its outcome, and the short SHA it ran on, and update them for each new head you push.
 - CI then confirms the local result. A CI failure on a SHA whose local validate passed is environment or flake until shown otherwise: rerun it once, then diagnose it by comparing the two runs' toolchain versions, platform, and environment before changing code (`babysit-and-ship`'s CI rule).
 - A repository with no validate entry point gets one from `repo-baseline`. Until then, run the checks its CI runs and report the missing entry point as a gap.
+
+## Keep evidence free of identifiers and secrets
+
+Verification evidence, logs, receipts, and commit metadata never hold account identifiers (email addresses, Apple IDs and other sign-in names, user home paths, device and private network addresses) or secrets (tokens, keys, cookies, session or authentication dumps). Drive with test accounts and the run's own home and state directories where the harness allows, and redact a value before quoting it.
+
+- Before committing evidence or a log, scan it: `python3 <this skill's directory>/scripts/scan-public-safety --paths <evidence directory>`. It names each finding's file, line, and kind, never the value. Fix a finding by redacting the source or capturing again, not by leaving the file out of the scan. It reads text only, so look at screenshots and recordings yourself for visible account names.
+- Before pushing, scan the commits you add: `python3 <this skill's directory>/scripts/scan-public-safety --commits <trunk>..HEAD`. When the only findings are the author or committer address your git configuration supplies, do not change that configuration or rewrite the commits yourself: report it under "Needs you" with the fix, setting `user.email` to the forge's no-reply address.
+- The scanner adds to a repository's own secret scanning, such as a pre-commit hook; it does not replace it.
 
 ## Accept the integrated result
 

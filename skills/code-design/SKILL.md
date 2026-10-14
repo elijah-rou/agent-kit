@@ -1,6 +1,6 @@
 ---
 name: code-design
-description: Design rules for writing or restructuring code, in the spirit of TigerStyle - assertions, explicit limits, control flow, pattern matching and higher-order functions, data shapes, performance, naming, memory ownership and allocation (including manual memory in C, C++, Odin, and Zig, and Rust ownership), determinism, and simulation testing. Use when implementing, refactoring, or reviewing source code. Not needed for prose, configuration-only, or documentation edits.
+description: Design rules for writing or restructuring code, in the spirit of TigerStyle - assertions, explicit limits, control flow, pattern matching and higher-order functions, data shapes, performance, naming, memory ownership and allocation (including manual memory in C, C++, Odin, and Zig, and Rust ownership), determinism, and simulation testing. Use when writing, editing, refactoring, or reviewing source code, comment-only and one-line edits included. Not needed for edits to prose files such as Markdown, or to configuration only.
 ---
 
 # Code design

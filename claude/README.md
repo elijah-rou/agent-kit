@@ -46,6 +46,12 @@ effort, permissions, and every other setting stay the user's choice.
             "onFailure": "block"
           }
         ]
+      },
+      {
+        "matcher": "Edit|MultiEdit|Write|NotebookEdit",
+        "hooks": [
+          { "type": "command", "command": "bun --cwd <kit> <kit>/agentic/tools/skill-reminder/cli.ts --claude-hook", "timeout": 5 }
+        ]
       }
     ]
   }
@@ -57,8 +63,11 @@ effort, permissions, and every other setting stay the user's choice.
   `limits: n/a`.
 - `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`: enables Mods, which the trial-tools Mod needs.
 - `UserPromptSubmit`: the Jev prompt-routing hook (ADR 0002), which routes every task prompt.
-- `PreToolUse`: the git guard (next section). A session runs the guard only when its `settings.json`
-  holds this entry.
+- `PreToolUse`: the first entry is the git guard (next section); a session runs the guard only when its
+  `settings.json` holds that entry. The second is the skill reminder: the first file edit in a session,
+  and in each subagent, gets a reminder to load `code-design` before editing code, which an agent otherwise
+  skips when an edit looks too small to count. It takes the guard's `--cwd <kit>` and timeout but not
+  `onFailure`, because it only adds context: a failure lets the edit go ahead.
 
 ## Git guard
 
@@ -104,7 +113,7 @@ What it refuses that it need not (the same list is in ADR 0001 and the verify-ag
 - A skip variable assigned for another command on a line that also runs git (`SKIP=1 make && git status`).
 - A child's harmless uses of a refused subcommand, such as `git rebase --abort`.
 
-The `PreToolUse` entry under Install runs it. Its fields:
+The first `PreToolUse` entry under Install runs it. Its fields:
 
 - `--cwd <kit>`: Claude Code starts the hook in the session's project, and Bun would load that project's
   `bunfig.toml`, whose preload could print before the decision or exit and turn a deny into an allow.

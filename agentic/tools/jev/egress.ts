@@ -13,7 +13,7 @@ import { parseAnswers, QUESTIONS, type Classify, type ClassifyFailure, type Send
 export const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 export const JEV_MODEL = "jev-latest";
 
-/** Every request opts into TypeSafe's longer context window. */
+/** Every request opts into TypeSafe's longer context window. On 2026-10-14 it left PR-risk scores on six capped states within repeat noise. */
 function jevHeaders(key: string): Record<string, string> {
 	return { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "TypeSafe-Danger-Zone-Long-Context": "true" };
 }

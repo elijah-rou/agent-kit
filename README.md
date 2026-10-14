@@ -21,8 +21,11 @@ checkout detached at a reviewed commit, never on a branch or in a linked worktre
 
 An install also needs a timer outside any agent (launchd, systemd, or cron) that runs
 `bun <kit>/skills/background-run/scripts/watchdog.ts scan` every 15 minutes, where `<kit>` is the checkout's
-absolute path, with the same `HOME` and `XDG_STATE_HOME` the agents see. It tells the user when an unattended
-run stops; without it, `background-run` reports every run as not watched ("never scanned").
+absolute path, with the same `HOME` and `XDG_STATE_HOME` the agents see. The timer must find `bun`: a timer's
+default `PATH` often lacks it, so give `bun`'s absolute path or set `PATH`. When the agents set
+`AGENTIC_WATCHDOG_DIR`, it overrides the registry location, so give the timer the same value. The timer tells
+the user when an unattended run stops; without it, `background-run` reports every run as not watched ("never
+scanned").
 
 - **Claude Code:** link the files and add the `settings.json` entries listed in
   [claude/README.md](claude/README.md#install).

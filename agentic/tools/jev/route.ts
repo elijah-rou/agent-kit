@@ -88,11 +88,12 @@ export const POLICY: Policy = {
 	version: 2,
 	deadlineMs: 3000,
 	notes: {
-		// Advisory from 2026-10-07 to 2026-10-12, calibrated on agentic evals/jev-risk (90 hand-labeled
-		// standalone tasks asked twice each; threshold 0.8, question digest 556d4c822c98335d, jev-1.13.0,
-		// precision 0.78, recall 0.93; 16 of 120 non-door calls hinted). On live prompts, mostly short
-		// follow-ups Jev sees without their conversation, it fired on nearly every reversible prompt; it
-		// was in shadow from 2026-10-12 and is on trial since 2026-10-14, judged by route-report.
+		// Advisory from 2026-10-07 to 2026-10-12, calibrated on the door samples in a separate
+		// evaluation repository (90 hand-labeled standalone tasks asked twice each; threshold 0.8,
+		// question digest 556d4c822c98335d, jev-1.13.0, precision 0.78, recall 0.93; 16 of 120
+		// non-door calls hinted). On live prompts, mostly short follow-ups Jev sees without their
+		// conversation, it fired on nearly every reversible prompt; it was in shadow from 2026-10-12 and
+		// is on trial since 2026-10-14, judged by route-report.
 		door: { mode: "trial", threshold: 0.8, since: "2026-10-14" },
 		lookup: { mode: "trial", threshold: 0.9, since: "2026-10-14" },
 		loop: { mode: "trial", threshold: 0.9, since: "2026-10-14" },

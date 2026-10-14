@@ -6,16 +6,10 @@ describe("standalone check", () => {
 		["the installer by name", "Bootstrap links the export."],
 		["the installer's environment variable", "the root is BOOTSTRAP_ROOT"],
 		["the installer's possessive", "bootstrap's pin"],
-		["the installer's install path", "under ~/.local/share/bootstrap"],
 		["the user's dotfiles", "Copyright (c) 2026 dotfiles contributors"],
-		["a machine-specific checkout path", "default ~/Projects/cursor-plugins"],
-		["a Projects path built from the home directory in code", 'const DEFAULT_UPSTREAM = join(homedir(), "Projects", "cursor-plugins");'],
-		["a Projects path under $HOME", "cd ${HOME}/Projects/kit"],
-		["a Projects path built from Path.home() in code", 'root = Path.home() / "Projects" / "kit"'],
-		// Joined at run time, since the public-safety scan refuses a literal home path in any tracked file.
-		["a macOS home directory", `open ${["", "Users", "someone", "notes.md"].join("/")}`],
-		["a Linux home directory", `cd ${["", "home", "someone", "kit"].join("/")}`],
-		["any .local/share path", "data lives in ~/.local/share/agentic"],
+		["a Projects path under ~", "default ~/Projects/cursor-plugins"],
+		["a Projects path under $HOME", "cd $HOME/Projects/kit"],
+		["a Projects path under ${HOME}", "cd ${HOME}/Projects/kit"],
 		["another repository of the owner's, by owner/repo", "samples are committed in `elijah-rou/agentic`"],
 		["another repository of the owner's, by URL", "see https://github.com/elijah-rou/other-tool/issues/1"],
 	])("%s is refused", (_, line) => {
@@ -29,10 +23,18 @@ describe("standalone check", () => {
 		"git clone git@github.com:elijah-rou/agent-kit.git",
 		"the kit is elijah-rou/agent-kit.",
 		"a Projects page in the docs",
-		"/Users/ alone names no one",
 	])("agent-kit itself and lines naming no machine pass: %s", line => {
 		expect(violations("skills/x/SKILL.md", line)).toEqual([]);
 	});
+
+	// The check holds only literal patterns; review (rules.toml, standalone-kit) holds code-built paths, and the
+	// public-safety scan holds home directories.
+	test.each(['const DEFAULT_UPSTREAM = join(homedir(), "Projects", "cursor-plugins");', "data lives in ~/.local/share/agentic"])(
+		"a path outside the check's literal patterns is left to review: %s",
+		line => {
+			expect(violations("skills/x/SKILL.md", line)).toEqual([]);
+		},
+	);
 
 	test("the verb's other forms pass", () => {
 		expect(violations("skills/code-design/SKILL.md", "places that need a shell script, such as bootstrapping before the toolchain exists")).toEqual([]);

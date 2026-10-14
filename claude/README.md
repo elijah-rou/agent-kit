@@ -10,7 +10,9 @@ In `<kit>`, run `bun install --frozen-lockfile --production` (`agentic watch-pr`
 dependencies), and put `<kit>/agentic/bin/agentic` on `PATH`. Set up a timer outside any agent (launchd,
 systemd, or cron) that runs `bun <kit>/skills/background-run/scripts/watchdog.ts scan` every 15 minutes with the
 same `HOME` and `XDG_STATE_HOME` Claude Code sees: `background-run` counts a run as watched only where that timer
-runs, and reports every run as "never scanned" without it. Then link into `<config>`:
+runs, and reports every run as "never scanned" without it. The timer must find `bun` (give its absolute path or
+set `PATH`, since a timer's default `PATH` often lacks it), and when Claude Code sets `AGENTIC_WATCHDOG_DIR`, which
+overrides the registry location, the timer needs the same value. Then link into `<config>`:
 
 - `claude/CLAUDE.md` as `<config>/CLAUDE.md`: the global working rules.
 - each `claude/agents/*.md` into `<config>/agents/`: the subagent roles, each fixing a child's model and

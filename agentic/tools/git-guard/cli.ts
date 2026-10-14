@@ -17,13 +17,18 @@ export const SHELL_TOOLS: ReadonlySet<string> = new Set(["Bash", "Monitor", "Pow
 const USAGE = `Usage: git-guard --claude-hook
 
 Claude Code PreToolUse hook for the tools that run a shell command (${[...SHELL_TOOLS].join(", ")}).
-Reads the event JSON on stdin and matches the command text; git and gh match by name or absolute path.
+Reads the event JSON on stdin and matches the command text; git and gh match by name or absolute path,
+at the start of a line or after ;, &, or |, past assignments that prefix them on that line
+(GIT_EDITOR=true git commit, X=$(date +%s) git push). It reads a value made, on one line, of quoted
+strings, unquoted characters other than parentheses, a $(...) holding no parenthesis, a \${...} holding
+no brace, a backquoted command, and backslash escapes of anything but ;, &, or |. git after another
+value (a nested substitution, a value spanning lines) is not seen.
 It denies, in every session:
   - --no-verify after git on its line, or on a later line that a quoted string or a line-ending
     backslash carries the command onto;
   - -n on git commit or git am, alone or after short flags that take no value (-an, -nm);
   - a hook manager's skip variable (HUSKY, SKIP, LEFTHOOK, and the like) assigned on a line that runs
-    git, or on a line of only assignments just before one that starts git;
+    git, or exported on an earlier line with only assignments between it and one that starts git;
   - core.hooksPath or a hook.* key set or unset with git -c, --config-env, or git config.
 Inside a subagent (the event carries agent_id), unless its agent_type is autopilot-owner, it also denies a
 line (or a command after ;, &, or |) starting git push, pull, merge, rebase, cherry-pick, revert, am,

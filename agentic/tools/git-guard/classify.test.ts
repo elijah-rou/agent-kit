@@ -98,13 +98,107 @@ describe("patterns for what the shell reader alone used to find", () => {
 		allowedForAll(["git commit -m x", "git commit -am local", "git commit -mn", "git log -n 3", "git add . && git commit -m x && git log -n 3", "git commit -m x; head -n 5 log", "git commit --no-edit"]);
 		amAllowed(["git am patch", "git am -3 patch", "git am -k -s patch"]);
 	});
-	test("a hook manager's skip variable assigned before git on the same line, or alone on the line before it, is refused for every actor", () => {
+	test("a hook manager's skip variable assigned before git on the same line, or exported on the line before it, is refused for every actor", () => {
 		refusedForAll(["HUSKY=0 git commit -m x", "HUSKY_SKIP_HOOKS=1 git commit -m x", "SKIP=lint git commit -m x", "PRE_COMMIT_ALLOW_NO_CONFIG=1 git commit -m x", "LEFTHOOK=0 git push", "LEFTHOOK_EXCLUDE=lint git commit -m x", "OVERCOMMIT_DISABLE=1 git commit -m x", "FOO=1 HUSKY=0 git commit -m x", "HUSKY=0 FOO=1 git commit -m x", "cd repo && SKIP='lint,test' git commit -m x", "export HUSKY=0 && git commit -m x", "export HUSKY=0; git push", "HUSKY=0 /usr/bin/git commit -m x", "export HUSKY=0\ngit commit -m x", "export HUSKY=0 FOO=1;\ngit commit -m x"], /skipping git hooks with a hook manager's skip variable.*git commit -F <file>/);
 		allowedForAll(["HUSKY=0 npm install", "SKIP=1 make", "MYSKIP=1 git commit -m x", "HUSKYX=1 git commit -m x", "git commit -m x"]);
+	});
+	test("a skip variable's value is read as a word too, so a value the assignment reader cannot read still carries it", () => {
+		refusedForAll(["HUSKY=$((0)) git commit -m x", "export HUSKY=$((0)); git commit -m x", "N=$((n+1)) SKIP=lint git commit -m x", "SKIP=lint N=$((n+1)) git commit -m x", "X=${A:-${B}} HUSKY=0 git commit -m x", "HUSKY=0 X=$((1+1)) git commit -m x", "SKIP=$((0)) git push"], /skipping git hooks with a hook manager's skip variable.*git commit -F <file>/);
+	});
+	test("a backslash-newline between assignments and git is a blank, and += is an assignment", () => {
+		refusedForAll(["HUSKY=0\\\n git commit -m x", "HUSKY=7 X=1\\\n git commit -m x", "HUSKY+=0 git commit -m x", "export HUSKY=0 \\\n A=1; git commit -m x"], /skipping git hooks with a hook manager's skip variable/);
+		refusedForAll(["GIT_EDITOR=true \\\n git commit --no-verify -m x"], /skipping git hooks with --no-verify/);
+		for (const command of ["X+=1 git push", "X=1 \\\n git push"]) {
+			for (const actor of [child, unnamed]) expect([command, blockReason(command, actor)]).toEqual([command, expect.stringContaining("child publication/integration command: git push.")]);
+			for (const actor of [main, owner]) expect([command, blockReason(command, actor)]).toEqual([command, undefined]);
+		}
+	});
+	test("an exported skip variable reaches git across lines of assignments, and an unexported one on its own line does not", () => {
+		refusedForAll(["export HUSKY=0\nA=1\ngit commit -m x", "export SKIP=lint\n\ngit push", "declare -x HUSKY=0 A=1\nB=2 C=3\ngit commit -m x"], /skipping git hooks with a hook manager's skip variable/);
+		// An assignment on its own line sets a shell variable, which git's environment does not get.
+		allowedForAll(["HUSKY=0\nA=1\ngit commit -m x", "HUSKY=0\ngit commit -m x", "export HUSKY=0\nmake\ngit commit -m x"]);
 	});
 	test("setting or unsetting core.hooksPath or a hook.* key through git -c, --config-env, or git config is refused for every actor", () => {
 		refusedForAll(["git -c core.hooksPath=/dev/null commit -m x", "git -c core.hookspath=/dev/null push", "git -c 'core.hooksPath=/dev/null' commit -m x", "git -C repo -c hook.pre-commit.command=true commit -m x", "git -c user.name=x -c hook.lint.enabled=false commit -m y", "git --config-env=core.hooksPath=EMPTY commit -m x", "git --config-env core.hooksPath=EMPTY commit -m x", "git config core.hooksPath /dev/null", "git config --global core.hooksPath ''", "git config --unset core.hooksPath", "git config unset core.hooksPath", "git config set core.hooksPath /tmp/none", "git config --add hook.lint.command true", "git config hook.lint.enabled false", "git config --remove-section hook.lint", "git -C repo config core.hooksPath x", "/usr/bin/git config core.hooksPath x"], /skipping git hooks by setting or unsetting core.hooksPath or a hook.\* key.*git commit -F <file>/);
 		allowedForAll(["git config user.name x", "git config core.hooksPath", "git config --get core.hooksPath", "git config get core.hooksPath", "git config --list", "git config --get-regexp '^hook\\.'", "git -c user.name=x commit -m y", "git commit -c HEAD"]);
+	});
+	test("assignments that prefix git or gh for one command do not hide it", () => {
+		refusedForAll(["GIT_EDITOR=true git commit --amend --no-verify", "A=1 B='x y' git push --no-verify", "cd repo && FOO=bar git commit -m x --no-verify", "GIT_DIR=.git /usr/bin/git commit -m \"a\nb\" --no-verify"], /skipping git hooks with --no-verify/);
+		refusedForAll(["LANG=C git commit -nm x", "X=1 git am -n patch"], /skipping git hooks with -n/);
+		refusedForAll(["GIT_TRACE=1 git -c core.hooksPath=/dev/null commit -m x", "X=1 git config hook.lint.enabled false"], /skipping git hooks by setting or unsetting core.hooksPath or a hook.\* key/);
+		for (const [command, name] of [["FOO=1 git push origin x", "git push"], ["GIT_SSH_COMMAND='ssh -i k' git -C repo push", "git push"], ["make && X=\"a b\" git rebase main", "git rebase"], ["X=1 git tag v1", "git tag"], ["GH_HOST=github.com gh pr merge 3", "gh pr merge"]] as const) {
+			for (const actor of [child, unnamed]) expect([command, blockReason(command, actor)]).toEqual([command, expect.stringContaining(`child publication/integration command: ${name}.`)]);
+			for (const actor of [main, owner]) expect([command, blockReason(command, actor)]).toEqual([command, undefined]);
+		}
+		allowedForAll(["GIT_EDITOR=true git commit --amend", "LANG=C git log -n 3", "X=1 git config hook.lint.enabled", "FOO=1 echo git push", "FOO=1 npm test --no-verify"]);
+		for (const command of ["X=1 git tag -l", "PAGER=cat git merge-base a b", "GH_HOST=github.com gh pr view 3"]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
+	});
+	test("an assignment's substitution, expansion, or escape is read as part of its value", () => {
+		refusedForAll(["X=$(date +%s) git commit --no-verify", "X=`date +%s` git commit --no-verify", "X=${A:-b c} git commit --no-verify", "X=a\\ b git commit --no-verify", "X=\"a\\\" b\" git commit --no-verify", "X=$(a b) Y=`c d` git commit --no-verify"], /skipping git hooks with --no-verify/);
+		refusedForAll(["X=$(date +%s) git commit -nm x", "X=$(date +%s) HUSKY=0 git commit -m x"], /skipping git hooks with (-n|a hook manager's skip variable)/);
+		for (const [command, name] of [["X=$(date +%s) git push", "git push"], ["X=`date +%s` git push", "git push"], ["X=a\\ b git rebase main", "git rebase"], ["X=$(cd a; pwd) gh pr merge 3", "gh pr merge"]] as const) {
+			for (const actor of [child, unnamed]) expect([command, blockReason(command, actor)]).toEqual([command, expect.stringContaining(`child publication/integration command: ${name}.`)]);
+			for (const actor of [main, owner]) expect([command, blockReason(command, actor)]).toEqual([command, undefined]);
+		}
+		allowedForAll(["X=$(date +%s) git commit -m x", "X=`date` git log -n 3", "X=a\\ b git status"]);
+	});
+	test("an escaped quote in a value is not a quote, and a command inside a value's substitution is still seen", () => {
+		// \' is an escaped quote, so the ; after it ends the assignment and git push runs.
+		for (const command of ["X=\\'; git push; echo \\' git tag -l", "X=$(true; git push) git tag -l", "X=\\\"; git push; echo \\\" git tag -l"]) {
+			for (const actor of [child, unnamed]) expect([command, blockReason(command, actor)]).toEqual([command, expect.stringContaining("child publication/integration command: git push.")]);
+		}
+		refusedForAll(["X=$(true; git config core.hooksPath /dev/null) git config user.name x"], /skipping git hooks by setting or unsetting core.hooksPath/);
+		refusedForAll(["X=$(true; git commit -m \"a) git status\nb\" --no-verify)", "X=$(true; Y=`a; git commit --no-verify` git status) git status"], /skipping git hooks with --no-verify/);
+		for (const command of ["X='a b' git tag -l", "X=$(date) git tag -l"]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
+	});
+	test("a long run of assignments before a command is read in linear time", () => {
+		const assignments = "A=1 B='x y' ".repeat(200);
+		const started = performance.now();
+		for (const command of [`${assignments}echo hi`, `${assignments}git status`, `${"a=b=".repeat(400)} x`, `${"X=1;".repeat(400)}`]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
+		expect(blockReason(`${assignments}git push`, child)).toMatch(/git push/);
+		expect(performance.now() - started).toBeLessThan(500);
+	});
+	test("a long text of assignments on separate lines is read in linear time", () => {
+		const lines = "KEY=value\n".repeat(2000);
+		const started = performance.now();
+		for (const command of [`cat <<EOF\n${lines}EOF`, lines, `${"KEY=value \n".repeat(2000)}git status`]) expect([command.slice(0, 20), blockReason(command, child)]).toEqual([command.slice(0, 20), undefined]);
+		expect(blockReason(`${lines}git push`, child)).toMatch(/git push/);
+		expect(performance.now() - started).toBeLessThan(1000);
+	});
+	// Each text is over 50 KB, far past any real command. Each bound is many times the local time (a
+	// shared CI runner is several times slower), and a pattern that read these texts superlinearly would
+	// take far longer.
+	for (const assignment of ["X=$(date +%s) ", "X=`date +%s` ", "X=a\\ b ", "X=${A:-b c} ", "X=\"a\\\" b\" ", "X=$(a; b) "]) {
+		test(`10,000 assignments like ${assignment.trim()} are read in linear time`, () => {
+			const run = assignment.repeat(10_000);
+			const started = performance.now();
+			expect(blockReason(`${run}echo hi`, child)).toBeUndefined();
+			expect(blockReason(`${run}git tag -l`, child)).toBeUndefined();
+			expect(blockReason(`${run}git push`, child)).toMatch(/git push/);
+			expect(performance.now() - started).toBeLessThan(4000);
+		}, 10_000);
+	}
+	test("a long line of values holding separators, each a command's start, is read in linear time", () => {
+		// Each ; inside a quoted value starts a run of assignments that meets the run from the line's start.
+		const run = "HUSKY=';B=x\\' ".repeat(10_000);
+		const started = performance.now();
+		expect(blockReason(`${run}echo hi`, child)).toBeUndefined();
+		expect(blockReason(`${run}git commit -m x`, main)).toMatch(/skip variable/);
+		expect(blockReason(`X=';B=x\\' `.repeat(10_000) + "git push", child)).toMatch(/git push/);
+		expect(performance.now() - started).toBeLessThan(4000);
+	}, 10_000);
+	test("many lines of skip variables and assignments are read in linear time", () => {
+		const started = performance.now();
+		expect(blockReason("HUSKY=1 A=1\n".repeat(10_000), main)).toBeUndefined();
+		expect(blockReason(`${"HUSKY=1 A=1\n".repeat(10_000)}git status`, main)).toBeUndefined();
+		expect(blockReason(`${"export HUSKY=1 A=1\n".repeat(10_000)}git commit -m x`, main)).toMatch(/skip variable/);
+		expect(performance.now() - started).toBeLessThan(4000);
+	}, 10_000);
+	test("commands inside one value's substitution are each read once, not from every separator before them", () => {
+		// Rereading each inner command's body from every separator before it took 18 s here.
+		const started = performance.now();
+		expect(blockReason(`X=$(${";git ".repeat(8000)}) git status`, child)).toBeUndefined();
+		expect(performance.now() - started).toBeLessThan(3000);
 	});
 	test("gh pr merge is refused for every child but an owner", () => {
 		for (const command of ["gh pr merge 3", "gh pr merge 3 --squash", "gh pr merge -R owner/repo 3", "cd repo && gh pr merge 3 --auto", "/opt/homebrew/bin/gh pr merge 3"]) {

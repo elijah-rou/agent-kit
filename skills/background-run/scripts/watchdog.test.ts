@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { desktopCommand, GRACE_MINUTES, registryDir } from "./watchdog.ts";
+import { desktopCommand, GRACE_MINUTES, MAX_SCAN_AGE_MINUTES, registryDir } from "./watchdog.ts";
 
 const SCRIPT = join(import.meta.dir, "watchdog.ts");
 const LOG_SH = join(import.meta.dir, "..", "..", "show-me-your-work", "scripts", "log.sh");
@@ -262,29 +262,71 @@ describe("register and unregister", () => {
 });
 
 describe("status", () => {
-	test("prints the last scan time and each run's state without notifying", () => {
+	test("prints the last scan and each run's registration and state without notifying", () => {
 		const f = fixture();
-		expect(run(f, ["status"])).toEqual({ code: 0, stdout: "last-scan\tnever\n", stderr: "" });
+		expect(run(f, ["status"])).toEqual({ code: 0, stdout: "last-scan\tnever\t-\n", stderr: "" });
 
 		row(f, "2026-10-14T10:00:00Z");
 		register(f);
-		expect(run(f, ["status", "--now", "2026-10-14T11:00:00Z"]).stdout).toBe("last-scan\tnever\nprog-1\tfresh\t2026-10-14T10:00:00Z\t-\n");
-		expect(run(f, ["status", "--now", "2026-10-14T13:00:00Z"]).stdout).toBe("last-scan\tnever\nprog-1\tstale\t2026-10-14T10:00:00Z\t-\n");
+		expect(run(f, ["status", "--now", "2026-10-14T11:00:00Z"]).stdout).toBe("last-scan\tnever\t-\nprog-1\tregistered\tfresh\t2026-10-14T10:00:00Z\t-\n");
+		expect(run(f, ["status", "--now", "2026-10-14T13:00:00Z"]).stdout).toBe("last-scan\tnever\t-\nprog-1\tregistered\tstale\t2026-10-14T10:00:00Z\t-\n");
 		expect(notifications(f)).toEqual([]);
 
 		expect(scanAt(f, "2026-10-14T13:00:00Z").stdout).toBe("prog-1\tstale\tnotified\n");
 		expect(run(f, ["status", "--run", "prog-1", "--now", "2026-10-14T13:05:00Z"])).toEqual({
 			code: 0,
-			stdout: "last-scan\t2026-10-14T13:00:00Z\nprog-1\tstale\t2026-10-14T10:00:00Z\tnotified\n",
+			stdout: "last-scan\tfresh\t2026-10-14T13:00:00Z\nprog-1\tregistered\tstale\t2026-10-14T10:00:00Z\tnotified\n",
 			stderr: "",
 		});
 	});
 
-	test("--run names one run, and an unregistered one exits 1", () => {
+	test("--run names one run, and an unregistered one reads unregistered and exits 1", () => {
 		const f = fixture();
 		row(f, "2026-10-14T10:00:00Z");
 		register(f);
-		expect(run(f, ["status", "--run", "other", "--now", "2026-10-14T11:00:00Z"])).toEqual({ code: 1, stdout: "last-scan\tnever\nother\tunregistered\t-\t-\n", stderr: "" });
+		scanAt(f, "2026-10-14T10:55:00Z");
+		expect(run(f, ["status", "--run", "other", "--now", "2026-10-14T11:00:00Z"])).toEqual({
+			code: 1,
+			stdout: "last-scan\tfresh\t2026-10-14T10:55:00Z\nother\tunregistered\t-\t-\t-\n",
+			stderr: "",
+		});
+	});
+
+	test("an invalid registration reads invalid, not registered", () => {
+		const f = fixture();
+		mkdirSync(f.registry, { recursive: true });
+		writeFileSync(join(f.registry, "prog-1.json"), "{}\n");
+		expect(run(f, ["status", "--run", "prog-1", "--now", "2026-10-14T11:00:00Z"]).stdout).toBe("last-scan\tnever\t-\nprog-1\tinvalid\t-\t-\t-\n");
+	});
+
+	test("a last scan older than the limit reads stale: a timer that ran once and died is not watching", () => {
+		const f = fixture();
+		expect(scanAt(f, "2026-09-01T00:00:00Z").code).toBe(0); // The timer's only scan.
+		row(f, "2026-10-14T10:00:00Z");
+		register(f);
+		expect(run(f, ["status", "--run", "prog-1", "--now", "2026-10-14T10:05:00Z"])).toEqual({
+			code: 0,
+			stdout: "last-scan\tstale\t2026-09-01T00:00:00Z\nprog-1\tregistered\tfresh\t2026-10-14T10:00:00Z\t-\n",
+			stderr: "",
+		});
+	});
+
+	test(`a last scan exactly ${MAX_SCAN_AGE_MINUTES} minutes old is fresh, one second more is stale`, () => {
+		const f = fixture();
+		scanAt(f, "2026-10-14T10:00:00Z");
+		const at = (now: string, extra: string[] = []) => run(f, ["status", "--now", now, ...extra]).stdout;
+		expect(MAX_SCAN_AGE_MINUTES).toBe(30);
+		expect(at("2026-10-14T10:30:00Z")).toBe("last-scan\tfresh\t2026-10-14T10:00:00Z\n");
+		expect(at("2026-10-14T10:30:01Z")).toBe("last-scan\tstale\t2026-10-14T10:00:00Z\n");
+		expect(at("2026-10-14T10:30:01Z", ["--max-scan-age-minutes", "31"])).toBe("last-scan\tfresh\t2026-10-14T10:00:00Z\n");
+		expect(at("2026-10-14T10:05:01Z", ["--max-scan-age-minutes", "5"])).toBe("last-scan\tstale\t2026-10-14T10:00:00Z\n");
+	});
+
+	test("a corrupt last-scan file reads never", () => {
+		const f = fixture();
+		mkdirSync(f.registry, { recursive: true });
+		writeFileSync(join(f.registry, "last-scan"), "garbage\n");
+		expect(run(f, ["status"]).stdout).toBe("last-scan\tnever\t-\n");
 	});
 });
 
@@ -393,6 +435,9 @@ describe("usage", () => {
 		["no command", []],
 		["an unknown command", ["watch"]],
 		["status with an unknown option", ["status", "--verbose", "1"]],
+		["a zero scan age", ["status", "--max-scan-age-minutes", "0"]],
+		["a fractional scan age", ["status", "--max-scan-age-minutes", "2.5"]],
+		["an empty scan age", ["status", "--max-scan-age-minutes", ""]],
 		["--replace with a value", ["register", "--run", "a", "--log", "/tmp/x.tsv", "--interval-minutes", "5", "--replace", "yes"]],
 		["scan with an argument", ["scan", "extra"]],
 		["scan with an unknown option", ["scan", "--verbose", "1"]],

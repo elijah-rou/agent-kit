@@ -9,7 +9,8 @@
 // and tied to the registration's `registeredAt`; `last-scan` holds the clock of the newest scan; `notifications.log`
 // gets one line per notification. Register, unregister, and scan hold the `.lock` directory while they read and
 // write, so overlapping scans cannot both notify and a scan cannot notify for a run unregistered mid-scan. Scan reads
-// only the first column of the decision log and never prints, logs, or sends any of its contents.
+// only the first column of the decision log and never prints, logs, or sends any of its contents. A `last-scan` older
+// than the scan age limit reads as stale in `status`: a timer that ran once and died leaves that file frozen.
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -20,6 +21,8 @@ import { isAbsolute, join } from "node:path";
 export const GRACE_MINUTES = 15;
 const REGISTRY_VERSION = 1;
 const MAX_INTERVAL_MINUTES = 24 * 60;
+/** Twice the 15-minute timer bootstrap installs: one missed scan is slack, two mean the timer is not running. */
+export const MAX_SCAN_AGE_MINUTES = 30;
 /** Only the log's tail is read; the newest row is the last one, so this bounds the work without changing the answer. */
 const TAIL_BYTES = 64 * 1024;
 const TEXT_MAX = 300;
@@ -40,7 +43,7 @@ const USAGE = `Usage:
   watchdog.ts register --run <id> --log <absolute decision-log tsv> --interval-minutes <n> [--title <text>] [--thread <t3 thread id>] [--replace]
   watchdog.ts unregister --run <id>
   watchdog.ts scan
-  watchdog.ts status [--run <id>]
+  watchdog.ts status [--run <id>] [--max-scan-age-minutes <n>]
   watchdog.ts notify --run <id> --message <text>
 
 register, notify, scan, and status also take --now <ISO timestamp>, a test clock.
@@ -49,8 +52,9 @@ Registry: $AGENTIC_WATCHDOG_DIR, else $XDG_STATE_HOME/agentic/watchdog, else ~/.
 register refuses a run ID registered for a different log unless --replace; re-registering the same log re-arms it.
 scan notifies once per registered run whose log has had no new row, and whose registration is no newer, for twice its
 interval plus ${GRACE_MINUTES} minutes, or whose log is missing, and clears that state when the log moves again.
-status prints "last-scan<TAB><time or never>", then "<run><TAB><fresh|stale|missing|invalid|unregistered><TAB><last
-activity or -><TAB><notified or ->" per run, and notifies nothing.
+status prints "last-scan<TAB><fresh|stale|never><TAB><time or ->", where stale means older than
+--max-scan-age-minutes (default ${MAX_SCAN_AGE_MINUTES}), then "<run><TAB><registered|unregistered|invalid><TAB><fresh|stale|missing
+or -><TAB><last activity or -><TAB><notified or ->" per run, and notifies nothing.
 Notifications go to the desktop (osascript on macOS, notify-send on Linux when present) and always to
 notifications.log in the registry; AGENTIC_WATCHDOG_NOTIFY=log keeps them to the log only.
 
@@ -396,32 +400,36 @@ function scan(dir: string, now: Date, mode: Mode): ScanLine[] {
 	});
 }
 
-function lastScan(dir: string): string {
+/** The last scan's line: `never` when no scan has recorded one, `stale` when it is older than `maxAgeMinutes`. */
+function lastScanLine(dir: string, now: Date, maxAgeMinutes: number): string {
+	let value: string;
 	try {
-		const value = readFileSync(join(dir, LAST_SCAN), "utf8").trim();
-		if (LOG_TS.test(value)) return value;
+		value = readFileSync(join(dir, LAST_SCAN), "utf8").trim();
 	} catch {
-		// No scan has run against this registry.
+		return "last-scan\tnever\t-"; // No scan has run against this registry.
 	}
-	return "never";
+	const at = new Date(value);
+	if (!LOG_TS.test(value) || Number.isNaN(at.getTime())) return "last-scan\tnever\t-";
+	const stale = now.getTime() - at.getTime() > maxAgeMinutes * 60_000;
+	return `last-scan\t${stale ? "stale" : "fresh"}\t${value}`;
 }
 
 /** Read-only: the last scan's clock and each run's state, without notifying or taking the lock. */
-function status(dir: string, now: Date, only: string | undefined): { lines: string[]; found: boolean } {
-	const lines = [`last-scan\t${lastScan(dir)}`];
+function status(dir: string, now: Date, maxScanAgeMinutes: number, only: string | undefined): { lines: string[]; found: boolean } {
+	const lines = [lastScanLine(dir, now, maxScanAgeMinutes)];
 	const runs = only === undefined ? registeredRuns(dir) : [only];
 	let found = true;
 	for (const run of runs) {
 		const reg = readRegistration(dir, run);
 		if (reg === undefined) {
-			lines.push(`${run}\tunregistered\t-\t-`);
+			lines.push(`${run}\tunregistered\t-\t-\t-`);
 			found = false;
 		} else if (reg === "invalid") {
-			lines.push(`${run}\tinvalid\t-\t-`);
+			lines.push(`${run}\tinvalid\t-\t-\t-`);
 		} else {
 			const a = assess(reg, now);
 			const notified = a.status !== "fresh" && alreadyNotified(readState(dir, run), reg, a);
-			lines.push(`${run}\t${a.status}\t${a.since ? iso(a.since) : "-"}\t${notified ? "notified" : "-"}`);
+			lines.push(`${run}\tregistered\t${a.status}\t${a.since ? iso(a.since) : "-"}\t${notified ? "notified" : "-"}`);
 		}
 	}
 	return { lines, found };
@@ -467,6 +475,14 @@ function clock(flags: Flags): Date {
 	const now = new Date(value);
 	if (Number.isNaN(now.getTime())) throw new UsageError(`--now must be an ISO timestamp, not ${JSON.stringify(value)}`);
 	return now;
+}
+
+function minutes(flags: Flags, name: string, fallback: number): number {
+	const value = flags.get(name);
+	if (value === undefined) return fallback;
+	const n = Number(value);
+	if (value.trim() === "" || !Number.isInteger(n) || n < 1 || n > MAX_INTERVAL_MINUTES) throw new UsageError(`--${name} must be a whole number from 1 to ${MAX_INTERVAL_MINUTES}`);
+	return n;
 }
 
 function text(flags: Flags, name: string): string | undefined {
@@ -552,9 +568,9 @@ function main(argv: string[], env: Env): number {
 				return 0;
 			}
 			case "status": {
-				const flags = parseFlags(rest, ["run", "now"]);
+				const flags = parseFlags(rest, ["run", "now", "max-scan-age-minutes"]);
 				const only = flags.has("run") ? runId(flags) : undefined;
-				const result = status(dir, clock(flags), only);
+				const result = status(dir, clock(flags), minutes(flags, "max-scan-age-minutes", MAX_SCAN_AGE_MINUTES), only);
 				for (const line of result.lines) console.log(line);
 				return result.found ? 0 : 1;
 			}

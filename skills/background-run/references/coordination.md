@@ -57,7 +57,7 @@ For unattended programs, run an audit tick about hourly, on a schedule the harne
 
 - **In T3,** create it with `schedule_task`, bound to the coordinator's thread (`bindToCurrentThread`, an hourly interval), so it runs even when no turn is active. Its prompt names the governing skill's path, the decision log, and `children.tsv`, and says to resume the program from them and run this tick: a stalled program restarts on the next tick once the cause clears. Log its scheduled task ID and report it.
 - **Outside T3,** use the harness's recurring facility (`/loop` where the harness has it) with the same prompt, and say in the report that it dies with the session. In a harness with none, say in the report that the tick cannot be armed, so nothing restarts a stalled program.
-- **The watchdog.** The tick dies with the coordinator's session, so arming the tick also registers the run with the watchdog, as the skill's section 3 describes for the heartbeat: the same run ID rule, the `status` read, and the report line (`watched, last scan <time>` or `no timer has scanned this machine`), with the tick's interval:
+- **The watchdog.** The tick dies with the coordinator's session, so arming the tick also registers the run with the watchdog, as `background-run`'s section 3 describes for the heartbeat: the same run ID rule, the `status` read, and the report rule (`watched, last scan <time>` only when `last-scan` reads `fresh` and the run's line reads `registered`; otherwise `not watched` and why: stale scan, never scanned, or unregistered), with the tick's interval:
 
   ```sh
   bun <this skill's directory>/scripts/watchdog.ts register --run <run ID> --log <absolute path of the decision log> --interval-minutes 60 --title "<program name>" [--thread <T3 thread ID>]

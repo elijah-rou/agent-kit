@@ -450,8 +450,8 @@ function driveRouteReport(run: RunInfo, rec: Recorder, state: string, fixture: s
 	const runtime = (name: string) => report?.runtimes?.find((row) => row.runtime === name);
 	const claude = runtime("claude");
 	const expected = { off: 1, "not-a-task": 1, system: 1, "unsafe-input": 1, "opted-out": 1 };
-	rec.check(claude?.prompts === written - 1 && JSON.stringify(Object.entries(claude.fallbacks).sort()) === JSON.stringify(Object.entries(expected).sort()), `report: claude's prompts and fallbacks match the withheld steps (got ${JSON.stringify(claude)})`);
-	rec.check(runtime("codex")?.prompts === 1 && runtime("codex")?.fallbacks.off === 1, "report: codex's one record is the off step");
+	rec.check(claude?.prompts === written && JSON.stringify(Object.entries(claude.fallbacks).sort()) === JSON.stringify(Object.entries(expected).sort()), `report: claude's prompts and fallbacks match the withheld steps (got ${JSON.stringify(claude)})`);
+	rec.check(report?.runtimes?.length === 1, `report: claude is the only runtime, since the refused Codex hook wrote nothing (got ${JSON.stringify(report?.runtimes?.map((row) => row.runtime))})`);
 	rec.check((report?.notes ?? []).every((row) => row.decided === 0), "report: no note was decided for a withheld prompt");
 	const noNote = report?.corrections?.rows?.find((row) => row.group === "no note");
 	rec.check(report?.corrections?.kind === "counted" && report.corrections.records === 1 && noNote?.corrections === 1, `report: the fixture's correction joins its session (got ${JSON.stringify(report?.corrections)})`);
@@ -471,19 +471,18 @@ function driveTaskRoute(run: RunInfo, rec: Recorder): void {
 	const task = "Change how attempts are stored in the database so each one keeps its full test output";
 	// A credential-shaped assignment, assembled here so no such literal sits in the repository.
 	const unsafe = `Deploy with the ${"to"}${"ken"}=${"z".repeat(12)} from the vault`;
-	const withheld: { id: string; prompt: string; route: string; cwd: string; codex?: boolean; fallbacks: string[] }[] = [
+	const withheld: { id: string; prompt: string; route: string; cwd: string; fallbacks: string[] }[] = [
 		{ id: "off", prompt: task, route: "off", cwd: fixture, fallbacks: ["off"] },
 		{ id: "not-a-task", prompt: "ok", route: "", cwd: fixture, fallbacks: ["not-a-task"] },
 		{ id: "system", prompt: "<task-notification> task finished", route: "", cwd: fixture, fallbacks: ["system"] },
 		{ id: "unsafe-input", prompt: unsafe, route: "", cwd: fixture, fallbacks: ["unsafe-input"] },
 		{ id: "opted-out", prompt: task, route: "", cwd: join(dir, "fixture-optout"), fallbacks: ["opted-out"] },
-		{ id: "codex-off", prompt: task, route: "off", cwd: fixture, codex: true, fallbacks: ["off"] },
 	];
 	const kept: string[] = [];
 	for (const c of withheld) {
 		const session = `${run.runId}-${c.id}`;
-		const file = `${c.codex ? "codex" : "claude"}-${session}.jsonl`;
-		const result = rec.step(`hook-${c.id}`, ["bun", hookCli, "task-class", c.codex ? "--codex-hook" : "--claude-hook"], { cwd: c.cwd, env: { XDG_STATE_HOME: state, AGENTIC_ROUTE: c.route }, input: hookEvent(session, c.cwd, c.prompt) });
+		const file = `claude-${session}.jsonl`;
+		const result = rec.step(`hook-${c.id}`, ["bun", hookCli, "task-class", "--claude-hook"], { cwd: c.cwd, env: { XDG_STATE_HOME: state, AGENTIC_ROUTE: c.route }, input: hookEvent(session, c.cwd, c.prompt) });
 		rec.check(result.status === 0, `${c.id}: the hook exits 0 (got ${result.status})`);
 		rec.check(result.stdout.trim() === "", `${c.id}: a withheld prompt adds no note`);
 		const records = routeRecords(state, file);
@@ -496,6 +495,13 @@ function driveTaskRoute(run: RunInfo, rec: Recorder): void {
 		if (c.id === "opted-out") rec.check(record.optedOut === true, "opted-out: the record marks the repository opted out");
 		rec.check(!holdsPrompt(record, c.prompt), `${c.id}: the record holds no prompt text`);
 	}
+	// Codex support is gone: its hook flag is a usage error, with no note, no record, and no request.
+	const codexSession = `${run.runId}-codex`;
+	const routeFiles = () => (existsSync(join(state, "agentic", "task-route")) ? readdirSync(join(state, "agentic", "task-route"), { recursive: true }).length : 0);
+	const filesBefore = routeFiles();
+	const codex = rec.step("hook-codex-refused", ["bun", hookCli, "task-class", "--codex-hook"], { cwd: fixture, env: { XDG_STATE_HOME: state, AGENTIC_ROUTE: "" }, input: hookEvent(codexSession, fixture, task) });
+	rec.check(codex.status === 2 && codex.stdout.trim() === "" && codex.stderr.includes("Usage: jev"), `codex: --codex-hook is a usage error with no output (exit ${codex.status})`);
+	rec.check(routeFiles() === filesBefore && routeRecords(state, `codex-${codexSession}.jsonl`).length === 0, "codex: the refused hook writes no record");
 	driveRouteReport(run, rec, state, fixture, kept.length);
 	if (!typesafeKeyPresent()) {
 		rec.note("records.jsonl", kept.join("\n") + "\n");
@@ -811,7 +817,6 @@ function driveSkillCatalog(run: RunInfo, rec: Recorder): void {
 	};
 	const lines = (path: string) => readFileSync(join(root, path), "utf8").split("\n").map((line) => line.trim()).filter(Boolean);
 	for (const entry of lines("claude/skills.txt")) add("claude", entry);
-	for (const name of lines("codex/skills.txt")) add("codex", `skills/${name}`);
 	const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { pi?: { skills?: string[] } };
 	for (const directory of pkg.pi?.skills ?? []) {
 		for (const name of readdirSync(join(root, directory)).sort()) if (existsSync(join(root, directory, name, "SKILL.md"))) add("pi", join(directory, name).replace(/^\.\//, ""));

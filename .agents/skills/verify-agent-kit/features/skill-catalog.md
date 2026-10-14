@@ -1,12 +1,11 @@
 # Skill catalog
 
-agent-kit's skills, instructions, and subagent roles reach three runtimes through different lists: Claude Code gets the entries in `claude/skills.txt` and the roles in `claude/agents/`, Codex gets the names in `codex/skills.txt`, and Pi loads every skill under the package's `pi.skills` directories. A repository's own skills under `.agents/skills/` reach Pi and Codex directly and reach Claude Code through a link in `.claude/skills/`. Every exported skill must load: valid frontmatter named after its directory, references that exist, and runtime-neutral text in Claude's export.
+agent-kit's skills, instructions, and subagent roles reach two runtimes through different lists: Claude Code gets the entries in `claude/skills.txt` and the roles in `claude/agents/`, and Pi loads every skill under the package's `pi.skills` directories. A repository's own skills under `.agents/skills/` reach Pi directly and reach Claude Code through a link in `.claude/skills/`. Every exported skill must load: valid frontmatter named after its directory, references that exist, and runtime-neutral text in Claude's export.
 
 ## Sub-features
 
 - `catalog-check` runs the repository's own skill checker over every skill, export list, and role, which also refuses Markdown a runtime would execute or load with extra permissions.
 - `catalog-claude` resolves each `claude/skills.txt` entry to a loadable skill.
-- `catalog-codex` resolves each `codex/skills.txt` name to a loadable skill.
 - `catalog-pi` lists every skill the Pi package loads.
 - `catalog-repo` resolves each repository skill and its `.claude/skills/` link.
 - `catalog-roles` lists each Claude subagent role with its model, effort, and tools, and checks it binds a Claude model.
@@ -14,7 +13,6 @@ agent-kit's skills, instructions, and subagent roles reach three runtimes throug
 ## How to get to it (user POV)
 
 - Bootstrap links the Claude export and roles into the Claude configuration directory; a Claude Code session then offers the skills and the subagent roles.
-- Bootstrap links the Codex export; Codex offers those skills.
 - Pi loads the agent-kit package and offers every skill under `skills/`.
 - Opening a session in a repository offers its `.agents/skills/` skills (Claude Code through `.claude/skills/`).
 

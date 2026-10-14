@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { apiKey, httpClassifier, isPublic, originSlug, OPT_OUT_FILE, promptOrigin, repoOf, sendable } from "./egress.ts";
 import { HIGH_ABOVE, prDecision, prRisk, prState, RISK_EXIT, type Risk } from "./pr-risk.ts";
 import { buildReport, DEFAULT_DAYS, formatReport, MAX_DAYS, readCorrections, readLedger, type ReportInput } from "./route-report.ts";
-import { appendRecord, ledgerRoot, routeTask, type RouteDeps, type RouteRecord, type Runtime } from "./route-task.ts";
+import { appendRecord, ledgerRoot, routeTask, type RouteDeps, type RouteRecord } from "./route-task.ts";
 import { POLICY, policyId } from "./route.ts";
 
 const CURRENT_POLICY = policyId(POLICY);
@@ -23,8 +23,8 @@ macOS, the keychain item "typesafe-jev".
                              public, or a PR with credential-shaped text, which is never sent;
                              the report notes it, and nothing else changes
       Exit 1 is an error (for example gh failing), and 2 a usage error.
-  task-class --claude-hook | --codex-hook
-      Routes the prompt in the runtime's UserPromptSubmit event on stdin (policy task-route, see
+  task-class --claude-hook
+      Routes the prompt in Claude Code's UserPromptSubmit event on stdin (policy task-route, see
       route.ts), appends one record to $XDG_STATE_HOME/agentic/task-route/, and answers with
       additionalContext when a note applies. It never blocks the prompt.
   task-class <task text>
@@ -55,12 +55,12 @@ export function hookAnswer(note: string | undefined): string | undefined {
 	return note === undefined ? undefined : JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: note } });
 }
 
-/** A UserPromptSubmit hook: Claude Code and Codex send the same prompt, cwd, and session_id fields. */
-export async function promptHook(runtime: Runtime, eventText: string, deps: RouteDeps): Promise<{ answer?: string; record: RouteRecord }> {
+/** Claude Code's UserPromptSubmit hook: the event carries the prompt, cwd, and session_id fields. */
+export async function promptHook(eventText: string, deps: RouteDeps): Promise<{ answer?: string; record: RouteRecord }> {
 	const event: unknown = JSON.parse(eventText);
 	const field = (name: string) => (typeof event === "object" && event !== null && typeof (event as Record<string, unknown>)[name] === "string" ? ((event as Record<string, unknown>)[name] as string) : undefined);
 	const prompt = field("prompt") ?? "";
-	const input = { prompt, cwd: field("cwd") ?? process.cwd(), runtime, sessionId: field("session_id") ?? "unknown", origin: promptOrigin(prompt), queued: false };
+	const input = { prompt, cwd: field("cwd") ?? process.cwd(), runtime: "claude" as const, sessionId: field("session_id") ?? "unknown", origin: promptOrigin(prompt), queued: false };
 	const { note, record } = await routeTask(input, deps);
 	const answer = hookAnswer(note);
 	return answer === undefined ? { record } : { answer, record };
@@ -100,10 +100,9 @@ async function main(args: string[]): Promise<number> {
 	if (command === "--help" || command === "-h") return console.log(USAGE), 0;
 
 	if (command === "task-class") {
-		const hook = rest[0] === "--claude-hook" ? "claude" : rest[0] === "--codex-hook" ? "codex" : undefined;
-		if (hook) {
+		if (rest[0] === "--claude-hook") {
 			try {
-				const { answer, record } = await promptHook(hook, await Bun.stdin.text(), routeDeps(process.env));
+				const { answer, record } = await promptHook(await Bun.stdin.text(), routeDeps(process.env));
 				if (answer) console.log(answer);
 				appendRecord(record, process.env);
 			} catch {
@@ -112,7 +111,8 @@ async function main(args: string[]): Promise<number> {
 			return 0;
 		}
 		const text = rest.join(" ").trim();
-		if (!text) return console.error(USAGE), 2;
+		// An unknown flag is a usage error, never task text sent to Jev.
+		if (!text || text.startsWith("-")) return console.error(USAGE), 2;
 		const { note, record } = await routeTask({ prompt: text, cwd: process.cwd(), runtime: "cli", sessionId: "manual", origin: "user" as const, queued: false }, routeDeps(process.env));
 		console.log(JSON.stringify({ repo: record.repo, advised: record.advised, delivered: record.delivered, fallbacks: record.fallbacks, model: record.answers?.model }));
 		console.log(note ?? "no note");

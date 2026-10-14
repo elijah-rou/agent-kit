@@ -52,6 +52,8 @@ Keep run notes (features covered, unreachable prerequisites, confirmed drift) in
 
 This pass may be run by the weekly T3 schedule `create-verification` step 5 creates, in a fresh thread whose prompt names the repository and trunk. The instructions' rule on schedules gives `maintain-verification` upkeep schedules the user's standing approval, so the schedule needs no separate approval. A scheduled run is the same pass with no one watching:
 
+- If the skill the prompt names is not on current trunk yet (its pull request has not merged), end at once, changing nothing; after the reply's first line, report only `Skill not on trunk yet: <skill path>`.
+- One upkeep pull request per skill: its branch is `agent/verify-upkeep-<app>`. If a pull request from that branch is still open, end at once reporting it, with no new edits and no new pull request. If the branch exists on `origin` with no open pull request, end `blocked`, naming it.
 - Work in a worktree of its own off current trunk (`git-workflow`), never in a checkout someone else may be writing.
 - Ask nothing. Step 0 takes the skill the prompt names; anything else that would need the user ends the pass `blocked`, saying what it needs.
 - Never merge. A `changed` pull request waits for the user, and one that step 7 makes a policy change lands only by countersign.

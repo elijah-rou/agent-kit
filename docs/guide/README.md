@@ -18,7 +18,7 @@ Ask for a new project with what it is for and what done means. The `new-project`
 | A pull request green | "Get #12 green." / "Is #12 green?" | `babysit-and-ship` in drive or check mode. Babysitting never merges. |
 | To understand code | "How does the sync loop work?" / "Why do we retry three times?" / "Teach me the verdict ledger." | `how`, `why`, `teach` |
 | To know where things are | "Catch me up." / "What's waiting on me?" | `catch-up`: what changed, what is running, and what waits on you, across your own threads where the thread tools exist |
-| The verify skill audited | `/maintain-verification` | `maintain-verification` (manual). In T3, `create-verification` also schedules it weekly in a fresh thread once the verify skill merges. |
+| The verify skill audited | `/maintain-verification` | `maintain-verification` (manual). In T3, in a repository you own, `create-verification` also schedules it weekly in a fresh thread when the verify skill's pull request opens; runs before it merges end at once. |
 | A repeated mistake stopped | Correct it as it happens. | The agent records each correction; when you correct the same mistake twice it offers `correct` (manual), which makes the mistake impossible at the strongest level that works, such as a type, a check, or a test. |
 | Lessons kept after a long session | `/reflect` | `reflect` (manual) writes only what you approve. |
 

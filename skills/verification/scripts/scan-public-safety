@@ -128,18 +128,28 @@ def path_entries(paths: list[str]) -> list[Entry]:
     return entries
 
 
-def commit_entries(repository: pathlib.Path, revisions: str) -> list[Entry]:
-    """Each commit's author, committer, and message, labelled by abbreviated SHA."""
+def known_addresses(repository: pathlib.Path, reference: str) -> frozenset[bytes]:
+    """Every author and committer address in REFERENCE's history, compared byte for byte."""
+    log = git(repository, "log", "--format=%ae%n%ce", reference, "--")
+    return frozenset(address for address in log.split(b"\n") if address)
+
+
+def commit_entries(repository: pathlib.Path, revisions: str, known: frozenset[bytes]) -> list[Entry]:
+    """Each commit's author, committer, and message, labelled by abbreviated SHA.
+
+    An author or committer address in KNOWN is left out of the scanned text; the name beside it and every message are scanned.
+    """
     entries: list[Entry] = []
-    log = git(repository, "log", "--format=%H%x1f%an <%ae>%x1f%cn <%ce>%x1f%B%x1e", revisions, "--")
+    log = git(repository, "log", "--format=%H%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1f%B%x1e", revisions, "--")
     for record in log.split(b"\x1e"):
         record = record.strip(b"\n")
         if not record:
             continue
-        sha, author, committer, message = record.split(b"\x1f", 3)
+        sha, author_name, author_address, committer_name, committer_address, message = record.split(b"\x1f", 5)
         label = f"commit {sha.decode()[:12]}"
-        entries.append((f"{label} author", "100000", author))
-        entries.append((f"{label} committer", "100000", committer))
+        for role, name, address in (("author", author_name, author_address), ("committer", committer_name, committer_address)):
+            identity = name if address in known else name + b" <" + address + b">"
+            entries.append((f"{label} {role}", "100000", identity))
         entries.append((f"{label} message", "100000", message))
     return entries
 
@@ -195,7 +205,7 @@ def scan(entries: list[Entry], source: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Reject account identifiers and secrets. With no mode, scans the repository's staged index.",
-        epilog="examples: scan-public-safety --worktree | scan-public-safety --paths evidence/ | scan-public-safety --commits origin/main..HEAD",
+        epilog="examples: scan-public-safety --worktree | scan-public-safety --paths evidence/ | scan-public-safety --commits origin/main..HEAD --known origin/main",
     )
     parser.add_argument("--repo", default=".", help="repository for --index, --worktree, and --commits (default: the current directory's)")
     modes = parser.add_mutually_exclusive_group()
@@ -203,14 +213,18 @@ def main() -> int:
     modes.add_argument("--worktree", action="store_true", help="scan the working tree's tracked files")
     modes.add_argument("--paths", nargs="+", metavar="PATH", help="scan these files and directories, such as an evidence directory")
     modes.add_argument("--commits", metavar="RANGE", help="scan the author, committer, and message of each commit in RANGE")
+    parser.add_argument("--known", metavar="REF", help="with --commits, exempt author and committer addresses that REF's history already holds (an exact match; messages are still scanned)")
     arguments = parser.parse_args()
+    if arguments.known is not None and not arguments.commits:
+        parser.error("--known applies only with --commits")
     try:
         if arguments.paths:
             mode, entries = "paths", path_entries(arguments.paths)
         else:
             repository = pathlib.Path(git(pathlib.Path(arguments.repo), "rev-parse", "--show-toplevel").decode().strip())
             if arguments.commits:
-                mode, entries = "commits", commit_entries(repository, arguments.commits)
+                known = known_addresses(repository, arguments.known) if arguments.known is not None else frozenset()
+                mode, entries = "commits", commit_entries(repository, arguments.commits, known)
             elif arguments.worktree:
                 mode, entries = "worktree", worktree_entries(repository)
             else:

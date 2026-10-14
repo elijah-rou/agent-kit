@@ -6,6 +6,7 @@ import { basename, join } from "node:path";
 const SCANNER = join(import.meta.dir, "scan-public-safety");
 // Built from parts so this file never holds the literals it plants.
 const PERSONAL_EMAIL = ["alice", "mail.test"].join("@");
+const OLD_EMAIL = ["alice.old", "mail.test"].join("@");
 const FORGE_NOREPLY_EMAIL = ["12345+bot", "users.noreply.github.com"].join("@");
 const TRAILER_NOREPLY_EMAIL = ["noreply", "anthropic.com"].join("@");
 const OTHER_NOREPLY_EMAIL = ["noreply", "vendor.test"].join("@");
@@ -26,23 +27,36 @@ function scan(...args: string[]) {
   return { code: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
 }
 
+function git(directory: string, ...args: string[]): void {
+  const result = Bun.spawnSync(["git", "-C", directory, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], { stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+}
+
 function repository(): string {
   const directory = scratch();
-  const git = (...args: string[]) => {
-    const result = Bun.spawnSync(["git", "-C", directory, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], { stdout: "pipe", stderr: "pipe" });
-    if (result.exitCode !== 0) throw new Error(result.stderr.toString());
-  };
-  git("init", "-q", "-b", "main");
+  git(directory, "init", "-q", "-b", "main");
   return directory;
 }
 
-function commit(directory: string, file: string, email: string, message: string): void {
+function commit(directory: string, file: string, email: string, message: string, committer = email): void {
   writeFileSync(join(directory, file), "clean\n");
-  const env = { ...process.env, GIT_AUTHOR_NAME: "A", GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: "A", GIT_COMMITTER_EMAIL: email };
+  const env = { ...process.env, GIT_AUTHOR_NAME: "A", GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: "A", GIT_COMMITTER_EMAIL: committer };
   for (const args of [["add", file], ["commit", "-q", "-m", message]]) {
     const result = Bun.spawnSync(["git", "-C", directory, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], { env, stdout: "pipe", stderr: "pipe" });
     if (result.exitCode !== 0) throw new Error(result.stderr.toString());
   }
+}
+
+// A trunk whose history holds OLD_EMAIL as author and committer, with a feature branch checked out on top.
+function branchOffTrunk(trunkMessage = "Trunk"): string {
+  const directory = repository();
+  commit(directory, "trunk.txt", OLD_EMAIL, trunkMessage);
+  git(directory, "checkout", "-q", "-b", "feature");
+  return directory;
+}
+
+function findings(stderr: string): string[] {
+  return stderr.split("\n").filter((line) => line.startsWith("commit "));
 }
 
 describe("--paths scans evidence files and directories", () => {
@@ -133,6 +147,74 @@ describe("--commits scans commit metadata", () => {
     const result = scan("--repo", directory, "--commits", "HEAD");
     expect(result.code).toBe(1);
     expect(result.stderr).toMatch(/commit [0-9a-f]{12} author:1: personal email address/);
+  });
+});
+
+describe("--commits --known exempts only identities the reference's history holds", () => {
+  test("a new personal identity behind a known HEAD identity is still a finding", () => {
+    const directory = repository();
+    commit(directory, "trunk.txt", FORGE_NOREPLY_EMAIL, "Trunk");
+    git(directory, "checkout", "-q", "-b", "feature");
+    commit(directory, "a.txt", PERSONAL_EMAIL, "Blocked commit");
+    commit(directory, "b.txt", FORGE_NOREPLY_EMAIL, "After the email fix");
+    const result = scan("--repo", directory, "--commits", "main..HEAD", "--known", "main");
+    expect(result.code).toBe(1);
+    expect(findings(result.stderr)).toHaveLength(2);
+    expect(result.stderr).toMatch(/commit [0-9a-f]{12} author:1: personal email address/);
+    expect(result.stderr).toMatch(/commit [0-9a-f]{12} committer:1: personal email address/);
+    expect(result.stderr).not.toContain(PERSONAL_EMAIL);
+  });
+
+  test("mixed identities: the known one passes, the new one is flagged", () => {
+    const directory = branchOffTrunk();
+    commit(directory, "a.txt", OLD_EMAIL, "Known identity");
+    const known = scan("--repo", directory, "--commits", "main..HEAD", "--known", "main");
+    expect(known.stderr).toBe("");
+    expect(known.code).toBe(0);
+    const unexempted = scan("--repo", directory, "--commits", "main..HEAD");
+    expect(unexempted.code).toBe(1);
+    commit(directory, "b.txt", PERSONAL_EMAIL, "New identity");
+    const mixed = scan("--repo", directory, "--commits", "main..HEAD", "--known", "main");
+    expect(mixed.code).toBe(1);
+    expect(findings(mixed.stderr)).toHaveLength(2);
+    expect(mixed.stderr).not.toContain(OLD_EMAIL);
+  });
+
+  test("a new committer behind a known author is a finding on the committer alone", () => {
+    const directory = branchOffTrunk();
+    commit(directory, "a.txt", OLD_EMAIL, "Committed elsewhere", PERSONAL_EMAIL);
+    const result = scan("--repo", directory, "--commits", "main..HEAD", "--known", "main");
+    expect(result.code).toBe(1);
+    expect(findings(result.stderr)).toEqual([expect.stringMatching(/^commit [0-9a-f]{12} committer:1: personal email address$/)]);
+  });
+
+  test("an address differing from a known one only in case is a finding", () => {
+    const directory = branchOffTrunk();
+    commit(directory, "a.txt", OLD_EMAIL.toUpperCase(), "Shouted identity");
+    const result = scan("--repo", directory, "--commits", "main..HEAD", "--known", "main");
+    expect(result.code).toBe(1);
+    expect(findings(result.stderr)).toHaveLength(2);
+  });
+
+  test("an address only in a trunk commit message is not known, and messages are never exempt", () => {
+    const directory = branchOffTrunk(`Trunk\n\nCo-authored-by: P <${PERSONAL_EMAIL}>`);
+    commit(directory, "a.txt", PERSONAL_EMAIL, "Message-only address");
+    const author = scan("--repo", directory, "--commits", "main..HEAD", "--known", "main");
+    expect(author.code).toBe(1);
+    expect(findings(author.stderr)).toHaveLength(2);
+    git(directory, "reset", "-q", "--hard", "main");
+    commit(directory, "b.txt", OLD_EMAIL, `Quotes a known identity\n\nSee ${OLD_EMAIL}`);
+    const message = scan("--repo", directory, "--commits", "main..HEAD", "--known", "main");
+    expect(message.code).toBe(1);
+    expect(findings(message.stderr)).toEqual([expect.stringMatching(/^commit [0-9a-f]{12} message:3: personal email address$/)]);
+  });
+
+  test("--known needs --commits and an existing reference", () => {
+    const directory = branchOffTrunk();
+    expect(scan("--repo", directory, "--known", "main").code).toBe(2);
+    const missing = scan("--repo", directory, "--commits", "main..HEAD", "--known", "absent");
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toContain("public-safety scan error");
   });
 });
 

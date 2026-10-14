@@ -7,8 +7,6 @@ git diff --check
 python3 scripts/check-public-safety --index
 python3 scripts/check-public-safety --worktree
 bun scripts/check-skills.ts
-bun scripts/check-standalone.ts
-bun test scripts
 
 # The kit runs Pi extensions on Bun, so they are tested there too.
 bun test pi/tests

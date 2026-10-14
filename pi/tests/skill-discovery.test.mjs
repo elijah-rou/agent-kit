@@ -31,7 +31,7 @@ test("Pi deduplicates skill links found in both .pi and .agents skill folders an
     const { skills, diagnostics } = loadSkills({ cwd: root, agentDir: join(root, ".pi/agent"), includeDefaults: false, skillPaths: paths });
     assert.deepEqual(diagnostics, []);
     assert.deepEqual(skills.map(skill => skill.name).sort(), names);
-    assert.equal(skills.find(skill => skill.name === "design-control-loop").disableModelInvocation, true);
+    assert.equal(skills.find(skill => skill.name === "background-run").disableModelInvocation, true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

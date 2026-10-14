@@ -4,13 +4,14 @@ Pi loads this library directly. Claude Code loads the selection in
 [`claude/skills.txt`](../claude/skills.txt), which also names runtime-neutral adaptations
 under `claude/skills/`. Pi-specific behavior in a shared skill stays in an explicit branch.
 
-The `show-me` and `design-control-loop` skills are adapted from
+The `show-me` skill is adapted from
 [humanlayer/skills](https://github.com/humanlayer/skills) at commit
 `3c2629142c5d437428269b1b722b08c0b87f574d`.
 
-Local adaptations narrow automatic invocation, use portable skill paths, require an
-approved control-loop design before implementation, and tighten workflow safety.
-Both are reviewed against `ca7c8088db69e315a8b2deea43820270457f8f3c` ([`RESYNC.md`](RESYNC.md)); drift is tracked in `provenance.toml`.
+Local adaptations load it on an explicit request to show or visualize, keep it
+self-contained, describe how Pi renders Mermaid, write HTML only on request, and open
+artifacts portably across macOS, Linux, and remote sessions.
+It is reviewed against `ca7c8088db69e315a8b2deea43820270457f8f3c` ([`RESYNC.md`](RESYNC.md)); drift is tracked in `provenance.toml`.
 The upstream MIT license is preserved in `HUMANLAYER-LICENSE`.
 
 The `writing-for-agents` and `diagnosing-bugs` skills are adapted from

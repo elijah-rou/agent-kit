@@ -264,17 +264,25 @@ function originSlug(checkout: string): string | undefined {
 	return /^(?:https:\/\/|ssh:\/\/git@|git@)github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(remote)?.[1];
 }
 
+/**
+ * A gh fetch a drive depends on. A non-zero exit or empty output throws, naming the command, so the
+ * drive FAILs instead of reading a failed fetch as an empty answer (the README: a gh failure is a FAIL).
+ */
+function ghText(args: string[]): string {
+	const command = `gh ${args.join(" ")}`;
+	const result = sh(["gh", ...args], { cwd: KIT_CHECKOUT });
+	if (result.status !== 0) throw new Error(`${command} failed (exit ${result.status}): ${result.stderr.trim()}`);
+	if (result.stdout.trim() === "") throw new Error(`${command} printed nothing`);
+	return result.stdout;
+}
+
 /** The newest pull request in a state, undefined when there is none; a gh failure is an error, not a skip. */
 function newestPr(slug: string, state: "open" | "merged"): number | undefined {
-	const result = sh(["gh", "pr", "list", "-R", slug, "--state", state, "--limit", "1", "--json", "number"], { cwd: KIT_CHECKOUT });
-	if (result.status !== 0) throw new Error(`gh pr list -R ${slug} --state ${state} failed: ${result.stderr.trim()}`);
-	return (JSON.parse(result.stdout) as { number: number }[])[0]?.number;
+	return (JSON.parse(ghText(["pr", "list", "-R", slug, "--state", state, "--limit", "1", "--json", "number"])) as { number: number }[])[0]?.number;
 }
 
 function ghJson(path: string): unknown {
-	const result = sh(["gh", "api", path], { cwd: KIT_CHECKOUT });
-	if (result.status !== 0) throw new Error(`gh api ${path} failed: ${result.stderr.trim()}`);
-	return JSON.parse(result.stdout);
+	return JSON.parse(ghText(["api", path]));
 }
 
 function parseJson(text: string): unknown {
@@ -698,8 +706,8 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 		rec.check(realLedger(run.checkout) === ledgerBefore, "the real verdict ledger is unchanged");
 		return rec.skip(`no open pull request in ${slug} to record a smoke verdict for: pass --pr N`);
 	}
-	const head = parseJson(sh(["gh", "pr", "view", String(open), "-R", slug, "--json", "headRefOid,state"], { cwd: KIT_CHECKOUT }).stdout) as { headRefOid?: string; state?: string } | undefined;
-	if (head?.state !== "OPEN") throw new Error(`#${open} in ${slug} is not open (state ${head?.state ?? "unknown"}); pass --pr with an open pull request`);
+	const head = JSON.parse(ghText(["pr", "view", String(open), "-R", slug, "--json", "headRefOid,state"])) as { headRefOid?: string; state?: string };
+	if (head.state !== "OPEN") throw new Error(`#${open} in ${slug} is not open (state ${head.state ?? "unknown"}); pass --pr with an open pull request`);
 	if (options.pr !== undefined) rec.check(head.headRefOid === run.revision, `the driven checkout is at #${open}'s head (checkout ${run.revision.slice(0, 12)}, head ${head.headRefOid?.slice(0, 12)}); verify a worktree at the head`);
 	else rec.note("smoke-only.txt", `#${open} was picked as the newest open pull request; the driven checkout (${run.revision}) is not necessarily its head, so this record is a ledger smoke check, not evidence about #${open}.\n`);
 	// Every verdict this drive records never passes, and every countersign it attempts must be refused;
@@ -708,8 +716,8 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 	writeFileSync(evidence, `verify-agent-kit verdict-gate smoke verdict for ${slug}#${open} in run ${run.runId}; ledger at ${store}\n`);
 	const ledgerFile = join(store, "ledger.tsv");
 	const ledgerText = () => (existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : "");
-	const diff = sh(["gh", "pr", "diff", String(open), "-R", slug], { cwd: KIT_CHECKOUT });
-	const patch = diff.status === 0 ? sh(["git", "patch-id", "--verbatim"], { cwd: KIT_CHECKOUT, input: diff.stdout }).stdout.split(" ")[0] ?? "" : "";
+	const diff = ghText(["pr", "diff", String(open), "-R", slug]);
+	const patch = sh(["git", "patch-id", "--verbatim"], { cwd: KIT_CHECKOUT, input: diff }).stdout.split(" ")[0] ?? "";
 	rec.check(/^[0-9a-f]{40}$/.test(patch), `the open pull request's patch ID is computed from its diff (got "${patch}")`);
 	const countersign = (name: string, approved: string) => rec.step(name, ["bun", agentic, "verify", "record", String(open), "--repo", slug, "--verdict", "countersigned", "--patch", approved, "--evidence", evidence], { env, cwd: fixture });
 	const unsigned = countersign("verify-countersign-unverified", patch);
@@ -733,8 +741,7 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 	rec.check(unapproved.status === 1 && unapproved.stderr.includes("a changed patch needs new words from the user") && ledgerText() === blockedLedger, `verify record refuses a countersign over verifier-blocked whose --patch is not #${open}'s current patch, and the ledger is unchanged (exit ${unapproved.status})`);
 	// A passing verdict for a pull request that touches a policy path is refused; attempted only when it does,
 	// so this drive never records a passing verdict that record would accept.
-	const names = sh(["gh", "pr", "diff", String(open), "-R", slug, "--name-only"], { cwd: KIT_CHECKOUT });
-	const policyTouched = names.status === 0 ? names.stdout.split("\n").filter((path) => path !== "" && isPolicySample(path)) : [];
+	const policyTouched = ghText(["pr", "diff", String(open), "-R", slug, "--name-only"]).split("\n").filter((path) => path !== "" && isPolicySample(path));
 	rec.note("policy-files.txt", `${policyTouched.join("\n")}\n`);
 	if (policyTouched.length > 0) {
 		const passing = rec.step("verify-record-policy-passing", ["bun", agentic, "verify", "record", String(open), "--repo", slug, "--verdict", "unit-test-verified", "--evidence", evidence], { env, cwd: fixture });

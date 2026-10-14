@@ -256,7 +256,7 @@ describe("agentic verify, end to end", () => {
 		const write = () => writeFileSync(join(root, "view.json"), JSON.stringify({ headRefOid: fake.head, headRefName: "agent/x", state: fake.state }));
 		write();
 		writeFileSync(join(root, "diff.patch"), fake.diff);
-		writeFileSync(join(bin, "gh"), `#!/bin/sh\ncase "$1 $2" in\n"pr view") cat "${root}/view.json";;\n"pr diff") cat "${root}/diff.patch";;\n*) echo "fake gh: unexpected gh $*" >&2; exit 1;;\nesac\n`);
+		writeFileSync(join(bin, "gh"), `#!/bin/sh\ncase "$1 $2" in\n"pr view") cat "${root}/view.json";;\n"pr diff") if [ -e "${root}/diff.fails" ]; then echo "fake gh: pr diff failed" >&2; exit 1; fi; cat "${root}/diff.patch";;\n*) echo "fake gh: unexpected gh $*" >&2; exit 1;;\nesac\n`);
 		chmodSync(join(bin, "gh"), 0o755);
 		const env = { PATH: `${bin}:${process.env.PATH}`, AGENTIC_ORCH_STORE: join(root, "orch"), HOME: root };
 		const cli = (args: string[], agent = "verifier-1") => spawnSync(process.execPath, [join(import.meta.dir, "cli.ts"), ...args, "--repo", "o/r"], { cwd: repo, encoding: "utf8", env: { ...env, AGENTIC_AGENT_ID: agent } });
@@ -264,6 +264,7 @@ describe("agentic verify, end to end", () => {
 			cli,
 			moveHead: (sha: string) => ((fake.head = sha), write()),
 			changePatch: (text = OTHER_DIFF) => writeFileSync(join(root, "diff.patch"), text),
+			failDiff: () => writeFileSync(join(root, "diff.fails"), ""),
 			patchId: () => spawnSync("git", ["patch-id", "--verbatim"], { input: spawnSync("cat", [join(root, "diff.patch")], { encoding: "utf8" }).stdout, encoding: "utf8" }).stdout.split(" ")[0],
 			ledger: () => readLedger(join(root, "orch")),
 			store: join(root, "orch"),
@@ -412,6 +413,26 @@ describe("agentic verify, end to end", () => {
 		pr.changePatch();
 		expect(sign(approved, "carry.txt").status).toBe(1);
 		expect(sign(pr.patchId(), "carry.txt").status).toBe(1);
+	});
+
+	test("a failed or empty gh pr diff fails status and record closed: exit 1, no pass, no ledger row", () => {
+		const pr = setup();
+		expect(pr.cli(["record", "7", "--verdict", "live-ui-verified", "--evidence", "run.log"]).status).toBe(0);
+		const rows = pr.ledger().length;
+
+		pr.changePatch("");
+		const emptyStatus = pr.cli(["status", "7"]);
+		expect([emptyStatus.status, emptyStatus.stdout.includes("ledger pass"), emptyStatus.stderr.includes("no diff to bind a verdict to")]).toEqual([1, false, true]);
+		const emptyRecord = pr.cli(["record", "7", "--verdict", "live-ui-verified", "--evidence", "run.log"]);
+		expect([emptyRecord.status, emptyRecord.stdout.includes("recorded"), emptyRecord.stderr.includes("no diff to bind a verdict to")]).toEqual([1, false, true]);
+
+		pr.changePatch(DIFF);
+		pr.failDiff();
+		const failedStatus = pr.cli(["status", "7"]);
+		expect([failedStatus.status, failedStatus.stdout.includes("ledger pass"), failedStatus.stderr.includes("gh pr diff 7 -R o/r: fake gh: pr diff failed")]).toEqual([1, false, true]);
+		const failedRecord = pr.cli(["record", "7", "--verdict", "live-ui-verified", "--evidence", "run.log"]);
+		expect([failedRecord.status, failedRecord.stdout.includes("recorded"), failedRecord.stderr.includes("gh pr diff 7 -R o/r: fake gh: pr diff failed")]).toEqual([1, false, true]);
+		expect(pr.ledger().length).toBe(rows);
 	});
 
 	test("a merged pull request reports its ledger state but takes no verdict", () => {

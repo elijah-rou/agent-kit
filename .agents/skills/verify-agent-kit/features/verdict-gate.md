@@ -46,6 +46,7 @@ Preconditions:
 - `verify` finds the ledger through git's common directory unless `AGENTIC_ORCH_STORE` is set. Without it, a drive would write into the real repository's ledger; the drive always sets it, and fails if the real ledger changes anyway.
 - `verify` asks GitHub for the pull request before it checks a verdict's arguments, so an argument error after the pull request number needs network to reach. The command name is checked first, so `verify publish` is a usage error offline.
 - `rulesets plan` exits 0 whether or not changes are pending; the drive's check against the live ruleset is what shows the plan is right.
+- Every `gh` fetch the drive reads (`gh pr list`, `gh api`, `gh pr view`, `gh pr diff`, and `gh pr diff --name-only`) stops the drive with `FAIL verdict-gate: drive stopped: gh ... failed` or `... printed nothing` when it exits non-zero or prints nothing. A failed `--name-only` fetch must never read as "touches no policy path" and skip the policy refusal. Only `gh` being absent or logged out is a SKIP.
 - A buggy `rulesets plan` in the driven checkout runs with the user's `gh` token. The drive detects a write to the live ruleset; it cannot prevent one. Read a diff to `agentic/tools/rulesets/cli.ts` before driving it.
 - `pr-risk` sends the screened pull request's title, body, and diff to TypeSafe; it does so only for a public repository.
 - `pr-risk` prints P rounded to two places; at exactly `0.30` either decision is consistent, so only the agreement of verb, comparison, and exit code is checked there.

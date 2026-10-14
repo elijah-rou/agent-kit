@@ -12,7 +12,7 @@ Here the same split has three parts:
 | Part | Role | Owns |
 | --- | --- | --- |
 | Hermes agents ([Hermes Agent](https://hermes-agent.nousresearch.com/)) | The managerial team | Talking with the user (calls, Signal, other messaging), generic tasks for each agent's specialty, intake of events, and deciding when coding work is needed |
-| T3 Code, with Orchestrator V2 | The coding org | Threads, worktrees, delegated tasks on Pi, Codex, and Claude, and pull requests |
+| T3 Code, with Orchestrator V2 | The coding org | Threads, worktrees, delegated tasks on Pi and Claude, and pull requests |
 | agent-kit | The method | Instructions and skills that every coding agent in T3 runs on |
 
 `pi-t3-runtime` (`~/Projects/pi-t3-runtime`) is T3's Pi runtime and sits inside the coding org.

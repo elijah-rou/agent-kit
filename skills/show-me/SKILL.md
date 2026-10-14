@@ -43,7 +43,7 @@ src/
 └── transport/      # sends API requests
 ```
 
-- Show component interaction, control flow, or data flow with Mermaid. In Pi, Mermaid renders as fixed-width Unicode and falls back to the fenced source when a diagram exceeds the available terminal width. In Codex clients, rendering varies; do not assume T3 or another frontend renders Mermaid. Use a text view when rendered diagrams are unavailable. Default flowcharts to `TD`; use `LR` only for at most three short nodes. Keep labels brief and move supporting detail into nearby prose. If a diagram is still too large, split it or use a text view instead of escalating to HTML.
+- Show component interaction, control flow, or data flow with Mermaid. In Pi, Mermaid renders as fixed-width Unicode and falls back to the fenced source when a diagram exceeds the available terminal width. In other clients, rendering varies; do not assume T3 or another frontend renders Mermaid. Use a text view when rendered diagrams are unavailable. Default flowcharts to `TD`; use `LR` only for at most three short nodes. Keep labels brief and move supporting detail into nearby prose. If a diagram is still too large, split it or use a text view instead of escalating to HTML.
 
 ```mermaid
 sequenceDiagram

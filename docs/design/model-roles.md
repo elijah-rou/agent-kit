@@ -1,6 +1,6 @@
 # Model roles: which model each kind of child task gets
 
-- **Status:** the initial version (Claude only, below) is built on 2026-10-12. The rest of this document is the full design, kept for when a second provider returns.
+- **Status:** the initial version (Claude only, below) is built on 2026-10-12. The rest of this document is the full design, kept for when a second provider returns. Codex support was removed on 2026-10-14 (plan item R3), so wherever the full design names Codex as the second harness, that part is superseded and kept only as a record.
 - **Reader:** the user, then whoever builds it.
 - **Method:** `design-checkpoint`. Candidates came from GPT-6.1 Sol (B) and Claude Fable 5.1 (C). Candidate A (Claude Opus 5.5) hit a session limit and left a partial sketch, which was read. The rubric is at the end.
 
@@ -26,7 +26,7 @@ What is built:
 What is deferred, with the reason:
 
 - **The overlay, the renderer, the role table, `SessionStart` hooks and T3 targets.** They exist to cross providers and harnesses. With one provider, the agent files are the whole mechanism.
-- **Codex and Pi.** `codex/AGENTS.md` and `pi/AGENTS.md` are unchanged, including the Codex model table and their alternate-model reviewer wording.
+- **Pi.** `pi/AGENTS.md` is unchanged, including its alternate-model reviewer wording. `codex/AGENTS.md` and its model table were removed with Codex support on 2026-10-14.
 - **Open questions 2 and 6** (cross-harness `quick` and `explore`, and usage-limit fallback) do not arise with one provider. Question 4 took its default. Question 1 took its default except `quick`, which the user moved to `high` because it writes files. Question 3 kept design-checkpoint's candidate-diversity preference until the user reopened it on 2026-10-13 and removed it: subagents are Claude-only, after a candidate sent to another provider stalled a trial.
 
 Verified on 2026-10-12 with Claude Code 2.1.296 in a scratch project: the four files, copied and also as symlinks, appear in the session's agent list, with `Explore` replacing the built-in. A headless run launched `Explore` on `claude-haiku-5-5` and `review` on `claude-opus-5-5`. Whether `effort` took effect is not visible in the output.

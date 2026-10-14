@@ -22,7 +22,11 @@ Edit only the verification skill's own directory (its `SKILL.md`, `features/`, a
 
 ## Pass
 
-0. **Locate the target.** Find the skill under `.agents/skills/verify-*/`. With several candidates, ask which one, recommending the one whose surface the user's request names. With none, end `blocked` and point to `create-verification`. Then, in every run, scheduled or manual, keep one upkeep pull request per skill at a time: fetch origin and list the open pull requests with `gh pr list --state open --limit 1000 --json number,files`. If any changes a file under the skill's directory, end `clean` at once reporting it, with no edits and no new pull request.
+0. **Locate the target.** Find the skill under `.agents/skills/verify-*/`. With several candidates, ask which one, recommending the one whose surface the user's request names. With none, end `blocked` and point to `create-verification`. Then keep one upkeep pull request per skill at a time. Fetch origin (a scheduled run has already fetched) and list the open pull requests with `gh pr list --state open --limit 1000 --json number,headRefName`. An upkeep pull request for this skill is one whose head branch is exactly `agent/verify-upkeep-<app>-<YYYY-MM-DD>`, optionally followed by `-<N>` (step 6 names every run's branch this way), where `<app>` is the skill's directory name after `verify-` and the date follows it directly, so `verify-web` does not match `verify-web-admin`'s branches. Other open pull requests that change the skill's directory, such as feature work updating its map, do not stop the pass. If one is open:
+   - A scheduled run ends `clean`, reporting it, with no edits and no new pull request.
+   - A manual run reports it and asks nothing. It continues only if the user's request names that pull request; otherwise it ends `clean`, the reply saying the open upkeep pull request is why.
+
+   If the fetch or `gh` fails, end `blocked`, naming the command and its error; never assume no upkeep pull request is open.
 
 1. **Index hygiene.** Read `features/README.md` and list its sibling files. Fix missing, extra, duplicate, or dead entries, check that each feature file has its four sections, check that the control CLI has exactly one drive target per feature file and every subcommand and Dev loop lever `create-verification` step 2 requires for this product (a missing one is a harness gap, step 5), and check that every agent runtime the user works with here can discover the skill: each one that does not read `.agents/skills/` has a discovery symlink resolving to the skill's `SKILL.md`. Add a missing symlink or repair a broken one as part of this step.
 
@@ -52,11 +56,18 @@ Keep run notes (features covered, unreachable prerequisites, confirmed drift) in
 
 This pass may be run by the weekly T3 schedule `create-verification` step 5 creates, in a fresh thread whose prompt names only the repository's main checkout path, trunk, and the skill path. It names no pull request or branch, since one named when the schedule was created goes stale; the run finds the skill's state itself. The instructions' rule on schedules gives `maintain-verification` upkeep schedules the user's standing approval, so the schedule needs no separate approval. A scheduled run is the same pass with no one watching:
 
-- Before step 0, fetch origin. If the skill the prompt names is not on origin's trunk, change nothing and list the open pull requests as step 0 does. One changes a file under the skill's directory: end `clean`; after the reply's first line, report only the outcome and `Skill not on trunk yet: <skill path>, waiting for #<number>`. None does: end `blocked`, naming the schedule's title (`Weekly verification upkeep: <repository> verify-<app>`) and telling the user to delete that schedule.
+- Before step 0, fetch origin; if the fetch fails, end `blocked` as step 0 does. If the skill the prompt names is not on origin's trunk, change nothing and list the open pull requests with `gh pr list --state open --limit 1000 --json number,files` (if it fails, end `blocked` the same way). One changes a file under the skill's directory or at one of its discovery symlinks (a `verify-<app>` entry in another runtime's project skill directory, such as `.claude/skills/verify-<app>`): end `clean`, waiting for it. None does: end `blocked`, naming the schedule's title (`Weekly verification upkeep: <repository> verify-<app>`) and telling the user to delete that schedule.
 - Work in a worktree of its own off current trunk (`git-workflow`), never in a checkout someone else may be writing.
 - Ask nothing. Step 0 takes the skill the prompt names; anything else that would need the user ends the pass `blocked`, saying what it needs.
 - Never merge. A `changed` pull request waits for the user, and one that step 7 makes a policy change lands only by countersign.
 
 ## Reply
 
-A scheduled run's reply starts with the line `Scheduled weekly upkeep: <repository>`. Lead with product gaps and anything blocked. Then the outcome, coverage per feature (source and live, with evidence paths), drift fixed, harness fixes and their re-proofs, the index, section, drive-target, lever, and symlink check from step 6, and the branch or pull request if any.
+A scheduled run's reply starts with the line `Scheduled weekly upkeep: <repository>`. A run that ends early (step 0 or Scheduled runs, before step 1) replies with only that line when scheduled, the outcome, and one reason line:
+
+- `Upkeep pull request open: #<number> (<branch>)`, and for a manual run whose request did not name it, `Not auditing while it is open; name it in the request to audit anyway.`
+- `Skill not on trunk yet: <skill path>, waiting for #<number>`
+- `No open pull request changes <skill path>; delete the schedule "<title>".`
+- `Blocked: <command> failed: <error>`, or `No verification skill found; run create-verification.`
+
+Otherwise, lead with product gaps and anything blocked. Then the outcome, coverage per feature (source and live, with evidence paths), drift fixed, harness fixes and their re-proofs, the index, section, drive-target, lever, and symlink check from step 6, and the branch or pull request if any.

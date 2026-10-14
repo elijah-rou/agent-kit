@@ -28,7 +28,7 @@ agent-kit:
 
 ### Maintaining a project
 
-pstack routes each kind of work to a playbook: Bug fix ("repro first"), Perf issue, Refactoring, Hillclimb, Runtime and Trace forensics. `maintain-verification-skill` runs daily from a scheduled automation. Babysit drives a PR to merge-ready, Shipping lands it, Worktree cleanup reclaims disk, and `correct`, `reflect`, and `automate-me` capture lessons. The benny automation pack is an outer loop that triages issue reports, reproduces them, and drafts fixes.
+pstack routes each kind of work to a playbook: Bug fix ("repro first"), Perf issue, Refactoring, Hillclimb, Runtime and Trace forensics. pstack advises running `maintain-verification-skill` at least daily, ideally from a scheduled automation. Babysit drives a PR to merge-ready, Shipping lands it, Worktree cleanup reclaims disk, and `correct`, `reflect`, and `automate-me` capture lessons. The benny automation pack is an outer loop that triages issue reports, reproduces them, and drafts fixes.
 
 agent-kit:
 
@@ -64,7 +64,7 @@ A throwaway spike with no decision behind it has no flow in either kit. Both say
 
 1. **No guide for the user.** pstack ships a ten-page guide with copyable prompts, and `/poteto-help`, which answers "which skill fits" without starting work. agent-kit's README describes its architecture, not how to prompt it. This analysis exists because the flows were not discoverable from the repository.
 2. **No new-project sequence.** The pieces exist, but nothing orders them or names the steps an agent cannot infer, such as the Jev opt-out decision and the absence of `ship` in a private repository.
-3. **Verification upkeep has no cadence.** pstack runs it daily. agent-kit offers it only when a task stumbles on a gap (#29), and the instructions forbid creating a schedule silently. `design-control-loop` can build a scheduled loop, but it ships to Pi and Codex only, and nothing points to it for this. Every landing mode depends on the verify skill being current.
+3. **Verification upkeep has no cadence.** pstack advises a daily run, ideally scheduled. agent-kit offers it only when a task stumbles on a gap (#29), and the instructions forbid creating a schedule silently. `design-control-loop` can build a scheduled loop, but it ships to Pi and Codex only, and nothing points to it for this. Every landing mode depends on the verify skill being current.
 4. **No lighter mode for a spike.** `prototype-to-decide` inverts the quality bar only for a fork. A plain spike gets the full repository rules (no TODOs, adversarial review before a PR, a durable regression case) unless the user says "throwaway, scratch dir, no PR". pstack's Prototype playbook states the inversion outright.
 5. **No independent comment pass.** `code-design` already says comments explain why and code that needs a what-comment is rewritten, and #30 forbids comments that justify workarounds. That is the author's own pass. pstack's `no-comments` hands comments to a reviewer that did not write them, because an author defends its own. agent-kit's PR review reports only blocking findings, so narrating comments and defensive padding pass.
 

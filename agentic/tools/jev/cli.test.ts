@@ -1,11 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hookAnswer, promptHook } from "./cli.ts";
+import { hookAnswer, main, promptHook } from "./cli.ts";
 import type { RouteDeps } from "./route-task.ts";
-import { POLICY, type Answers, type Level } from "./route.ts";
+import { POLICY, type Answers, type Classify, type Level } from "./route.ts";
 
 const CLI = join(import.meta.dir, "cli.ts");
 const SKILLS = join(import.meta.dir, "..", "..", "..", "skills");
@@ -34,17 +34,15 @@ describe("the prompt hook delivers advice only", () => {
 			["Going to bed, keep fixing the flaky tests until CI is green", answers("loop", "one-way-door")],
 			["Migrate the ledger store from JSON files to SQLite", answers("rigor", "one-way-door")],
 		];
-		for (const runtime of ["claude", "codex"] as const) {
-			for (const [prompt, answer] of cases) {
-				const { answer: stdout, record } = await promptHook(runtime, event(prompt), deps(answer));
-				expect(record.noted).toBe(true);
-				const output = JSON.parse(stdout!) as Record<string, unknown>;
-				expect(Object.keys(output)).toEqual(["hookSpecificOutput"]);
-				const specific = output.hookSpecificOutput as Record<string, unknown>;
-				expect(Object.keys(specific).sort()).toEqual(["additionalContext", "hookEventName"]);
-				expect(specific.hookEventName).toBe("UserPromptSubmit");
-				expect(specific.additionalContext).toMatch(/^Task-(?:route note|class hint), advisory: /);
-			}
+		for (const [prompt, answer] of cases) {
+			const { answer: stdout, record } = await promptHook(event(prompt), deps(answer));
+			expect(record.noted).toBe(true);
+			const output = JSON.parse(stdout!) as Record<string, unknown>;
+			expect(Object.keys(output)).toEqual(["hookSpecificOutput"]);
+			const specific = output.hookSpecificOutput as Record<string, unknown>;
+			expect(Object.keys(specific).sort()).toEqual(["additionalContext", "hookEventName"]);
+			expect(specific.hookEventName).toBe("UserPromptSubmit");
+			expect(specific.additionalContext).toMatch(/^Task-(?:route note|class hint), advisory: /);
 		}
 	});
 
@@ -55,7 +53,7 @@ describe("the prompt hook delivers advice only", () => {
 	test("the hook process exits 0 with nothing on stdout when routing fails or is off", () => {
 		const state = mkdtempSync(join(tmpdir(), "jev-hook-"));
 		const env = { ...process.env, XDG_STATE_HOME: state, AGENTIC_ROUTE: "off", TYPESAFE_API_KEY: "" };
-		for (const [flag, stdin] of [["--claude-hook", "not json"], ["--codex-hook", event("Migrate the ledger store from JSON files to SQLite")]] as const) {
+		for (const [flag, stdin] of [["--claude-hook", "not json"], ["--claude-hook", event("Migrate the ledger store from JSON files to SQLite")]] as const) {
 			const result = spawnSync("bun", [CLI, "task-class", flag], { input: stdin, env, encoding: "utf8", timeout: 20_000 });
 			expect(`${flag}: ${result.status} ${result.stdout}`).toBe(`${flag}: 0 `);
 		}
@@ -102,5 +100,34 @@ describe("agentic jev pr-risk, end to end", () => {
 		expect(help.stdout).toMatch(/not scored +exit 4 /);
 		expect(help.stdout).toContain("Exit 1 is an error");
 		expect(help.stdout).not.toContain("waits for the user");
+	});
+});
+
+const TASK = "Where does the config loader read XDG paths from?";
+
+function harness() {
+	const sent: string[] = [];
+	const classify: Classify = async (state) => (sent.push(state.task), { kind: "failed", reason: "error" });
+	const deps: RouteDeps = { policy: POLICY, classify, repo: async () => ({ slug: "o/r", optedOut: false }), env: {}, now: Date.now, skillsDir: SKILLS };
+	return { deps, sent };
+}
+
+describe("jev task-class", () => {
+	let quiet: ReturnType<typeof spyOn>[] = [];
+	beforeEach(() => (quiet = [spyOn(console, "log").mockImplementation(() => {}), spyOn(console, "error").mockImplementation(() => {})]));
+	afterEach(() => quiet.forEach((spy) => spy.mockRestore()));
+
+	test("text starting with a dash is a usage error and is never sent", async () => {
+		for (const args of [["--codex-hook"], ["-x", ...TASK.split(" ")], ["  --unknown"]]) {
+			const { deps, sent } = harness();
+			expect(await main(["task-class", ...args], deps)).toBe(2);
+			expect(sent).toEqual([]);
+		}
+	});
+
+	test("ordinary text routes", async () => {
+		const { deps, sent } = harness();
+		expect(await main(["task-class", ...TASK.split(" ")], deps)).toBe(0);
+		expect(sent).toEqual([TASK]);
 	});
 });

@@ -1,6 +1,6 @@
 # Interaction flows: agent-kit compared with pstack
 
-Written 2026-10-13. It compares how a user drives four kinds of work through pstack and through agent-kit, then lists what agent-kit lacks. pstack was read at cursor/plugins `1dcc2ba` (2026-10-12): `pstack/docs/guide/`, `pstack/skills/poteto-mode/SKILL.md`, and the playbooks it routes to. agent-kit was read at `5c9aeaf`. The flows for agent-kit apply to Pi and Claude Code; Codex is frozen and exports only the method skills (`codex/skills.txt`).
+Written 2026-10-13. It compares how a user drives four kinds of work through pstack and through agent-kit, then lists what agent-kit lacks. pstack was read at cursor/plugins `1dcc2ba` (2026-10-12): `pstack/docs/guide/`, `pstack/skills/poteto-mode/SKILL.md`, and the playbooks it routes to. agent-kit was read at `5c9aeaf`. The flows for agent-kit apply to Pi and Claude Code; Codex was then frozen and exported only the method skills (`codex/skills.txt`); Codex support was removed on 2026-10-14 (PR #39), so the Codex statements below describe agent-kit at `5c9aeaf`, and `design-control-loop` now ships to Pi only.
 
 ## The two interaction models
 

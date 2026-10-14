@@ -1,6 +1,6 @@
 ---
 name: writing-for-agents
-description: Design or revise model-facing instructions. Use when editing AGENTS.md, SKILL.md, Codex or Pi instructions, agent/subagent prompts, workflow prompts, or handoff templates. Do not use for ordinary user-facing documentation.
+description: Design or revise model-facing instructions. Use when editing AGENTS.md, SKILL.md, Pi instructions, agent/subagent prompts, workflow prompts, or handoff templates. Do not use for ordinary user-facing documentation.
 ---
 
 # Writing for agents
@@ -75,7 +75,7 @@ Completion criterion: each remaining instruction changes behavior or preserves n
 
 ## 6. Apply the target runtime's mechanics
 
-For Pi skills, read `references/pi-skill-mechanics.md` before changing frontmatter, paths, invocation behavior, or references. For Codex instructions or skills, read `references/codex-mechanics.md`. Read both only when the same artifact must work in both runtimes; do not transfer tool names or metadata semantics without checking the consumer.
+For Pi skills, read `references/pi-skill-mechanics.md` before changing frontmatter, paths, invocation behavior, or references. For any other runtime, read its current first-party documentation and inspect the installed version; do not transfer tool names or metadata semantics without checking the consumer.
 
 ## 7. Validate
 

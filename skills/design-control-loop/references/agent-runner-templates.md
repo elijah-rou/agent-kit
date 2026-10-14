@@ -29,25 +29,6 @@ The actuator writes its report and one status line to `/tmp/agent-status.txt`: `
 
 Use the capture step in `references/workflow-template.yml` to cross-check command outcomes, validation, and patch contents. It writes `/tmp/loop-status.txt`; only `changed` with successful validation and a nonempty patch is eligible for the separately authorized publisher. Successful `no-change` requires an empty patch. Blocked and failed runs remain unsuccessful and retain evidence, including any partial patch. Upload available reports and measurements even after earlier steps fail; cancellation or runner loss may prevent upload.
 
-## Codex
-
-Use the installed upstream Codex CLI and check its current `exec --help`. The following command shape is supported by Codex 0.147.0; it is not a version pin or proof of unattended authentication:
-
-```bash
-codex --ask-for-approval never exec \
-  --sandbox workspace-write \
-  --ephemeral \
-  --model '<approved-model>' \
-  --output-last-message /tmp/agent-report.md \
-  - < /tmp/agent-prompt.md
-```
-
-Run this inside the required isolated runner above, with an externally enforced deadline. `never` means operations requiring approval must fail, not that they are preapproved. Do not use a sandbox-bypass flag. Capture logs separately; a report file alone does not establish successful execution or validation.
-
-Use a clean, reviewed Codex home and environment for automation. User/project configuration, skills, hooks, MCP servers, and Git credential helpers can change authority; review them before the run. A local ChatGPT sign-in is not permission to copy the user's auth file into CI. Establish an approved credential and enforceable usage budget before enabling unattended runs; report unavailable turn/cost controls instead of claiming the CLI supplies them.
-
-Record the exact upstream CLI/runtime versions, model, workspace and network permissions, authentication scope, deadline, output bounds, and proof that repository write credentials are absent. Native sandboxing supplements rather than replaces the isolated runner and separate publisher.
-
 ## Pi
 
 Pi supports non-interactive print mode. Install a reviewed pinned Pi build, select a pinned model, and pass the prompt through stdin rather than shell interpolation:

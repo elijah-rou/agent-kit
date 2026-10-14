@@ -24,7 +24,7 @@ These are installation-dependent absolute references, not sibling files. Check t
 
 Read the current configuration and discover commands with `omarchy commands` or the relevant `--help`. Keep changes in the affected user configuration. Back up meaningful customizations before replacement. Confirm destructive resets, reinstalls, shutdowns, and reboots explicitly; a debugging request does not authorize them.
 
-In Pi, use the confirmed `privileged_operation` tool for supported privileged package or service operations. In Codex, this port supplies no privilege bridge: ask the user to execute privileged operations directly unless a separately approved interactive integration is available. Do not invoke `sudo` or `pkexec` through shell tools, including through an Omarchy command that wraps them. Inspect wrappers before running privileged paths. Ask the user to execute unsupported privileged or AUR operations explicitly; headless children report the required operation to the parent.
+In Pi, use the confirmed `privileged_operation` tool for supported privileged package or service operations. Outside Pi, this adapter supplies no privilege bridge: ask the user to execute privileged operations directly unless a separately approved interactive integration is available. Do not invoke `sudo` or `pkexec` through shell tools, including through an Omarchy command that wraps them. Inspect wrappers before running privileged paths. Ask the user to execute unsupported privileged or AUR operations explicitly; headless children report the required operation to the parent.
 
 Use `omarchy debug --no-sudo --print` for bounded diagnostics. Do not include sensitive logs or private configuration in reports.
 

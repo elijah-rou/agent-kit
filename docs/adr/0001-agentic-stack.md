@@ -10,7 +10,7 @@ The design (Lauren Tan's trust and correction-ladder approach, pstack's practice
 ## Constraints
 
 - Agents use the user's GitHub token; there is no separate agent identity, so GitHub cannot tell the user from an agent.
-- Pi is the primary harness and Claude Code the second. Codex is frozen.
+- Pi is the primary harness and Claude Code the second. Codex was frozen, then removed on 2026-10-14 (PR #39).
 - Enforcement must not hamper ordinary work.
 
 ## Decision

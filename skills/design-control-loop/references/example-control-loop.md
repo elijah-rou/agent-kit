@@ -2,7 +2,7 @@
 
 One fully worked loop, to make the taxonomy concrete. **This is an illustration, not a template.** A real loop from a production monorepo, it drives React code quality in a single app. Your loop's set point, sensor, controller, and actuator will look different — copy the *shape*, not the specifics.
 
-It is a useful example because the sensor and controller come almost entirely from an existing, configurable tool, so the whole loop is small. This example uses Pi; for a Codex actuator, use the Codex branch of `references/agent-runner-templates.md` while retaining the same isolation, evidence, and publication boundaries.
+It is a useful example because the sensor and controller come almost entirely from an existing, configurable tool, so the whole loop is small. This example uses Pi, the runner in `references/agent-runner-templates.md`.
 
 ## Set point
 

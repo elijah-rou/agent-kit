@@ -9,10 +9,29 @@ describe("standalone check", () => {
 		["the installer's install path", "under ~/.local/share/bootstrap"],
 		["the user's dotfiles", "Copyright (c) 2026 dotfiles contributors"],
 		["a machine-specific checkout path", "default ~/Projects/cursor-plugins"],
+		["a Projects path built from the home directory in code", 'const DEFAULT_UPSTREAM = join(homedir(), "Projects", "cursor-plugins");'],
+		["a Projects path under $HOME", "cd ${HOME}/Projects/kit"],
+		["a Projects path built from Path.home() in code", 'root = Path.home() / "Projects" / "kit"'],
+		// Joined at run time, since the public-safety scan refuses a literal home path in any tracked file.
+		["a macOS home directory", `open ${["", "Users", "someone", "notes.md"].join("/")}`],
+		["a Linux home directory", `cd ${["", "home", "someone", "kit"].join("/")}`],
+		["any .local/share path", "data lives in ~/.local/share/agentic"],
+		["another repository of the owner's, by owner/repo", "samples are committed in `elijah-rou/agentic`"],
+		["another repository of the owner's, by URL", "see https://github.com/elijah-rou/other-tool/issues/1"],
 	])("%s is refused", (_, line) => {
 		const found = violations("skills/x/SKILL.md", `ok\n${line}\n`);
 		expect(found).toHaveLength(1);
 		expect(found[0]).toStartWith("skills/x/SKILL.md:2: names ");
+	});
+
+	test.each([
+		"https://github.com/elijah-rou/agent-kit/pull/57",
+		"git clone git@github.com:elijah-rou/agent-kit.git",
+		"the kit is elijah-rou/agent-kit.",
+		"a Projects page in the docs",
+		"/Users/ alone names no one",
+	])("agent-kit itself and lines naming no machine pass: %s", line => {
+		expect(violations("skills/x/SKILL.md", line)).toEqual([]);
 	});
 
 	test("the verb's other forms pass", () => {

@@ -165,7 +165,7 @@ Every failure delivers nothing beyond what the door rule allows, writes one reco
   - `route-harvest` joins records to local Claude and Pi transcripts by digest. It writes candidates to an ignored local file and skips opted-out repositories. Text stays on the machine whose agent received it. The user's labels are stored by digest, without text, in that machine's ledger directory, so they travel with its records.
   - Sessions where the user typed `/background-run` supply loop positives.
   - The user labels 150 to 200 prompts, about an hour.
-  - The 2026-10-07 door samples are committed in `elijah-rou/agentic` (`evals/jev-risk`: 90 hand-labeled tasks, each asked twice, answered by `jev-1.13.0`), and the pre-2026-10-12 door bar was rechecked on them directly. Since 2026-10-12 the door also needs labeled live records through `route-eval` (ADR 0002, Consequences), so all three notes need new labels.
+  - The 2026-10-07 door samples are committed in a separate evaluation repository (`evals/jev-risk`: 90 hand-labeled tasks, each asked twice, answered by `jev-1.13.0`), and the pre-2026-10-12 door bar was rechecked on them directly. Since 2026-10-12 the door also needs labeled live records through `route-eval` (ADR 0002, Consequences), so all three notes need new labels.
 - **Acting bars.** These are proposals and the user's decision:
   - **door:** before 2026-10-12, with the combined request, no worse than the 2026-10-07 baseline on the same samples: 4 of 60 door calls missed (2 of 30 tasks) and 16 of 120 other calls hinted. Since then the door also has to pass `route-eval` on labeled live records before it becomes advisory.
   - **lookup:** precision of at least 0.95, and no door-labeled sample routed to lookup.

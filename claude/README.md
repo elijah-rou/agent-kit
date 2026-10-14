@@ -7,7 +7,10 @@ Everything here runs on Bun.
 ## Install
 
 In `<kit>`, run `bun install --frozen-lockfile --production` (`agentic watch-pr` and `orch` need the
-dependencies), and put `<kit>/agentic/bin/agentic` on `PATH`. Then link into `<config>`:
+dependencies), and put `<kit>/agentic/bin/agentic` on `PATH`. Set up a timer outside any agent (launchd,
+systemd, or cron) that runs `bun <kit>/skills/background-run/scripts/watchdog.ts scan` every 15 minutes with the
+same `HOME` and `XDG_STATE_HOME` Claude Code sees: `background-run` counts a run as watched only where that timer
+runs, and reports every run as "never scanned" without it. Then link into `<config>`:
 
 - `claude/CLAUDE.md` as `<config>/CLAUDE.md`: the global working rules.
 - each `claude/agents/*.md` into `<config>/agents/`: the subagent roles, each fixing a child's model and

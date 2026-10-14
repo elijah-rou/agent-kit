@@ -19,6 +19,11 @@ The kit runs on Bun. Clone it, run `bun install --frozen-lockfile --production` 
 `agentic/bin/agentic` on `PATH`. An install that schedules T3 automations (`skills/t3-automation`) keeps the
 checkout detached at a reviewed commit, never on a branch or in a linked worktree.
 
+An install also needs a timer outside any agent (launchd, systemd, or cron) that runs
+`bun <kit>/skills/background-run/scripts/watchdog.ts scan` every 15 minutes, where `<kit>` is the checkout's
+absolute path, with the same `HOME` and `XDG_STATE_HOME` the agents see. It tells the user when an unattended
+run stops; without it, `background-run` reports every run as not watched ("never scanned").
+
 - **Claude Code:** link the files and add the `settings.json` entries listed in
   [claude/README.md](claude/README.md#install).
 - **Pi:** add the checkout as a local package (the root's `package.json` lists the extensions, skills, prompts,

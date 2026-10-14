@@ -46,6 +46,12 @@ effort, permissions, and every other setting stay the user's choice.
             "onFailure": "block"
           }
         ]
+      },
+      {
+        "matcher": "Edit|MultiEdit|Write|NotebookEdit",
+        "hooks": [
+          { "type": "command", "command": "bun --cwd <kit> <kit>/agentic/tools/skill-reminder/cli.ts --claude-hook", "timeout": 5 }
+        ]
       }
     ]
   }
@@ -58,7 +64,9 @@ effort, permissions, and every other setting stay the user's choice.
 - `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`: enables Mods, which the trial-tools Mod needs.
 - `UserPromptSubmit`: the Jev prompt-routing hook (ADR 0002), which routes every task prompt.
 - `PreToolUse`: the git guard (next section). A session runs the guard only when its `settings.json`
-  holds this entry.
+  holds this entry. The second entry is the skill reminder: the first edit of a source file in a session,
+  and in each subagent, gets a reminder to load `code-design`, which an agent otherwise skips when an edit
+  looks too small to be code. It only adds context, so a failure lets the edit go ahead.
 
 ## Git guard
 

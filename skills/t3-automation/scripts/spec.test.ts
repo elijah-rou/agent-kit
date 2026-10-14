@@ -165,6 +165,37 @@ describe("recognizing the upkeep version", () => {
 	});
 });
 
+// What stored upkeep prompts need from the kit's maintain-verification, one failure message each; empty while it holds.
+// A stored schedule outlives the change that breaks it, so the message names that and the two ways out.
+const BRANCH_PATTERN = `${UPKEEP_BRANCH_PREFIX}<app>-<YYYY-MM-DD>`;
+function upkeepContractProblems(text: string): string[] {
+	const stored = `existing stored upkeep schedules depend on it and keep firing after this change; keep it, or bump VERSION in skills/t3-automation/scripts/spec.ts so they report themselves obsolete`;
+	const problems: string[] = [];
+	if (!text.split("\n").includes(SCHEDULED_RUNS_HEADING)) problems.push(`skills/maintain-verification/SKILL.md lost the "${SCHEDULED_RUNS_HEADING}" heading: ${stored}`);
+	else if (!recognizesUpkeep(text)) problems.push(`skills/maintain-verification/SKILL.md's "${SCHEDULED_RUNS_HEADING}" section no longer names ${UPKEEP_MARKER}: ${stored}`);
+	if (!text.includes(BRANCH_PATTERN)) problems.push(`skills/maintain-verification/SKILL.md no longer names the upkeep branch ${BRANCH_PATTERN} that stored prompts open pull requests from: ${stored}`);
+	return problems;
+}
+
+describe("the kit's maintain-verification keeps what stored upkeep prompts depend on", () => {
+	const kit = readFileSync(join(import.meta.dir, "..", "..", "maintain-verification", "SKILL.md"), "utf8");
+
+	test("its Scheduled runs section names the marker, and it names the upkeep branch pattern", () => {
+		expect(upkeepContractProblems(kit)).toEqual([]);
+	});
+
+	test.each([
+		["the marker removed", kit.replaceAll(UPKEEP_MARKER, ""), "no longer names [t3-automation upkeep v"],
+		["the heading renamed", kit.replace(`\n${SCHEDULED_RUNS_HEADING}\n`, "\n## Scheduled upkeep\n"), `lost the "${SCHEDULED_RUNS_HEADING}" heading`],
+		["the branch prefix changed", kit.replaceAll(UPKEEP_BRANCH_PREFIX, "agent/upkeep-"), "no longer names the upkeep branch"],
+	])("%s fails, saying stored schedules depend on it", (_, text, message) => {
+		const problems = upkeepContractProblems(text);
+		expect(problems).toHaveLength(1);
+		expect(problems[0]).toContain(message);
+		expect(problems[0]).toContain("existing stored upkeep schedules depend on it");
+	});
+});
+
 describe("origin parsing", () => {
 	test.each([
 		["https://github.com/octo/app", "octo/app"],

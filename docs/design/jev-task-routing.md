@@ -1,6 +1,6 @@
 # Jev task routing
 
-- **Status:** proposed 2026-10-12. All open questions were decided on 2026-10-12, Pi's transport was changed to its classifier registry, and every prompt in every runtime on every machine is now recorded (see Tracking across everything). Slices 1 and 2 are built, and routing ran in shadow from 2026-10-12, door note included, in `egress.ts`, `pr-risk.ts`, `route.ts`, `route-task.ts`, and `cli.ts` under `agentic/tools/jev/`. The calibration tools come next: `route-report` by 2026-10-26, two weeks after records started on 2026-10-12, then labeling and `route-eval`. The `background-run` revisit and any note's calibration wait on them. On 2026-10-14 the user put every note on trial instead of waiting: policy `task-route@2` delivers the door, lookup, and loop notes as advice on their shadow thresholds, without a calibration (ADR 0002, amendment of 2026-10-14).
+- **Status:** proposed 2026-10-12. All open questions were decided on 2026-10-12, Pi's transport was changed to its classifier registry, and every prompt in every runtime on every machine is now recorded (see Tracking across everything). Slices 1 and 2 are built, and routing ran in shadow from 2026-10-12, door note included, in `egress.ts`, `pr-risk.ts`, `route.ts`, `route-task.ts`, and `cli.ts` under `agentic/tools/jev/`. The calibration tools come next: `route-report`, whose note and answer counts are built (2026-10-14) and whose transcript coverage is not, then labeling and `route-eval`. The `background-run` revisit and any note's calibration wait on them. On 2026-10-14 the user put every note on trial instead of waiting: policy `task-route@2` delivers the door, lookup, and loop notes as advice on their shadow thresholds, without a calibration (ADR 0002, amendment of 2026-10-14).
 - **Reader:** the user reviewing the shape, then whoever implements it.
 - **Door:** this design changes ADR 0001 decision 5 ("Jev is advisory and only adds caution"), the rule for which task text leaves the machine, and a policy that every runtime shares. The question wording, thresholds, note text, and adapters around those are reversible. So is the record format: the ledger is a temporary evaluation instrument, not a contract, and a format change may drop old records.
 
@@ -202,7 +202,16 @@ They still never hold task text.
 
 **Layout.** Files live at `$XDG_STATE_HOME/agentic/task-route/<machine>/<runtime>-<session>.jsonl`. Each file has one writer, so ledgers from several machines combine by copying directories into one place, with no merge.
 
-**The coverage report makes gaps visible.**
+**The route report measures the notes.** Built on 2026-10-14 in `route-report.ts`: `agentic jev route-report [--days <n>] [--json]` reads every machine directory in the local ledger and, over the last `n` days (default 7), reports:
+
+- per runtime: prompts, prompts classified, prompts noted, and every fallback reason;
+- per note and runtime: how often the note was decided (Jev's answers cleared its threshold), delivered, and withheld, with the reason (a fallback, `session-shadow` for `AGENTIC_ROUTE=shadow`, or `policy-shadow`);
+- per question, choice, and runtime: the count, its share, and the median confidence of Jev's answers;
+- in a git repository, the correction records under its common directory (`agentic/corrections/`), counted in that repository's sessions that got each note against those that got none. The report labels this correlation, not causation, and prints counts only, never correction or prompt text.
+
+It reads local files and sends nothing. Duplicate lines from copied ledgers and lines it cannot read are counted and skipped.
+
+**The coverage report makes gaps visible.** Not built yet; it extends `route-report`:
 
 - `agentic jev route-report` reads the ledger and the local transcripts of all three runtimes (`~/.claude/projects`, `~/.codex/sessions`, and Pi's session directory). For each runtime, launcher, and machine it reports:
   - prompts found in transcripts;
@@ -229,9 +238,10 @@ The main flow is three files deep: the adapter, then `route.ts`, then `egress.ts
 | `agentic/tools/jev/egress.ts` | Everything that leaves the machine: screen, redaction, length bound, `isPublic`, `originSlug`, `apiKey`, and `httpClassifier`. Only it produces `Sendable`, and both transports accept only `Sendable`. | built, split from the former `jev.ts` |
 | `agentic/tools/jev/route.ts` | Policy `task-route@1`, all pure: `QUESTIONS`, `POLICY`, `decide`, `applyModes`, `noteFor`, `parseAnswers`, `explicitCommand` | built |
 | `agentic/tools/jev/route-task.ts` | the one I/O pass per prompt: `routeTask`, `RouteRecord`, and the ledger writer | built |
+| `agentic/tools/jev/route-report.ts` | the route report: ledger and correction readers, `buildReport`, `formatReport` | built for note, answer, and correction counts; transcript coverage is not built |
 | `agentic/tools/jev/route-eval.ts` | `harvest`, `score`, and a report without text | not built; follows labeling |
 | `agentic/tools/jev/pr-risk.ts` | the PR-risk question, threshold, and state | built, the rest of the former `jev.ts` |
-| `agentic/tools/jev/cli.ts` | `task-class --claude-hook` (unchanged command), `task-class --codex-hook`, `pr-risk`, `route-harvest`, `route-eval`, `route-report`, `route-sync` | built for `task-class` and `pr-risk`; the `route-*` commands are not built |
+| `agentic/tools/jev/cli.ts` | `task-class --claude-hook` (unchanged command), `task-class --codex-hook`, `pr-risk`, `route-harvest`, `route-eval`, `route-report`, `route-sync` | built for `task-class`, `pr-risk`, and `route-report`; the other `route-*` commands are not built |
 | `pi/extensions/task-class.ts` | the Pi adapter above, including `registryClassifier`, which parses Pi's `ClassifierAnswer` into the shared answer shape, and routing on `input`, before Pi's expansion | built, rewritten in place |
 | `docs/adr/0002-task-routing.md` | amends ADR 0001 decision 5 | accepted |
 
@@ -339,4 +349,4 @@ These are for the user. Each has a recommendation and the default taken if there
 
 ## First implementation step
 
-Slice 1 is offline and changes no live behavior. Split the former `jev.ts` into `egress.ts` and `pr-risk.ts`, moving the tests unchanged. Then write `route.ts`'s pure core with tests for the decision table, the runtime-neutral note text, and "advisory requires a matching digest". Slice 2 switches the Claude, Codex, and Pi adapters to `routeTask` and starts the ledger, with `lookup` and `loop` in shadow. The pre-2026-10-12 door bar on the combined request was rechecked on 2026-10-12 and passed with `{ task }`. Slices 1 and 2 are built. Slice 3 adds `route-report` and `route-sync`, by 2026-10-26. `route-harvest`, labeling, and `route-eval` follow.
+Slice 1 is offline and changes no live behavior. Split the former `jev.ts` into `egress.ts` and `pr-risk.ts`, moving the tests unchanged. Then write `route.ts`'s pure core with tests for the decision table, the runtime-neutral note text, and "advisory requires a matching digest". Slice 2 switches the Claude, Codex, and Pi adapters to `routeTask` and starts the ledger, with `lookup` and `loop` in shadow. The pre-2026-10-12 door bar on the combined request was rechecked on 2026-10-12 and passed with `{ task }`. Slices 1 and 2 are built. Slice 3 adds `route-report` (its counts built on 2026-10-14, its transcript coverage not yet) and `route-sync`. `route-harvest`, labeling, and `route-eval` follow.

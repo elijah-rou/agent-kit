@@ -420,6 +420,40 @@ function holdsPrompt(record: Record<string, unknown>, prompt: string): boolean {
 	return prompt.trim().length >= 16 && JSON.stringify(record).includes(prompt.trim().slice(0, 24));
 }
 
+/**
+ * The route report over the records the withheld steps just wrote, checked against the drive's own
+ * count of them, plus one correction record in the fixture's git directory joined by session.
+ */
+function driveRouteReport(run: RunInfo, rec: Recorder, state: string, fixture: string, written: number): void {
+	const agentic = join(run.checkout, "agentic/bin/agentic");
+	const corrections = join(fixture, ".git", "agentic", "corrections");
+	mkdirSync(corrections, { recursive: true });
+	const correction = { kind: "repo", class: "verify-fixture", correction: "fixture words", text: "fixture rule", evidence: { session: `${run.runId}-not-a-task`, date: "2026-10-14" } };
+	writeFileSync(join(corrections, `${run.runId}-not-a-task.json`), JSON.stringify([correction]));
+	const entries = () => readdirSync(state, { recursive: true }).length;
+	const before = entries();
+	const json = rec.step("route-report-json", ["bun", agentic, "jev", "route-report", "--json"], { cwd: fixture, env: { XDG_STATE_HOME: state } });
+	type Row = { runtime: string; prompts: number; classified: number; noted: number; fallbacks: Record<string, number> };
+	const report = parseJson(json.stdout) as { window?: { days?: number }; ledger?: { inWindow?: number; malformed?: number }; runtimes?: Row[]; notes?: { decided: number }[]; corrections?: { kind?: string; repo?: string; records?: number; rows?: { group: string; corrections: number }[]; caveat?: string } } | undefined;
+	rec.check(json.status === 0 && report !== undefined, `report: agentic jev route-report --json exits 0 with JSON (exit ${json.status})`);
+	rec.check(report?.window?.days === 7, "report: the default window is 7 days");
+	rec.check(report?.ledger?.inWindow === written && report.ledger.malformed === 0, `report: it reads the ${written} records the drive wrote (got ${report?.ledger?.inWindow})`);
+	const runtime = (name: string) => report?.runtimes?.find((row) => row.runtime === name);
+	const claude = runtime("claude");
+	const expected = { off: 1, "not-a-task": 1, system: 1, "unsafe-input": 1, "opted-out": 1 };
+	rec.check(claude?.prompts === written - 1 && JSON.stringify(Object.entries(claude.fallbacks).sort()) === JSON.stringify(Object.entries(expected).sort()), `report: claude's prompts and fallbacks match the withheld steps (got ${JSON.stringify(claude)})`);
+	rec.check(runtime("codex")?.prompts === 1 && runtime("codex")?.fallbacks.off === 1, "report: codex's one record is the off step");
+	rec.check((report?.notes ?? []).every((row) => row.decided === 0), "report: no note was decided for a withheld prompt");
+	const noNote = report?.corrections?.rows?.find((row) => row.group === "no note delivered");
+	rec.check(report?.corrections?.kind === "counted" && report.corrections.records === 1 && noNote?.corrections === 1, `report: the fixture's correction joins its session (got ${JSON.stringify(report?.corrections)})`);
+	rec.check(!json.stdout.includes("fixture words"), "report: no correction text is printed");
+	const plain = rec.step("route-report-table", ["bun", agentic, "jev", "route-report", "--days", "1"], { cwd: fixture, env: { XDG_STATE_HOME: state } });
+	rec.check(plain.status === 0 && plain.stdout.includes("(1 day)") && plain.stdout.includes("Correlation, not causation"), "report: the table form prints its window and labels corrections as correlation");
+	const refused = rec.step("route-report-usage", ["bun", agentic, "jev", "route-report", "--days", "0"], { cwd: fixture, env: { XDG_STATE_HOME: state } });
+	rec.check(refused.status === 2, `report: a bad window is a usage error (exit ${refused.status})`);
+	rec.check(entries() === before, "report: the report writes nothing to the ledger");
+}
+
 function driveTaskRoute(run: RunInfo, rec: Recorder): void {
 	const dir = runDir(run.runId);
 	const state = join(dir, "state");
@@ -453,6 +487,7 @@ function driveTaskRoute(run: RunInfo, rec: Recorder): void {
 		if (c.id === "opted-out") rec.check(record.optedOut === true, "opted-out: the record marks the repository opted out");
 		rec.check(!holdsPrompt(record, c.prompt), `${c.id}: the record holds no prompt text`);
 	}
+	driveRouteReport(run, rec, state, fixture, kept.length);
 	if (!typesafeKeyPresent()) {
 		rec.note("records.jsonl", kept.join("\n") + "\n");
 		return rec.skip("no TypeSafe key for the Jev steps: set TYPESAFE_API_KEY or, on macOS, add the keychain item typesafe-jev");

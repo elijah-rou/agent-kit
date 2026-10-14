@@ -3,10 +3,11 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { apiKey, httpClassifier, isPublic, originSlug, OPT_OUT_FILE, promptOrigin, repoOf, sendable } from "./egress.ts";
 import { HOLD_ABOVE, prDecision, prRisk, prState } from "./pr-risk.ts";
-import { appendRecord, routeTask, type RouteDeps, type RouteRecord, type Runtime } from "./route-task.ts";
+import { buildReport, DEFAULT_DAYS, formatReport, MAX_DAYS, readCorrections, readLedger, type ReportInput } from "./route-report.ts";
+import { appendRecord, ledgerRoot, routeTask, type RouteDeps, type RouteRecord, type Runtime } from "./route-task.ts";
 import { POLICY } from "./route.ts";
 
-const USAGE = `Usage: jev <pr-risk | task-class> ...
+const USAGE = `Usage: jev <pr-risk | task-class | route-report> ...
 
 Advisory Jev calls, calibrated in the agentic evals. The key comes from TYPESAFE_API_KEY or, on
 macOS, the keychain item "typesafe-jev".
@@ -21,6 +22,12 @@ macOS, the keychain item "typesafe-jev".
       additionalContext when a note applies. It never blocks the prompt.
   task-class <task text>
       Prints the route for a task typed in the current directory, without recording it.
+  route-report [--days <n>] [--json]
+      Reads the task-route ledger (every machine directory under $XDG_STATE_HOME/agentic/task-route/)
+      and prints, per note and runtime, how often each note was decided, delivered, and withheld,
+      and the distribution of Jev's answers, over the last <n> days (default ${DEFAULT_DAYS}). In a git
+      repository it also counts the correction records in sessions that got a note, as correlation.
+      Reads local files only and sends nothing.
 
 A repository that commits ${OPT_OUT_FILE} never sends its prompts. AGENTIC_ROUTE=shadow keeps every
 note back for a session, and AGENTIC_ROUTE=off also stops every request.
@@ -49,6 +56,27 @@ export async function promptHook(runtime: Runtime, eventText: string, deps: Rout
 	const { note, record } = await routeTask(input, deps);
 	const answer = hookAnswer(note);
 	return answer === undefined ? { record } : { answer, record };
+}
+
+/** The current repository's correction records and its slug as records name it, read locally. */
+async function localCorrections(cwd: string): Promise<ReportInput["corrections"]> {
+	const common = spawnSync("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", timeout: 5000 });
+	if (common.status !== 0) return { kind: "none", reason: "not in a git repository, so no correction records were read" };
+	const { slug } = await repoOf(cwd, 2000);
+	return { kind: "read", read: readCorrections(join(common.stdout.trim(), "agentic", "corrections")), repo: slug };
+}
+
+async function routeReport(args: string[]): Promise<number> {
+	let days = DEFAULT_DAYS;
+	let json = false;
+	for (let i = 0; i < args.length; i++) {
+		if (args[i] === "--json") json = true;
+		else if (args[i] === "--days" && /^\d+$/.test(args[i + 1] ?? "") && Number(args[i + 1]) >= 1 && Number(args[i + 1]) <= MAX_DAYS) days = Number(args[++i]);
+		else return console.error(`jev route-report: bad argument ${JSON.stringify(args[i])}; --days takes 1 to ${MAX_DAYS}\n\n${USAGE}`), 2;
+	}
+	const report = buildReport({ ledger: readLedger(ledgerRoot(process.env)), corrections: await localCorrections(process.cwd()), now: Date.now(), days });
+	process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report));
+	return 0;
 }
 
 function run(command: string, args: string[], input?: string): string {
@@ -81,6 +109,7 @@ async function main(args: string[]): Promise<number> {
 		return 0;
 	}
 
+	if (command === "route-report") return routeReport(rest);
 	if (command !== "pr-risk") return console.error(USAGE), 2;
 	const pr = Number(rest[0]);
 	if (!Number.isInteger(pr) || pr <= 0) return console.error(USAGE), 2;

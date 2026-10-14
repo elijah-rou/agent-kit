@@ -44,7 +44,7 @@ The user chose to keep Jev, enable it, and judge it on measured performance rath
 - The PR-risk check in the landing modes is unchanged.
 - Notes now cost tokens and can steer misclassified prompts. In shadow the door note fired on nearly every reversible follow-up, so it is the note most likely to be noise.
 
-Putting a note back is a one-line change to `POLICY` in `agentic/tools/jev/route.ts`; `AGENTIC_ROUTE=shadow` does it for one session at once.
+Review `agentic jev route-report` on 2026-10-21, after one week of delivered notes: per note and runtime it shows how often the note was decided, delivered, and withheld, Jev's answers, and the corrections recorded in sessions that got a note (correlation, not causation). Then decide per note whether it stays on trial, goes back to shadow, or is calibrated. Putting a note back is a one-line change to `POLICY` in `agentic/tools/jev/route.ts`; `AGENTIC_ROUTE=shadow` does it for one session at once.
 
 ## Reversal conditions
 

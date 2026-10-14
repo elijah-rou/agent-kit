@@ -20,10 +20,7 @@ Mods enabled); model, effort, and permissions stay user choices.
 `git-interceptor` applies, to every tool that runs a shell command: Bash, Monitor, and PowerShell (Claude
 Code 2.1.296's tools that execute code and take a command). The policy is text patterns; the guard does not
 read the command as a shell would. They find `git` or `gh`, by name or by absolute path (`/usr/bin/git`), at
-the start of a line or after `;`, `&`, or `|`, past assignments that prefix it for that command on its
-line, including values with `$(...)`, `${...}`, backquotes, and backslash escapes (`GIT_EDITOR=true git
-commit`, `X=$(date +%s) git push`; the values it does not read are listed under what it does not stop).
-In every session they refuse skipping hooks:
+the start of a line or after `;`, `&`, or `|`. In every session they refuse skipping hooks:
 
 - `--no-verify` after `git` (but not `--no-verify-signatures`), on the same line or on a later line that a
   quoted string or a line-ending backslash carries the command onto, as in Claude Code's usual commit form
@@ -33,9 +30,9 @@ In every session they refuse skipping hooks:
   `-only`, `-no-op`) does not count;
 - a hook manager's skip variable (`HUSKY`, `HUSKY_SKIP_HOOKS`, `SKIP`, `PRE_COMMIT_ALLOW_NO_CONFIG`,
   `LEFTHOOK`, `LEFTHOOK_EXCLUDE`, `OVERCOMMIT_DISABLE`) assigned at the start of a command, alone or after
-  `export` and its kin, on a line that runs git, or exported on an earlier line with only assignments between
-  it and a line that starts git (`HUSKY=0 git commit`, `export SKIP=lint && git commit`, `export HUSKY=0`
-  then `git commit` on the next line); a value is also read as one word, so `HUSKY=$((0)) git commit` counts;
+  `export` and its kin, on a line that runs git, or on a line of only assignments just before a line that
+  starts git (`HUSKY=0 git commit`, `export SKIP=lint && git commit`, `export HUSKY=0` then `git commit` on
+  the next line);
 - `core.hooksPath` or a `hook.*` key set with `git -c` or `--config-env` before the subcommand, or set,
   unset, or removed with `git config` (reading one with `git config <key>` or `--get` passes, and
   redirections such as `2>/dev/null` and a trailing `# comment` are not read as a value).
@@ -96,11 +93,8 @@ What the guard does not stop (the same list is in ADR 0001 and the verify-agent-
 
 - A git or gh command the patterns do not see in the text: one not at the start of a line or after `;`,
   `&`, or `|` (leading spaces, a path that does not start with `/` such as `./git` or `~/bin/git`, a name
-  with an extension such as `git.exe push`, a redirection, a keyword, or an assignment whose value it does
-  not read before it (one that spans lines; a `$(...)` holding a parenthesis, such as a nested `$(...)`,
-  `$((...))`, or a quoted `)`; a `${...}` holding a brace; an unquoted parenthesis, as in `X=(a b)`; a
-  backslash-escaped `;`, `&`, or `|`; an escaped quote inside `$'...'`; or double quotes inside a
-  double-quoted substitution, as in `X="$(echo "a b")"`), a wrapper such as `command`, `env`, `sh -c`, `eval`, or `xargs`, a subshell or
+  with an extension such as `git.exe push`, an assignment other than a skip variable, a redirection, or a
+  keyword before it, a wrapper such as `command`, `env`, `sh -c`, `eval`, or `xargs`, a subshell or
   substitution, PowerShell's call operator or backtick escapes), git options before the subcommand other
   than `-C` (`git --git-dir=x push`; `-c` and `--config-env` are read only for hook keys), `--no-verify` on
   a later line that the command reaches another way (an unquoted `$(...)` spanning lines, or a here
@@ -109,8 +103,8 @@ What the guard does not stop (the same list is in ADR 0001 and the verify-agent-
 - Hooks skipped another way: a prefix of `--no-verify` such as `--no-veri`; `-n` after a quoted `;`, `&`,
   or `|` in its `git commit` command, or on a later line than its `git commit` (after a commit message in a
   here document); a `GIT_CONFIG_*` variable carrying a hook key; a skip variable set through a wrapper
-  (`env HUSKY=0 git commit`), set on an earlier line unless exported there with only assignments between it and a line that starts
-  with git (`HUSKY=0`, then `git commit`; `export HUSKY=0`, then `make`, then `git commit`; one per line), or set the PowerShell way (`$env:HUSKY = '0'; git commit`,
+  (`env HUSKY=0 git commit`), set on an earlier line unless that line holds only assignments and the next line starts
+  with git (`export HUSKY=0`, then `make`, then `git commit`, one per line), or set the PowerShell way (`$env:HUSKY = '0'; git commit`,
   `Set-Item env:HUSKY 0; git commit`); and editing `.git/hooks` or `.git/config`.
 - Other programs that publish: `git send-pack`, `git http-push`, `git subtree push`, `pull`, or `merge`,
   `gh pr create` or `comment`, and `gh api`.

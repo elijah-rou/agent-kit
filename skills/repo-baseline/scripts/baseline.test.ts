@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { OPT_OUT_FILE } from "../../../agentic/tools/jev/egress.ts";
 import { apply, audit, createIfAbsent, JEV_OPT_OUT, README_STUB, type ItemId, type Report } from "./baseline.ts";
 
@@ -77,29 +77,75 @@ describe("audit", () => {
 		expect(status(report).validate).toBe("create");
 		expect(validateDetail(dir)).toBe("scripts/validate running bun run lint; cargo test");
 		writeFileSync(join(dir, "clippy.toml"), "msrv = \"1.80\"\n");
-		expect(validateDetail(dir)).toBe("scripts/validate running bun run lint; cargo clippy --all-targets -- -D warnings; cargo test");
+		expect(validateDetail(dir)).toBe("scripts/validate running bun run lint; cargo clippy; cargo test");
 	});
 
-	test("clippy from a [lints.clippy] table, and CI's own clippy command when CI runs it", () => {
+	test("clippy from a [lints.clippy] table or a crate-level clippy attribute, never from a [lints.rust] table alone", () => {
 		const lints = scratch();
 		writeFileSync(join(lints, "Cargo.toml"), '[package]\nname = "x"\n\n[lints.clippy]\nunwrap_used = "deny"\n');
-		expect(validateDetail(lints)).toBe("scripts/validate running cargo clippy --all-targets -- -D warnings; cargo test");
+		expect(validateDetail(lints)).toBe("scripts/validate running cargo clippy; cargo test");
+		const workspace = scratch();
+		writeFileSync(join(workspace, "Cargo.toml"), '[workspace]\nmembers = ["a"]\n\n[workspace.lints.clippy]\npedantic = "warn"\n');
+		expect(validateDetail(workspace)).toBe("scripts/validate running cargo clippy; cargo test");
+		const inline = scratch();
+		writeFileSync(join(inline, "Cargo.toml"), '[package]\nname = "x"\n');
+		mkdirSync(join(inline, "src"));
+		writeFileSync(join(inline, "src/lib.rs"), "#![deny(clippy::all, missing_docs)]\n");
+		expect(validateDetail(inline)).toBe("scripts/validate running cargo clippy; cargo test");
 		const rustOnly = scratch();
 		writeFileSync(join(rustOnly, "Cargo.toml"), '[package]\nname = "x"\n\n[lints.rust]\nunsafe_code = "forbid"\n');
 		expect(validateDetail(rustOnly)).toBe("scripts/validate running cargo test");
-		const ci = scratch();
-		writeFileSync(join(ci, "Cargo.toml"), '[package]\nname = "x"\n');
-		mkdirSync(join(ci, ".github/workflows"), { recursive: true });
-		writeFileSync(join(ci, ".github/workflows/ci.yml"), "jobs:\n  lint:\n    steps:\n      - run: cargo clippy --workspace -- -D warnings\n");
-		expect(validateDetail(ci)).toBe("scripts/validate running cargo clippy --workspace -- -D warnings; cargo test");
 	});
 
-	test("go vet only where CI or a make target already runs it", () => {
+	// Each fixture once produced a broken scripts/validate line copied out of CI, a makefile, or a justfile.
+	const copyTraps: [string, string, string, string][] = [
+		["a step name before its run line", ".github/workflows/ci.yml", "jobs:\n  lint:\n    steps:\n      - name: cargo clippy (deny warnings)\n        run: cargo clippy --workspace -- -D warnings\n", "cargo clippy"],
+		["a comment mentioning the check", "Makefile", "# go vet here once the tree is clean\nbuild:\n\tgo build ./...\n", "go vet"],
+		["a multi-line run with a continuation", ".github/workflows/ci.yml", "jobs:\n  lint:\n    steps:\n      - run: |\n          cargo clippy --all-targets \\\n            -- -D warnings\n          cargo fmt --check\n", "cargo clippy"],
+		["a justfile recipe body", "justfile", "vet:\n    go vet ./... && echo ok\n", "go vet"],
+	];
+	for (const [name, path, content, command] of copyTraps) {
+		test(`nothing is copied out of ${name}; validate stays valid bash`, () => {
+			const dir = scratch();
+			writeFileSync(join(dir, command === "go vet" ? "go.mod" : "Cargo.toml"), command === "go vet" ? "module x\n" : '[package]\nname = "x"\n');
+			mkdirSync(dirname(join(dir, path)), { recursive: true });
+			writeFileSync(join(dir, path), content);
+			const report = apply(dir).report;
+			const validate = readFileSync(join(dir, "scripts/validate"), "utf8");
+			const body = validate.split("\n").filter(line => line !== "" && !line.startsWith("#") && !line.startsWith("set ") && !line.startsWith("cd "));
+			expect(body).toEqual([command === "go vet" ? "go test ./..." : "cargo test"]);
+			expect(spawnSync("bash", ["-n", join(dir, "scripts/validate")]).status).toBe(0);
+			const gap = report.items.find(item => item.id === "validate-gap");
+			if (name.startsWith("a comment")) expect(gap).toBeUndefined();
+			else {
+				expect(gap).toEqual({ id: "validate-gap", status: "manual", detail: `${path} runs ${command}, which nothing configures; add it to validate if the repository wants it locally` });
+				writeFileSync(join(dir, "scripts/validate"), `${validate}${command}\n`);
+				expect(status(audit(dir))["validate-gap"]).toBeUndefined();
+			}
+		});
+	}
+
+	test("configured clippy is the plain invocation even when CI runs it with its own flags", () => {
+		const dir = scratch();
+		writeFileSync(join(dir, "Cargo.toml"), '[package]\nname = "x"\n');
+		writeFileSync(join(dir, "clippy.toml"), "");
+		mkdirSync(join(dir, ".github/workflows"), { recursive: true });
+		writeFileSync(join(dir, ".github/workflows/ci.yml"), "jobs:\n  lint:\n    steps:\n      - run: cargo clippy --workspace -- -D warnings\n");
+		const report = audit(dir);
+		expect(report.items.find(item => item.id === "validate")!.detail).toBe("scripts/validate running cargo clippy; cargo test");
+		expect(report.items.find(item => item.id === "validate-gap")).toBeUndefined();
+	});
+
+	test("go vet is never generated: with no make or just target named for linting it is a manual note", () => {
 		const bare = scratch();
 		writeFileSync(join(bare, "go.mod"), "module x\n");
 		expect(validateDetail(bare)).toBe("scripts/validate running go test ./...");
 		writeFileSync(join(bare, "Makefile"), "vet:\n\tgo vet ./cmd/...\n");
-		expect(validateDetail(bare)).toBe("scripts/validate running go vet ./cmd/...; go test ./...");
+		expect(validateDetail(bare)).toBe("scripts/validate running go test ./...");
+		expect(status(audit(bare))["validate-gap"]).toBe("manual");
+		writeFileSync(join(bare, "Makefile"), "lint:\n\tgo vet ./cmd/...\n");
+		expect(validateDetail(bare)).toBe("scripts/validate running make lint; go test ./...");
+		expect(status(audit(bare))["validate-gap"]).toBeUndefined();
 	});
 
 	test("mypy keeps the files its configuration names", () => {
@@ -113,6 +159,8 @@ describe("audit", () => {
 		writeFileSync(join(ini, "requirements.txt"), "");
 		writeFileSync(join(ini, "mypy.ini"), "[mypy]\nfiles = src, tests\n");
 		expect(validateDetail(ini)).toBe("scripts/validate running mypy");
+		writeFileSync(join(ini, "mypy.ini"), "[mypy]\nstrict = True\n\n[mypy-tests.*]\nfiles = tests\n");
+		expect(validateDetail(ini)).toBe("scripts/validate running mypy .");
 	});
 
 	test("a make target for a kind stands for that kind; an existing validate target is the entry point", () => {
@@ -252,6 +300,20 @@ describe("apply", () => {
 		expect(report.items.find(item => item.id === "license")!.detail).toContain("holder");
 		expect(readdirSync(anonymous)).not.toContain("LICENSE");
 		expect(apply(anonymous, { holder: "Named Holder" }).created).toContain("LICENSE");
+	});
+
+	test("with --license MIT the manifest's author holds the copyright before git user.name", () => {
+		const named = scratch();
+		spawnSync("git", ["init", "-q", named]);
+		spawnSync("git", ["-C", named, "config", "user.name", "Git User"]);
+		writeFileSync(join(named, "Cargo.toml"), '[package]\nname = "x"\nauthors = ["Grace Hopper <grace@example.com>"]\n');
+		apply(named, { license: "MIT" });
+		expect(readFileSync(join(named, "LICENSE"), "utf8")).toContain(" Grace Hopper\n");
+		const unnamed = scratch();
+		spawnSync("git", ["init", "-q", unnamed]);
+		spawnSync("git", ["-C", unnamed, "config", "user.name", "Git User"]);
+		apply(unnamed, { license: "MIT" });
+		expect(readFileSync(join(unnamed, "LICENSE"), "utf8")).toContain(" Git User\n");
 	});
 
 	test("the secret hook pins gitleaks to a commit, not a tag", () => {

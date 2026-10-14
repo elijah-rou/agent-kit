@@ -20,8 +20,8 @@ Set up or adopt a repository's baseline. DIR defaults to the current directory a
 
   --license MIT  The user named MIT: write LICENSE. A license the project's manifest declares as MIT is written
                  without this flag. Other licenses: add their canonical text by hand.
-  --holder NAME  The copyright holder for LICENSE. Default: the manifest's author for a declared MIT license
-                 (none: a decision), git config user.name with --license MIT.
+  --holder NAME  The copyright holder for LICENSE. Default: the manifest's author; without one, git config
+                 user.name with --license MIT, and a decision for a declared MIT license.
   --claude-md    Also create CLAUDE.md importing AGENTS.md. Only this flag creates it.
   --secret-hook  The user asked for a secret-scan hook: with no hook manager, write a pre-commit config with gitleaks.
   --json         Print the report as JSON.
@@ -30,7 +30,7 @@ Exit status: 0 done, 1 failure or refusal, 2 usage error.
 `;
 
 export type Status = "present" | "create" | "manual" | "decision" | "optional";
-export type ItemId = "git" | "gitignore" | "readme" | "license" | "validate" | "agents-md" | "claude-md" | "secret-hook" | "remote" | "ci" | "ruleset" | "jev-opt-out";
+export type ItemId = "git" | "gitignore" | "readme" | "license" | "validate" | "validate-gap" | "agents-md" | "claude-md" | "secret-hook" | "remote" | "ci" | "ruleset" | "jev-opt-out";
 type Action = { kind: "git-init" } | { kind: "file"; path: string; content: string; mode: number };
 export interface Item {
 	id: ItemId;
@@ -159,33 +159,37 @@ function ciFiles(dir: string): string[] {
 	return [...workflows, ...(exists(join(dir, ".gitlab-ci.yml")) ? [".gitlab-ci.yml"] : [])];
 }
 
-// The command as the repository's CI, makefile, or justfile already runs it (for example `cargo clippy ...`), with
-// that file's own arguments, or undefined when none runs it.
-function commandAlreadyRun(dir: string, files: string[], command: string): string | undefined {
-	const pattern = new RegExp(`(?<![\\w-])${command.replace(/ /g, "[ \\t]+")}(?![\\w-])[^\\n;&|"'#$\`]*`);
-	for (const name of files) {
-		const match = pattern.exec(read(join(dir, name)));
-		if (match) return match[0].trim();
-	}
-	return undefined;
+// The CI, make, and just files with a non-comment line that mentions the command. Only their names: nothing is
+// ever copied out of these files, whose lines are YAML, make, or just syntax rather than shell commands.
+function mentionedIn(dir: string, files: string[], command: string): string[] {
+	const pattern = new RegExp(`(?<![\\w-])${command.replace(/ /g, "[ \\t]+")}(?![\\w-])`);
+	return files.filter(name => read(join(dir, name)).split("\n").some(line => !line.trimStart().startsWith("#") && pattern.test(line)));
 }
 
+// Clippy is configured by a clippy.toml, a clippy lints table, or a crate-level clippy lint attribute in the root crate.
 function clippyConfigured(dir: string): boolean {
 	if (exists(join(dir, "clippy.toml")) || exists(join(dir, ".clippy.toml"))) return true;
 	const cargo = toml(dir, "Cargo.toml");
-	return field(cargo, "lints", "clippy") !== undefined || field(cargo, "workspace", "lints", "clippy") !== undefined;
+	if (field(cargo, "lints", "clippy") !== undefined || field(cargo, "workspace", "lints", "clippy") !== undefined) return true;
+	return ["src/lib.rs", "src/main.rs"].some(name => /#!\[\s*(?:allow|warn|deny|forbid|expect)\s*\([^\]]*\bclippy::/.test(read(join(dir, name))));
 }
 
 // mypy with no path uses the files its configuration names; with none named it needs a path.
 function mypyCommand(dir: string): string {
-	const named = field(toml(dir, "pyproject.toml"), "tool", "mypy", "files") !== undefined || /^[ \t]*files[ \t]*=/m.test(read(join(dir, "mypy.ini")));
-	return named ? "mypy" : "mypy .";
+	let section = "";
+	const iniNames = read(join(dir, "mypy.ini")).split("\n").some(line => {
+		const header = /^\s*\[([^\]]+)\]/.exec(line);
+		if (header) section = header[1]!.trim();
+		return section === "mypy" && /^[ \t]*files[ \t]*=/.test(line);
+	});
+	return field(toml(dir, "pyproject.toml"), "tool", "mypy", "files") !== undefined || iniNames ? "mypy" : "mypy .";
 }
 
 // The repository's own lint, type-check, and test commands. A just recipe or make target for a kind stands for
-// that kind; otherwise each stack contributes the commands its configuration or CI shows. Nothing here adds a tool
-// the repository does not already use.
-export function detectCommands(dir: string, stacks: Stack[]): string[] {
+// that kind and runs by its name; otherwise each stack contributes the commands its configuration shows. Nothing
+// here adds a tool the repository does not configure. A check only CI, a makefile, or a justfile runs is returned
+// as unrun, with the files that run it, for someone to act on; no line is ever copied out of those files.
+export function detectCommands(dir: string, stacks: Stack[]): { commands: string[]; unrun: { command: string; files: string[] }[] } {
 	const recipes = justRecipes(dir);
 	const targets = makeTargets(dir);
 	const scripts = nodeScripts(dir);
@@ -193,8 +197,14 @@ export function detectCommands(dir: string, stacks: Stack[]): string[] {
 	const pyproject = read(join(dir, "pyproject.toml"));
 	const has = (name: string) => exists(join(dir, name));
 	const uv = has("uv.lock") ? "uv run " : "";
-	const runners = [...ciFiles(dir), ...["GNUmakefile", "makefile", "Makefile", "justfile", "Justfile", ".justfile"].filter(has)];
+	// Names as the directory lists them, so a case-insensitive filesystem does not report one file twice.
+	const runners = [...ciFiles(dir), ...readdirSync(dir).filter(name => ["GNUmakefile", "makefile", "Makefile", "justfile", "Justfile", ".justfile"].includes(name))];
 	const commands: string[] = [];
+	const unrun: { command: string; files: string[] }[] = [];
+	const unconfigured = (command: string) => {
+		const files = mentionedIn(dir, runners, command);
+		if (files.length > 0) unrun.push({ command, files });
+	};
 	for (const kind of KINDS) {
 		const recipe = TASK_NAMES[kind].find(name => recipes.has(name));
 		if (recipe !== undefined) { commands.push(`just ${recipe}`); continue; }
@@ -208,18 +218,15 @@ export function detectCommands(dir: string, stacks: Stack[]): string[] {
 					if (script !== undefined && !/no test specified/.test(scripts[script]!)) commands.push(`${runner} ${script}`);
 					break;
 				}
-				case "rust": {
-					const clippy = kind === "lint" ? commandAlreadyRun(dir, runners, "cargo clippy") ?? (clippyConfigured(dir) ? "cargo clippy --all-targets -- -D warnings" : undefined) : undefined;
-					if (clippy !== undefined) commands.push(clippy);
+				case "rust":
+					if (kind === "lint" && clippyConfigured(dir)) commands.push("cargo clippy");
+					else if (kind === "lint") unconfigured("cargo clippy");
 					if (kind === "test") commands.push("cargo test");
 					break;
-				}
-				case "go": {
-					const vet = kind === "lint" ? commandAlreadyRun(dir, runners, "go vet") : undefined;
-					if (vet !== undefined) commands.push(vet);
+				case "go":
+					if (kind === "lint") unconfigured("go vet");
 					if (kind === "test") commands.push("go test ./...");
 					break;
-				}
 				case "python":
 					if (kind === "lint" && (pyproject.includes("[tool.ruff") || has("ruff.toml") || has(".ruff.toml"))) commands.push(`${uv}ruff check .`);
 					if (kind === "typecheck" && (pyproject.includes("[tool.mypy") || has("mypy.ini"))) commands.push(`${uv}${mypyCommand(dir)}`);
@@ -232,7 +239,7 @@ export function detectCommands(dir: string, stacks: Stack[]): string[] {
 			}
 		}
 	}
-	return commands;
+	return { commands, unrun };
 }
 
 function declaredLicense(dir: string): string | undefined {
@@ -339,8 +346,9 @@ export function audit(target: string, options: Options = {}): Report {
 	// LICENSE: written only when the user named one or the manifest declares MIT; otherwise a default to propose.
 	const licenseFile = readdirSync(dir).find(name => /^(?:licen[cs]e|copying|unlicense)(?:[.-].*)?$/i.test(name));
 	const declared = declaredLicense(dir);
-	// The user who names MIT is the holder by default; a manifest's MIT belongs to its author, never to whoever runs this.
-	const holder = options.holder ?? (options.license === undefined ? declaredAuthor(dir) : git(dir, ["config", "user.name"]).out || undefined);
+	// The manifest's author holds its license; only the user who names MIT and has no manifest author falls back to
+	// git user.name. A manifest's MIT never belongs to whoever runs this.
+	const holder = options.holder ?? declaredAuthor(dir) ?? (options.license === undefined ? undefined : git(dir, ["config", "user.name"]).out || undefined);
 	if (licenseFile !== undefined) add("license", "present", licenseFile);
 	else if (options.license !== undefined && declared !== undefined && declared !== options.license) add("license", "manual", `the user named ${options.license} but the manifest declares ${declared}: ask which one holds`);
 	else if (options.license === undefined && declared === "UNLICENSED") add("license", "decision", "the manifest says UNLICENSED (proprietary): no license file unless the user wants one");
@@ -353,15 +361,22 @@ export function audit(target: string, options: Options = {}): Report {
 	// validate: one entry point that runs the repository's own lint, type checks, and tests.
 	const entries = existingValidate(dir);
 	let validate: string | null = entries[0] ?? null;
+	const { commands, unrun } = detectCommands(dir, stacks);
 	if (entries.length > 0) add("validate", "present", entries.length === 1 ? entries[0]! : `${entries.join(", ")}: keep one and name it in AGENTS.md`);
 	else {
-		const commands = detectCommands(dir, stacks);
 		if (commands.length === 0) add("validate", "manual", "no lint, type-check, or test command found: add the project's own commands, then rerun apply; nothing is invented");
 		else {
 			validate = "scripts/validate";
 			const script = ["#!/usr/bin/env bash", "# The one validate entry point: the repository's own lint, type-check, and test commands. Run it before every commit and push.", "set -euo pipefail", 'cd "$(dirname "${BASH_SOURCE[0]}")/.."', "", ...commands, ""].join("\n");
 			add("validate", "create", `scripts/validate running ${commands.join("; ")}`, file("scripts/validate", script, 0o755));
 		}
+	}
+	// A check CI, a makefile, or a justfile runs but nothing configures stays a note while scripts/validate (to be
+	// created, or present) does not run it. A make, just, or package validate is the repository's own design.
+	if (entries.length === 0 || entries[0] === "scripts/validate") {
+		const notes = unrun.filter(gap => !read(at("scripts/validate")).includes(gap.command))
+			.map(gap => `${gap.files.join(", ")} ${gap.files.length === 1 ? "runs" : "run"} ${gap.command}, which nothing configures; add it to validate if the repository wants it locally`);
+		if (notes.length > 0) add("validate-gap", "manual", notes.join("; "));
 	}
 
 	// AGENTS.md, and CLAUDE.md importing it.

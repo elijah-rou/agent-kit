@@ -6,7 +6,7 @@
 // request never supplies its own verifier.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { basename, join, resolve } from "node:path";
 
@@ -948,23 +948,23 @@ function driveClaudeSurface(run: RunInfo, rec: Recorder): void {
 }
 
 /** A Claude Code PreToolUse event for a tool, from the main session or from a subagent. */
-function preToolUseEvent(runId: string, cwd: string, input: Record<string, unknown>, agent?: { id: string; type?: string }, tool = "Bash"): string {
+function preToolUseEvent(session: string, cwd: string, input: Record<string, unknown>, agent?: { id: string; type?: string }, tool = "Bash"): string {
 	return JSON.stringify({
-		session_id: `${runId}-git-guard`,
+		session_id: session,
 		transcript_path: "/dev/null",
 		cwd,
 		permission_mode: "bypassPermissions",
 		hook_event_name: "PreToolUse",
 		tool_name: tool,
-		tool_input: { description: "verify-agent-kit git-guard case", ...input },
+		tool_input: { description: "verify-agent-kit hook case", ...input },
 		tool_use_id: "toolu_verify_agent_kit",
 		...(agent ? { agent_id: agent.id, ...(agent.type === undefined ? {} : { agent_type: agent.type }) } : {}),
 	});
 }
 
 /** A scratch git repository whose bunfig.toml preloads a script that prints, as an ordinary Bun project's might. */
-function guardProject(run: RunInfo): string {
-	const project = join(runDir(run.runId), "git-guard-project");
+function hookProject(run: RunInfo, name: string): string {
+	const project = join(runDir(run.runId), name);
 	mkdirSync(project, { recursive: true });
 	git(["init", "-q", "-b", "main"], project);
 	writeFileSync(join(project, "preload.ts"), 'console.log("project preload ran");\n');
@@ -973,13 +973,13 @@ function guardProject(run: RunInfo): string {
 }
 
 function driveGitGuard(run: RunInfo, rec: Recorder): void {
-	const project = guardProject(run);
+	const project = hookProject(run, "git-guard-project");
 	const hookCli = join(run.checkout, "agentic/tools/git-guard/cli.ts");
 	// The documented command: --cwd keeps Bun from loading the project's bunfig.toml.
 	const hook = ["bun", "--cwd", run.checkout, hookCli];
 	const worker = { id: "a-verify-worker", type: "general-purpose" };
 	const owner = { id: "a-verify-owner", type: "autopilot-owner" };
-	const event = (command: string, agent?: { id: string; type?: string }, tool?: string) => preToolUseEvent(run.runId, project, { command }, agent, tool);
+	const event = (command: string, agent?: { id: string; type?: string }, tool?: string) => preToolUseEvent(`${run.runId}-git-guard`, project, { command }, agent, tool);
 	const skip = /skipping git hooks/;
 	const hooksKey = /skipping git hooks by setting or unsetting core\.hooksPath or a hook\.\* key/;
 	const cases: { id: string; stdin: string; deny?: RegExp }[] = [
@@ -1025,7 +1025,7 @@ function driveGitGuard(run: RunInfo, rec: Recorder): void {
 		{ id: "subagent-tag-redirect", stdin: event("git tag 2>/dev/null", worker) },
 		{ id: "subagent-local", stdin: event("git commit -m local", worker) },
 		{ id: "subagent-not-git", stdin: event("ls -la", worker) },
-		{ id: "subagent-write", stdin: preToolUseEvent(run.runId, project, { file_path: join(project, "x.sh"), content: "git push --no-verify" }, worker, "Write") },
+		{ id: "subagent-write", stdin: preToolUseEvent(`${run.runId}-git-guard`, project, { file_path: join(project, "x.sh"), content: "git push --no-verify" }, worker, "Write") },
 		{ id: "owner-push", stdin: event("git push --force-with-lease=agent/x:abc origin agent/x", owner) },
 		{ id: "owner-no-verify", stdin: event("git commit --no-verify -m x", owner), deny: skip },
 		{ id: "owner-commit-n", stdin: event("git commit -nm x", owner), deny: /skipping git hooks with -n/ },
@@ -1056,28 +1056,15 @@ function driveGitGuard(run: RunInfo, rec: Recorder): void {
 }
 
 function driveSkillReminder(run: RunInfo, rec: Recorder): void {
-	const project = join(runDir(run.runId), "skill-reminder-project");
-	mkdirSync(project, { recursive: true });
-	writeFileSync(join(project, "preload.ts"), 'console.log("project preload ran");\n');
-	writeFileSync(join(project, "bunfig.toml"), 'preload = ["./preload.ts"]\n');
-	const state = join(runDir(run.runId), "skill-reminder-state");
+	const project = hookProject(run, "skill-reminder-project");
+	// A fresh state directory per drive: the cases read the markers earlier cases leave, so a rerun must not see the last drive's.
+	const state = mkdtempSync(join(runDir(run.runId), "skill-reminder-state-"));
 	const hookCli = join(run.checkout, "agentic/tools/skill-reminder/cli.ts");
 	// The documented command: --cwd keeps Bun from loading the project's bunfig.toml.
 	const hook = ["bun", "--cwd", run.checkout, hookCli];
 	const session = `${run.runId}-skill-reminder`;
 	const child = "a-verify-worker";
-	const event = (tool: string, input: Record<string, unknown>, agent?: string) =>
-		JSON.stringify({
-			session_id: session,
-			transcript_path: "/dev/null",
-			cwd: project,
-			permission_mode: "bypassPermissions",
-			hook_event_name: "PreToolUse",
-			tool_name: tool,
-			tool_input: input,
-			tool_use_id: "toolu_verify_agent_kit",
-			...(agent === undefined ? {} : { agent_id: agent, agent_type: "general-purpose" }),
-		});
+	const event = (tool: string, input: Record<string, unknown>, agent?: string) => preToolUseEvent(session, project, input, agent === undefined ? undefined : { id: agent, type: "general-purpose" }, tool);
 	const file = (name: string) => ({ file_path: join(project, name), old_string: "1", new_string: "2" });
 	// Order matters: each case reads the markers the cases before it left.
 	const cases: { id: string; stdin: string; remind: boolean }[] = [
@@ -1091,7 +1078,7 @@ function driveSkillReminder(run: RunInfo, rec: Recorder): void {
 		{ id: "main-bash", stdin: event("Bash", { command: "vim a.ts" }), remind: false },
 		{ id: "malformed", stdin: "not json", remind: false },
 	];
-	const exposed = rec.step("hook-project-bunfig-without-cwd", ["bun", hookCli, "--claude-hook"], { cwd: project, env: { XDG_STATE_HOME: join(runDir(run.runId), "skill-reminder-exposed") }, input: event("Edit", file("a.ts")) });
+	const exposed = rec.step("hook-project-bunfig-without-cwd", ["bun", hookCli, "--claude-hook"], { cwd: project, env: { XDG_STATE_HOME: mkdtempSync(join(runDir(run.runId), "skill-reminder-exposed-")) }, input: event("Edit", file("a.ts")) });
 	rec.check(exposed.stdout.startsWith("project preload ran"), "project-bunfig: without --cwd, the project's preload prints before the hook's output, so the fixture bites");
 	for (const c of cases) {
 		const result = rec.step(`hook-${c.id}`, [...hook, "--claude-hook"], { cwd: project, env: { XDG_STATE_HOME: state }, input: c.stdin });

@@ -7,6 +7,9 @@ You own the verdicts, never the PRs. One owner carries each PR from build to mer
 - List the items. Items the user names as theirs stop at merge-ready: the user reviews and merges them, and no owner does.
 - If the user asks for the plan first, state it and stop. Execution starts on the user's go.
 - Start a decision log for the program (`show-me-your-work`), with the invocation and the user's words as its first row. The gate in every repository is the local ledger check before each merge (section 4).
+- If the user states a budget (time, usage, or a number of PRs), log it: at about 70% of it, launch no new owner and land what is verified (`background-run`'s coordination reference, Liveness).
+- Before acting on a PR that already exists, including launching an owner or verifiers for it, check that no other thread owns it (`SKILL.md` section 2): in T3, no other active thread has it linked.
+- Arm the audit tick (section 5) before the first owner starts.
 - A repository without a verification skill gets one first: the queue's first item is `create-verification`, opened as its first PR. It creates the repository's verification policy, so it lands only by countersign (section 3) and waits at merge-ready under "Needs you" while the other items move; live lanes use a named driver until it merges (`SKILL.md` precondition 2).
 
 ## 2. Spawn one owner per PR
@@ -17,10 +20,12 @@ Each owner is a child launched with the `autopilot-owner` role, the only child r
 2. Keep its own decision log (`show-me-your-work`), uncommitted, and return it with its reports. The owner launches no children, so the coordinator's Attention review covers this log.
 3. Prove the change on the real artifact with the repository's verification skill, before reporting it code-ready.
 4. Rebase onto current trunk once before the code-ready report. After that, rebase again only at merge prep, on a conflict with trunk, or on a CI failure caused by a trunk change. Publish a rebase only to its own branch: first check that `git ls-remote origin <branch>` still shows the head it last pushed (if not, someone else wrote to the branch; stop and report), then push with `git push --force-with-lease=<branch>:<that head>`.
-5. Report code-ready with the head SHA. Then babysit to green (sections 2 to 4 of `babysit-and-ship`, with `agentic watch-pr --pr <n>`), and report merge-ready with the head SHA. Where those sections say to report a rebase and stop, or that babysitting never merges, this lifecycle overrides them for the owner's own PR.
+5. Report code-ready with the head SHA. Then babysit to green (sections 2 to 4 of `babysit-and-ship`, waiting with `agentic watch-pr --pr <n>`: as a subagent, the owner cannot hold a T3 watch), and report merge-ready with the head SHA. Where those sections say to report a rebase and stop, or that babysitting never merges, this lifecycle overrides them for the owner's own PR.
 6. Never record a verdict, and never merge before you say the verdict is clean.
 
-Run owners in parallel when their PRs touch disjoint files, and serialize work that genuinely overlaps. Shared resources also bound how many run at once: before launching owners that build containers or run heavy jobs, run the fan-out check in `background-run`'s coordination reference, and queue the rest. Owners do not stack: sequenced work is merge, then branch.
+When an owner reports its PR opened, link the PR to your thread in T3 (`link_pull_request`), so the link records its one owner. Record each owner, and each verifier lane in section 3, in `children.tsv` with its expected runtime as it starts (`background-run`'s coordination reference, Liveness).
+
+Run owners in parallel when their PRs touch disjoint files, and serialize work that genuinely overlaps. Shared resources also bound how many run at once: before every fan-out of owners or verifier lanes, run the fan-out check in `background-run`'s coordination reference (free disk for container builds, a cap on strong-model children counting every lane), and queue the rest. Owners do not stack: sequenced work is merge, then branch.
 
 ## 3. Verify every round
 
@@ -50,11 +55,12 @@ Step 2 is the only gate, in every repository, public or private: nothing on the 
 
 ## 5. Keep the program honest
 
-- Run an audit tick about hourly with the harness's recurring facility, never from memory: re-read this file from trunk, audit the program against it, and count only side effects as progress (pushes, PR or check changes, ledger rows). Stop an owner with no side effect since the last tick before launching its replacement, so a branch never has two writers. A stall never counts as proof the work is done or as a reason to drop it.
+- Run the audit tick in `background-run`'s coordination reference about hourly, on a schedule the harness keeps rather than one you keep in mind. In T3, it is a `schedule_task` bound to your thread, whose prompt says: re-read this file, not from memory (in agent-kit, from trunk: `git show origin/main:skills/babysit-and-ship/references/autopilot-full.md`; elsewhere, the installed skill's copy), resume the program from the decision log and `children.tsv` at their paths, and run the tick. Outside T3, it is `/loop` with that prompt, and your report says it dies with the session. Report the schedule when you create it, and delete it when the queue finishes or the user stops the program.
+- Each tick audits the program against this file and fixes drift, counts only side effects as progress (pushes, PR or check changes, ledger rows), and runs the liveness check over every owner and lane: a child past its expected runtime with no side effect, or one that errored, is stopped before its replacement launches, so a branch never has two writers, and an item gets at most two replacements before you replan it. A failed child or one waiting on a permission prompt goes under "Needs you" once, not every tick. A stall never counts as proof the work is done or as a reason to drop it.
 - After merges land, sweep the merged PRs for late bot comments and note anything worth a follow-up.
 - On the user's stop or hold, every owner stops writing at once and holds its brief until released.
 - The always-pause list still holds for owners: no deploys, releases, messages to people, credential changes, or force-pushes to anything but their own branch.
 
 ## Reply
 
-The queue with each PR's owner, state, and head SHA; each verdict and its lanes; each PR's Jev score and whether it added a second audit lane; what merged, each after its ledger check; countersigns and other items waiting for the user; where the decision logs are.
+The queue with each PR's owner, state, and head SHA; the audit tick's schedule and whether it was deleted; children found stuck, replaced, or waiting on a prompt; each verdict and its lanes; each PR's Jev score and whether it added a second audit lane; what merged, each after its ledger check; countersigns and other items waiting for the user; where the decision logs are.

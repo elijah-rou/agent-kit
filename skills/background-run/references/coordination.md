@@ -39,12 +39,12 @@ A child is stuck when it errored, or when it has run past `expected` with no sid
 
 For unattended programs, run an audit tick about hourly, on a schedule the harness keeps, never from memory:
 
-- **In T3,** create it with `schedule_task`, bound to the coordinator's thread (`bindToCurrentThread`, an hourly interval), so it runs even when no turn is active. Its prompt names the governing skill's trunk path, the decision log, and `children.tsv`, and says to resume the program from them and run this tick: a stalled program restarts on the next tick once the cause clears. Log its scheduled task ID, report it, and delete it (`delete_scheduled_task`) when the program finishes or the user stops it.
+- **In T3,** create it with `schedule_task`, bound to the coordinator's thread (`bindToCurrentThread`, an hourly interval), so it runs even when no turn is active. Its prompt names the governing skill's path, the decision log, and `children.tsv`, and says to resume the program from them and run this tick: a stalled program restarts on the next tick once the cause clears. Log its scheduled task ID, report it, and delete it (`delete_scheduled_task`) when the program finishes or the user stops it.
 - **Outside T3,** use `/loop` with the same prompt, and say in the report that it dies with the session.
 
 Each tick:
 
-1. Re-read the governing skill from the default branch (`git show origin/<trunk>:<path>`), not from memory.
+1. Re-read the governing skill, not from memory: from the default branch where the program's repository holds it (`git show origin/<trunk>:<path>`), otherwise from its installed copy.
 2. Audit the program against it, and fix drift during the tick.
 3. Count only side effects as progress: commits, pushes, PR or check changes, ledger and store rows. A busy transcript is not progress.
 4. Run the liveness check over every running row of `children.tsv`, and over the harness's own agent list where it has one. Probe read-only first (store, ledger, branches, the child's log); do not resume an agent just to check on it. Replace each stuck child as Liveness describes, and check the budget.

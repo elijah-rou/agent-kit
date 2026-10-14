@@ -56,4 +56,4 @@ When the user says to graduate, or agrees the design has settled:
 3. Recommend rebuilding from scratch or hardening in place, with the reason. The user decides.
 4. Add a first line `Graduated: <date>` to `SPIKE.md` and commit, so step 1 never admits this workspace again.
 
-The run ends at graduation or when the user drops the spike, and the relaxed rules end with it. The real build follows the standing rules from its first step; once it runs, offer `create-verification`. A later session resumes the spike only when the user invokes spike again.
+The run ends at graduation or when the user drops the spike, and the relaxed rules end with it. The real build follows the standing rules from its first step: it starts at `new-project`'s README-first step, seeded by the Handoff section, whether it is rebuilt from scratch or hardened in place. A later session resumes the spike only when the user invokes spike again.

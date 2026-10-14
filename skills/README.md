@@ -89,7 +89,8 @@ Local adaptations:
   for the user, and a blocked or denied action is final.
 - Expensive or side-effecting workflows set `disable-model-invocation: true`, unless the user's words
   are what starts them: `babysit-and-ship` loads when the user's words name a landing mode, and
-  `create-verification` when such a mode needs a verification skill first.
+  `create-verification` when such a mode needs a verification skill first, or when the user accepts
+  the offer `new-project` makes once a new project's first slice runs.
 - Transcripts are read only for the active workspace's current session, except that a session pickup reads the prior run it resumes in the same workspace.
 - Decision logs, session learning files, and the verdict ledger each have one writer.
 

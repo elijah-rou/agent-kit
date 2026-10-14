@@ -159,9 +159,9 @@ export function decided(note: ReportNote, record: LedgerRecord): boolean {
 }
 
 /**
- * Whether the note was written for the agent. Claude Code and Codex add it to the prompt's own turn;
- * Pi holds it for the next turn and drops it when that turn's prompt is not the routed text, so for
- * Pi this is an upper bound on the notes that reached a turn.
+ * Whether the note was written for the agent. Claude Code adds it to the prompt's own turn, as Codex
+ * did for its older records; Pi holds it for the next turn and drops it when that turn's prompt is not
+ * the routed text, so for Pi this is an upper bound on the notes that reached a turn.
  */
 export function noted(note: ReportNote, record: LedgerRecord): boolean {
 	return record.noted && carries(note, record.delivered);

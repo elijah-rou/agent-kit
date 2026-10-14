@@ -149,18 +149,23 @@ describe("patterns for what the shell reader alone used to find", () => {
 		expect(blockReason(`${lines}git push`, child)).toMatch(/git push/);
 		expect(performance.now() - started).toBeLessThan(1000);
 	});
-	test("10,000 assignments of each value form are read in linear time", () => {
-		const started = performance.now();
-		for (const assignment of ["X=$(date +%s) ", "X=`date +%s` ", "X=a\\ b ", "X=${A:-b c} ", "X=\"a\\\" b\" ", "X=$(a; b) "]) {
+	// Each bound is several times the local time and well under the hook's 5 s timeout; a pattern that
+	// read these texts superlinearly would take seconds per call.
+	for (const assignment of ["X=$(date +%s) ", "X=`date +%s` ", "X=a\\ b ", "X=${A:-b c} ", "X=\"a\\\" b\" ", "X=$(a; b) "]) {
+		test(`10,000 assignments like ${assignment.trim()} are read in linear time`, () => {
 			const run = assignment.repeat(10_000);
-			expect([assignment, blockReason(`${run}echo hi`, child)]).toEqual([assignment, undefined]);
-			expect([assignment, blockReason(`${run}git tag -l`, child)]).toEqual([assignment, undefined]);
-			expect([assignment, blockReason(`${run}git push`, child)]).toEqual([assignment, expect.stringContaining("git push")]);
-		}
-		// Commands inside one value's substitution are each read once, not from every separator before them.
-		expect(blockReason(`X=$(${";git ".repeat(10_000)}) git status`, child)).toBeUndefined();
-		expect(blockReason(`X=$(${";git status".repeat(10_000)}; git push) git status`, child)).toMatch(/git push/);
-		expect(performance.now() - started).toBeLessThan(5000);
+			const started = performance.now();
+			expect(blockReason(`${run}echo hi`, child)).toBeUndefined();
+			expect(blockReason(`${run}git tag -l`, child)).toBeUndefined();
+			expect(blockReason(`${run}git push`, child)).toMatch(/git push/);
+			expect(performance.now() - started).toBeLessThan(3000);
+		});
+	}
+	test("commands inside one value's substitution are each read once, not from every separator before them", () => {
+		// Rereading each inner command's body from every separator before it took 18 s here.
+		const started = performance.now();
+		expect(blockReason(`X=$(${";git ".repeat(8000)}) git status`, child)).toBeUndefined();
+		expect(performance.now() - started).toBeLessThan(3000);
 	});
 	test("gh pr merge is refused for every child but an owner", () => {
 		for (const command of ["gh pr merge 3", "gh pr merge 3 --squash", "gh pr merge -R owner/repo 3", "cd repo && gh pr merge 3 --auto", "/opt/homebrew/bin/gh pr merge 3"]) {

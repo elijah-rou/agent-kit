@@ -13,7 +13,7 @@ import { parseAnswers, QUESTIONS, type Classify, type ClassifyFailure, type Send
 export const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 export const JEV_MODEL = "jev-latest";
 
-/** Every request opts into TypeSafe's longer context window. On six capped PR-risk states (2026-10-14) it flipped no hold across HOLD_ABOVE; the largest shift was +0.06, toward holding. */
+/** Lifts TypeSafe's default context limit (docs.typesafe.ai/models#context-length) on every request. */
 function jevHeaders(key: string): Record<string, string> {
 	return { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "TypeSafe-Danger-Zone-Long-Context": "true" };
 }

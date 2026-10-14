@@ -155,8 +155,13 @@ test("both harnesses carry the same standing default and interaction contract", 
   const ladder = (text) => text.match(/^- Decide routine reversible things[\s\S]*?draft the command for the user\.$/m)?.[0];
   assert.ok(ladder(agents));
   assert.equal(ladder(claude), ladder(agents));
-  for (const rule of [/Every question gives concrete options, a recommendation with its reason, and the default/, /open with a "Needs you" part/, /offer to run `correct` on it/, /One-way doors are the only pre-build checkpoint/, /The learning loop is the one reviewed path/, /A decision is settled only when the user made or approved it/, /Take the narrowest reading of a user's remark/, /name the directory for any command the user must run/]) {
+  for (const rule of [/Decide and report\. Under a mode the user invoked or the standing default, make each call they cover, act on it, and report it/, /For a call only the user can make[^\n]*apply a default, keep working, and report the default with what the user could tell you to do instead/, /give no reply words to type back and no offer to continue/, /never hand them a check or command you could run yourself/, /One-way doors still wait for the user's review of the shape/, /open with a "Needs you" part/, /offer to run `correct` on it/, /One-way doors are the only pre-build checkpoint/, /The learning loop is the one reviewed path/, /A decision is settled only when the user made or approved it/, /Take the narrowest reading of a user's remark/, /name the directory for any command the user must run/]) {
     assert.match(agents, rule);
     assert.match(claude, rule);
+  }
+  // The decide-and-report contract replaced the question contract; a product call no longer stops the run.
+  for (const text of [agents, claude]) {
+    assert.doesNotMatch(text, /Every question gives concrete options/);
+    assert.doesNotMatch(text, /unresolved product, public-contract/);
   }
 });

@@ -1,6 +1,6 @@
 ---
 name: repo-baseline
-description: Set up or adopt a repository's baseline with an idempotent script - a local git repository, .gitignore, README, license, AGENTS.md naming the one validate command, and that validate entry point - and report the secret-scan hook, remote, CI, ruleset, and Jev opt-out decisions. Use when a new project starts, or when a repository lacks git, AGENTS.md, a validate command, or a license. Not for adding a remote, CI, or a ruleset on its own, which needs the user's authorization (rulesets are github-rulesets).
+description: Set up or adopt a repository's baseline with an idempotent script - a local git repository, .gitignore, README, license, AGENTS.md naming the one validate command, and that validate entry point - and report the secret-scan hook, remote, CI, ruleset, and Jev opt-out decisions. Use at new-project's baseline step, or when a repository lacks git, AGENTS.md, a validate command, or a license. Not for adding a remote, CI, or a ruleset on its own, which needs the user's authorization (rulesets are github-rulesets).
 ---
 
 # Repo baseline

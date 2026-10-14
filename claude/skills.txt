@@ -27,4 +27,5 @@ skills/show-me-your-work
 skills/teach
 skills/github-rulesets
 skills/repo-baseline
-claude/skills/spike
+skills/spike
+skills/new-project

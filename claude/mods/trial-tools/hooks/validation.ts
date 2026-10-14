@@ -1,7 +1,7 @@
 import type { EngineInterface, On } from "claude-code";
 
 export const VALIDATION_TOOL = "mcp__trial-tools__project_validate";
-export const ACTIONS = ["test", "lint", "typecheck"] as const;
+export const ACTIONS = ["test", "lint", "typecheck", "validate"] as const;
 type Action = typeof ACTIONS[number];
 export type ValidationInput = { action: Action; command?: string; cwd?: string; timeoutMs: number };
 const MAX_COMMAND = 8192;
@@ -14,13 +14,13 @@ export const INPUT_SCHEMA = {
   type: "object", additionalProperties: false, required: ["action"],
   properties: {
     action: { type: "string", enum: ACTIONS },
-    command: { type: "string", minLength: 1, maxLength: MAX_COMMAND, description: "Explicit non-mutating test/lint/typecheck command. Never install, fix, format-write, deploy, or publish." },
+    command: { type: "string", minLength: 1, maxLength: MAX_COMMAND, description: "Explicit non-mutating test/lint/typecheck/validate command. Never install, fix, format-write, deploy, or publish." },
     cwd: { type: "string", minLength: 1, maxLength: MAX_CWD, description: "Project directory; relative paths resolve under the session directory. Explicit commands use this exact directory." },
     timeoutMs: { type: "integer", minimum: MIN_TIMEOUT, maximum: MAX_TIMEOUT, default: DEFAULT_TIMEOUT },
   },
 };
 
-export const VALIDATION_SPEC = { name: "project_validate", description: "Run bounded project tests, lint, or typechecks through native Bash permission/sandbox checks, with structured diagnostics and before/after workspace receipts. Prefer an explicit known command; otherwise detect the project runner. Only non-mutating validation: never install, fix, format-write, deploy, publish, or run arbitrary chores. Commands have local user permissions; this is not a read-only sandbox. Receipts are observations, not authority or proof of unchanged ignored dependencies/environment.", inputSchema: INPUT_SCHEMA };
+export const VALIDATION_SPEC = { name: "project_validate", description: "Run bounded project tests, lint, or typechecks through native Bash permission/sandbox checks, with structured diagnostics and before/after workspace receipts. Action validate runs the repository's one validate entry point, scripts/validate at the repository root (the command its CI runs); where AGENTS.md names another validate command, pass that as command. Prefer an explicit known command; otherwise detect the project runner. Only non-mutating validation: never install, fix, format-write, deploy, publish, or run arbitrary chores. Commands have local user permissions; this is not a read-only sandbox. Receipts are observations, not authority or proof of unchanged ignored dependencies/environment.", inputSchema: INPUT_SCHEMA };
 
 function textParameter(value: unknown, name: string, limit: number): string | undefined {
   if (value === undefined) return undefined;
@@ -34,7 +34,7 @@ export function parseValidationInput(value: unknown): ValidationInput {
   const unknown = Object.keys(fields).find(key => !["action", "command", "cwd", "timeoutMs", "tool", "tool_use_id", "agentId"].includes(key));
   if (unknown !== undefined) throw new Error(`unknown validation field: ${unknown}`);
   const action = ACTIONS.find(candidate => candidate === fields.action);
-  if (action === undefined) throw new Error("action must be test, lint, or typecheck");
+  if (action === undefined) throw new Error("action must be test, lint, typecheck, or validate");
   const command = textParameter(fields.command, "command", MAX_COMMAND);
   const cwd = textParameter(fields.cwd, "cwd", MAX_CWD);
   const timeoutMs = fields.timeoutMs === undefined ? DEFAULT_TIMEOUT : fields.timeoutMs;
@@ -79,7 +79,7 @@ export function registerValidation(on: On): void {
       const result = await $.tool.call({ tool: VALIDATION_TOOL, ...input });
       return { text: result.deny === undefined && typeof result.result === "string" ? result.result : JSON.stringify({ outcome: "denied", error: result.deny }), presentation: "text" as const };
     } catch (error) {
-      return { text: `trial-tools: /validate requires a JSON object with action test, lint, or typecheck. ${String(error)}`, presentation: "text" as const };
+      return { text: `trial-tools: /validate requires a JSON object with action test, lint, typecheck, or validate. ${String(error)}`, presentation: "text" as const };
     }
   });
   on("tool.call", { tool: VALIDATION_TOOL }, async ($, event) => {

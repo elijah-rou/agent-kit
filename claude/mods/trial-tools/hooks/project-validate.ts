@@ -1,19 +1,19 @@
 #!/usr/bin/env bun
 // Bound validation and return observed workspace evidence, not authorization.
-// Usage: bun project-validate.ts --action test|lint|typecheck --cwd DIR [--command CMD] [--timeout-ms N] [--actor NAME]
+// Usage: bun project-validate.ts --action test|lint|typecheck|validate --cwd DIR [--command CMD] [--timeout-ms N] [--actor NAME]
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, constants, existsSync, fstatSync, openSync, readSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 
-type Action = "test" | "lint" | "typecheck";
+type Action = "test" | "lint" | "typecheck" | "validate";
 type Outcome = "passed" | "failed" | "timed_out" | "cancelled" | "execution_error" | "unsupported";
 type RunResult = { outcome: Outcome; exitCode: number | null; output: Buffer; truncated: boolean; elapsedMs: number };
 type Fingerprint =
   | { state: "available"; repositoryRoot: string; head: string; digest: string }
   | { state: "unavailable"; repositoryRoot: string; reason: string };
 
-const ACTIONS: readonly Action[] = ["test", "lint", "typecheck"];
+const ACTIONS: readonly Action[] = ["test", "lint", "typecheck", "validate"];
 const MAX_OUTPUT_BYTES = 30_000;
 const MAX_GIT_BYTES = 1_048_576;
 const MAX_UNTRACKED_FILES = 100;
@@ -212,6 +212,8 @@ async function discover(cwd: string): Promise<string> {
 
 function commandFor(root: string, action: Action): string | null {
   const has = (name: string) => existsSync(join(root, name)) && statSync(join(root, name)).isFile();
+  // The repository's one validate entry point, the command its CI runs; never a guess assembled from parts.
+  if (action === "validate") return has("scripts/validate") ? "scripts/validate" : null;
   if (has("package.json")) {
     const runner = has("bun.lock") ? "bun run" : has("pnpm-lock.yaml") ? "pnpm" : has("yarn.lock") ? "yarn" : "npm run";
     return `${runner} ${action}`;
@@ -227,12 +229,13 @@ function commandFor(root: string, action: Action): string | null {
 async function validate(action: Action, cwd: string, command: string | undefined, timeoutMs: number, actor: string) {
   let root = realpathSync(resolve(cwd));
   if (!statSync(root).isDirectory()) throw new Error(`${root} is not a directory`);
-  if (command === undefined) root = await discover(root);
+  // Validate runs from the repository root, where scripts/validate and the AGENTS.md command live.
+  if (command === undefined) root = action === "validate" ? (await repository(root)) ?? root : await discover(root);
   const selected = command !== undefined ? command.trim() : commandFor(root, action);
   const before = await fingerprint(root);
   const startedAt = new Date().toISOString();
   const result: RunResult = selected === null
-    ? { outcome: "unsupported", exitCode: null, output: Buffer.from("No automatic validation command detected; pass command explicitly."), truncated: false, elapsedMs: 0 }
+    ? { outcome: "unsupported", exitCode: null, output: Buffer.from(action === "validate" ? "No scripts/validate at the repository root; pass the validate command the repository's AGENTS.md names as command." : "No automatic validation command detected; pass command explicitly."), truncated: false, elapsedMs: 0 }
     : await run(["/bin/sh", "-c", selected], root, timeoutMs, MAX_OUTPUT_BYTES);
   const after = await fingerprint(root);
   const stable = before.state === "available" && after.state === "available" ? JSON.stringify(before) === JSON.stringify(after) : null;
@@ -268,7 +271,7 @@ function parseArguments(argv: string[]) {
   const command = values.get("--command");
   const timeoutText = values.get("--timeout-ms") ?? "120000";
   const timeoutMs = /^\d+$/.test(timeoutText) ? Number(timeoutText) : Number.NaN;
-  if (action === undefined || cwd === undefined) throw new Error("--action test|lint|typecheck and --cwd are required");
+  if (action === undefined || cwd === undefined) throw new Error("--action test|lint|typecheck|validate and --cwd are required");
   if (!(timeoutMs >= 1000 && timeoutMs <= 300_000) || (command !== undefined && !(command.trim().length > 0 && command.length <= 8192))) {
     throw new Error("timeout must be 1000..300000 ms and command must contain 1..8192 characters");
   }

@@ -198,3 +198,26 @@ test("rejects out-of-range or malformed timeouts", () => {
     expect(result.status).not.toBe(0);
   }
 });
+
+test("validate runs scripts/validate from the repository root and names AGENTS.md when it is absent", () => {
+  const repository = join(temporary, "validate repo");
+  const nested = join(repository, "packages", "app");
+  mkdirSync(nested, { recursive: true });
+  writeFileSync(join(nested, "package.json"), "{}");
+  const init = spawnSync("git", ["-C", repository, "init", "-q", "-b", "main"], { encoding: "utf8", env: gitEnv });
+  expect(init.status, init.stderr).toBe(0);
+  const absent = invoke(nested, undefined, { action: "validate" });
+  expect(absent.outcome).toBe("unsupported");
+  expect(absent.cwd).toBe(repository);
+  expect(String(absent.output)).toContain("AGENTS.md");
+  mkdirSync(join(repository, "scripts"));
+  writeFileSync(join(repository, "scripts", "validate"), "#!/bin/sh\nprintf 'validated in %s\\n' \"$PWD\"\nexit \"${VALIDATE_EXIT:-0}\"\n", { mode: 0o755 });
+  const passed = invoke(nested, undefined, { action: "validate" });
+  expect(passed.outcome).toBe("passed");
+  expect(passed.command).toBe("scripts/validate");
+  expect(passed.cwd).toBe(repository);
+  expect(String(passed.output)).toBe(`validated in ${repository}`);
+  const failed = invoke(nested, undefined, { action: "validate", env: { ...process.env, VALIDATE_EXIT: "4" } });
+  expect(failed.outcome).toBe("failed");
+  expect(failed.exitCode).toBe(4);
+});

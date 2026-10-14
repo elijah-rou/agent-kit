@@ -21,7 +21,7 @@ The TPS band keeps existing above-prompt content and stays out of question dialo
 
 ## Validation and receipts
 
-`mcp__trial-tools__project_validate` accepts `action` (`test`, `lint`, or `typecheck`), optional `command` and `cwd`, and optional `timeoutMs`. Prefer a known, non-mutating command. Do not use install, fix, format-write, deployment, publication, or arbitrary chore commands. Command text is limited to 8,192 characters and directories to 4,096. Timeout defaults to 120 seconds; integer values from 1 to 300 seconds are accepted, not clamped.
+`mcp__trial-tools__project_validate` accepts `action` (`test`, `lint`, `typecheck`, or `validate`), optional `command` and `cwd`, and optional `timeoutMs`. `validate` runs the repository's one validate entry point, `scripts/validate` at the repository root, the command its CI runs; where `AGENTS.md` names another validate command, pass it as `command`. Prefer a known, non-mutating command. Do not use install, fix, format-write, deployment, publication, or arbitrary chore commands. Command text is limited to 8,192 characters and directories to 4,096. Timeout defaults to 120 seconds; integer values from 1 to 300 seconds are accepted, not clamped.
 
 ```text
 /validate {"action":"test","command":"bun test","timeoutMs":30000}

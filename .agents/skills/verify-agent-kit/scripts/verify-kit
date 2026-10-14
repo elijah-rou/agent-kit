@@ -532,9 +532,9 @@ const BACKSTOP_SETTINGS = { name: "agentic-backstop", target: "branch", enforcem
 const VERDICTS = ["live-ui-verified", "unit-test-verified", "countersigned", "type-check-only", "verifier-blocked", "verifier-failed"];
 const PASSING = ["live-ui-verified", "unit-test-verified", "countersigned"];
 // Paths whose change sets the verification policy: a passing verdict other than a countersign is refused for them.
-const POLICY_SAMPLES = [".agents/skills/verify-app/SKILL.md", ".agents/skills/verify-app/features/README.md", ".agents/skills/verify-app", ".agents/skills/verify-app/features", ".Agents/Skills/VERIFY-app/skill.md", "skills/babysit-and-ship/SKILL.md", "skills/babysit-and-ship/references/shipping.md", "skills/babysit-and-ship/references/autopilot-full.md", "skills/babysit-and-ship/references/pr-body.md", "claude/agents/autopilot-owner.md", "agentic/tools/verify/cli.ts", "agentic/vendor/orch/store.ts", "agentic/bin/agentic"];
-const NOT_POLICY_SAMPLES = [".agents/skills/verify-app/features/login.md", ".agents/skills/verify-app/scripts/verify-app", ".agents/skills/verify-app/scripts", ".agents/skills/other/SKILL.md", "skills/create-verification/SKILL.md", "claude/agents/build.md", "agentic/tools/verifyx/cli.ts", "agentic/tools/rulesets/cli.ts", "README.md"];
-const isPolicySample = (path: string) => /^\.agents\/skills\/verify-[^/]*(\/SKILL\.md|\/features(\/README\.md)?)?$|^skills\/babysit-and-ship\/(SKILL\.md$|references(\/|$))|^claude\/agents\/autopilot-owner\.md$|^agentic\/(tools\/verify|vendor\/orch)(\/|$)|^agentic\/bin\/agentic$/i.test(path);
+const POLICY_SAMPLES = [".agents/skills/verify-app/SKILL.md", ".agents/skills/verify-app/features/README.md", ".agents/skills/verify-app", ".agents/skills/verify-app/features", ".Agents/Skills/VERIFY-app/skill.md", ".claude/skills/verify-app", ".codex/skills/verify-app/SKILL.md", "skills/babysit-and-ship/SKILL.md", "skills/babysit-and-ship/references/shipping.md", "skills/babysit-and-ship/references/autopilot-full.md", "skills/babysit-and-ship/references/pr-body.md", "claude/agents/autopilot-owner.md", "agentic/tools/verify/cli.ts", "agentic/vendor/orch/store.ts", "agentic/bin/agentic"];
+const NOT_POLICY_SAMPLES = [".agents/skills/verify-app/features/login.md", ".agents/skills/verify-app/scripts/verify-app", ".agents/skills/verify-app/scripts", ".agents/skills/other/SKILL.md", ".claude/skills/verify-app/scripts/verify-app", "claude/skills/verify-app", "skills/create-verification/SKILL.md", "claude/agents/build.md", "agentic/tools/verifyx/cli.ts", "agentic/tools/rulesets/cli.ts", "README.md"];
+const isPolicySample = (path: string) => /^\.[^/]*\/skills\/verify-[^/]*(\/SKILL\.md|\/features(\/README\.md)?)?$|^skills\/babysit-and-ship\/(SKILL\.md$|references(\/|$))|^claude\/agents\/autopilot-owner\.md$|^agentic\/(tools\/verify|vendor\/orch)(\/|$)|^agentic\/bin\/agentic$/i.test(path);
 
 function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 	const agentic = join(run.checkout, "agentic/bin/agentic");
@@ -549,10 +549,11 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 		const verify = await import(${JSON.stringify(join(run.checkout, "agentic/tools/verify/verify.ts"))});
 		const rulesets = await import(${JSON.stringify(join(run.checkout, "agentic/tools/rulesets/rulesets.ts"))});
 		const row = (sha, verdict, patch = "f1", evidence = "run.log") => ({ pr: 1, sha, verdict, evidence: verify.evidenceCell(evidence, patch), verifier: "v" });
-		const at = (id) => () => id;
+		const at = (id, policyFiles = []) => () => ({ patchId: id, policyFiles });
 		const desired = rulesets.desiredRuleset();
 		const buildDiff = (line) => "diff --git a/build.sh b/build.sh\\nindex 0000001..0000002 100644\\n--- a/build.sh\\n+++ b/build.sh\\n@@ -1 +1 @@\\n-echo build\\n+" + line + "\\n";
 		const renameOut = "diff --git a/.agents/skills/verify-app/SKILL.md b/notes.md\\nsimilarity index 100%\\nrename from .agents/skills/verify-app/SKILL.md\\nrename to notes.md\\n";
+		const repoint = "diff --git a/.claude/skills/verify-app b/.claude/skills/verify-app\\nindex 3b18e51..5f1d0ec 120000\\n--- a/.claude/skills/verify-app\\n+++ b/.claude/skills/verify-app\\n@@ -1 +1 @@\\n-../../.agents/skills/verify-app\\n\\\\ No newline at end of file\\n+../../tools/lax\\n\\\\ No newline at end of file\\n";
 		console.log(JSON.stringify({
 			forgeExports: ["STATUS_CONTEXT", "statusFor"].filter((name) => name in verify).concat(["VERDICT_CONTEXT", "splitChecks"].filter((name) => name in rulesets)),
 			verdicts: verify.VERDICTS,
@@ -577,6 +578,8 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 				patchChanged: verify.gate([row("a", "live-ui-verified")], 1, "a", at("f2")).state,
 				pass: verify.gate([row("a", "live-ui-verified")], 1, "a", at("f1")).state,
 				countersigned: verify.gate([row("a", "countersigned")], 1, "a", at("f1")).state,
+				policyPassing: verify.gate([row("a", "live-ui-verified")], 1, "a", at("f1", [".claude/skills/verify-app"])).state,
+				policyCountersigned: verify.gate([row("a", "countersigned")], 1, "a", at("f1", [".claude/skills/verify-app"])).state,
 			},
 			countersign: {
 				empty: verify.countersignable([], 1, "a", "f1"),
@@ -597,6 +600,8 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 			whitespace: [verify.patchIdOf(buildDiff("rm -rf /tmp/build")), verify.patchIdOf(buildDiff("rm -rf / tmp/build")), verify.patchIdOf(buildDiff("  rm -rf /tmp/build"))],
 			policy: verify.policyFiles(${JSON.stringify([...POLICY_SAMPLES, ...NOT_POLICY_SAMPLES])}),
 			renameOut: verify.policyFiles(verify.changedPaths(renameOut)),
+			repoint: verify.policyFiles(verify.changedPaths(repoint)),
+			repointRefused: verify.policyRefusal("live-ui-verified", verify.policyFiles(verify.changedPaths(repoint))) !== undefined,
 			refusal: Object.fromEntries(verify.VERDICTS.map((v) => [v, verify.policyRefusal(v, ["agentic/tools/verify/cli.ts"]) !== undefined])),
 			refusalClean: verify.policyRefusal("live-ui-verified", []) !== undefined,
 		}));`]);
@@ -606,7 +611,7 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 		latestWins?: string; laterPass?: string; oldHead?: string; noRows?: string; rowForHead?: string; unknown?: boolean[];
 		gate?: Record<string, string>; countersign?: Record<string, boolean>;
 		approvedPatch?: { named?: { ok: boolean; evidence?: string }; unnamed?: boolean; other?: boolean; unblocked?: boolean; carried?: { ok: boolean; evidence?: string } };
-		whitespace?: string[]; policy?: string[]; renameOut?: string[]; refusal?: Record<string, boolean>; refusalClean?: boolean;
+		whitespace?: string[]; policy?: string[]; renameOut?: string[]; repoint?: string[]; repointRefused?: boolean; refusal?: Record<string, boolean>; refusalClean?: boolean;
 	} | undefined;
 	rec.check(contract.status === 0 && terms !== undefined, `the gate's modules load in the driven checkout (exit ${contract.status})`);
 	rec.check(sameList(terms?.forgeExports, []), `nothing mirrors a verdict to the forge: no status context, status builder, or required verdict check (found ${JSON.stringify(terms?.forgeExports)})`);
@@ -620,15 +625,16 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 	rec.check(terms?.latestWins === "fail" && terms.laterPass === "pass" && terms.oldHead === "void" && terms.noRows === "none" && terms.rowForHead === "second", "the latest verdict for the head decides, and a verdict for an old head is void");
 	rec.check(sameList(terms?.unknown?.map(String), ["false", "false"]), "a verdict outside the list is neither recognized nor passing");
 	const g = terms?.gate;
-	rec.check(g?.none === "none" && g.otherHead === "void" && g.failing === "fail" && g.patchChanged === "void" && g.pass === "pass" && g.countersigned === "pass", `the local gate passes only a passing verdict for the head with an unchanged patch (got ${JSON.stringify(g)})`);
+	rec.check(g?.none === "none" && g.otherHead === "void" && g.failing === "fail" && g.patchChanged === "void" && g.pass === "pass" && g.countersigned === "pass" && g.policyPassing === "fail" && g.policyCountersigned === "pass", `the local gate passes only a passing verdict for the head with an unchanged patch, and for a diff that touches a policy path only a countersign (got ${JSON.stringify(g)})`);
 	const c = terms?.countersign;
 	rec.check(c?.empty === false && c.blocked === true && c.failed === false && c.typeCheck === false && c.otherPatch === false && c.carried === true && c.headDecides === false, `a countersign needs a verifier-blocked verdict for the same patch, the head's own row deciding (got ${JSON.stringify(c)})`);
 	const a = terms?.approvedPatch;
 	rec.check(a?.named?.ok === true && a.named.evidence === "msg | verifier-blocked by v: run.log" && a.unnamed === false && a.other === false && a.unblocked === false && a.carried?.ok === true && a.carried.evidence === "carry | verifier-blocked by v: run.log", `a countersign must name the current patch as the approved one, and its evidence carries the blocked verdict's verifier and evidence, also when carried (got ${JSON.stringify(a)})`);
 	const w = terms?.whitespace;
 	rec.check(w?.length === 3 && w.every((id) => /^[0-9a-f]{40}$/.test(id)) && new Set(w).size === 3, `the patch ID keeps whitespace: "rm -rf /tmp/build", "rm -rf / tmp/build", and a re-indented line get three IDs (got ${JSON.stringify(w)})`);
-	rec.check(sameList(terms?.policy, POLICY_SAMPLES), `the policy paths cover a verification skill's verdict rules (SKILL.md, features/README.md, and a file at the skill's or features' own name) and the landing gate, but not its feature files or drive scripts, and nothing else sampled (got ${JSON.stringify(terms?.policy)})`);
+	rec.check(sameList(terms?.policy, POLICY_SAMPLES), `the policy paths cover a verification skill's verdict rules (SKILL.md, features/README.md, and a file at the skill's or features' own name, under .agents/skills or any runtime's dot-directory skills) and the landing gate, but not its feature files or drive scripts, and nothing else sampled (got ${JSON.stringify(terms?.policy)})`);
 	rec.check(sameList(terms?.renameOut, [".agents/skills/verify-app/SKILL.md"]), `a rename of a verification skill's SKILL.md out of its directory touches a policy path (got ${JSON.stringify(terms?.renameOut)})`);
+	rec.check(sameList(terms?.repoint, [".claude/skills/verify-app"]) && terms?.repointRefused === true, `repointing a runtime's discovery symlink (.claude/skills/verify-app) from the verification skill to another directory touches a policy path, and live-ui-verified is refused for it (got ${JSON.stringify(terms?.repoint)}, refused ${terms?.repointRefused})`);
 	rec.check(VERDICTS.every((v) => terms?.refusal?.[v] === (PASSING.includes(v) && v !== "countersigned")) && terms?.refusalClean === false, `for a policy change, record refuses exactly the passing verdicts but countersigned, and nothing for a change that touches no policy path (got ${JSON.stringify(terms?.refusal)}, clean ${terms?.refusalClean})`);
 
 	if (!ghReady()) return rec.skip("gh is not logged in for the GitHub steps: run gh auth login");

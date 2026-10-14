@@ -7,6 +7,20 @@ import { openStore } from "../../vendor/orch/store.ts";
 import * as verify from "./verify.ts";
 import { blockedBy, countersignable, countersignEvidence, currentVerdict, evidenceCell, gate, githubSlug, orchStore, parseEvidenceCell, passes, readLedger, rowForHead, VERDICTS } from "./verify.ts";
 
+// The reviewer's case: a runtime's discovery symlink repointed from the verification skill to a lax copy.
+const REPOINT_DIFF = [
+	"diff --git a/.claude/skills/verify-app b/.claude/skills/verify-app",
+	"index 3b18e51..5f1d0ec 120000",
+	"--- a/.claude/skills/verify-app",
+	"+++ b/.claude/skills/verify-app",
+	"@@ -1 +1 @@",
+	"-../../.agents/skills/verify-app",
+	"\\ No newline at end of file",
+	"+../../tools/lax",
+	"\\ No newline at end of file",
+	"",
+].join("\n");
+
 describe("verdicts", () => {
 	test("a verdict covers only the head it was recorded on, so a rebase voids it", () => {
 		const ledger = [
@@ -43,13 +57,18 @@ describe("verdicts", () => {
 
 	test("the local gate passes only a passing verdict for the head whose patch is unchanged", () => {
 		const row = (sha: string, verdict: string, patch = "f1") => ({ pr: 7, sha, verdict, evidence: evidenceCell("run.log", patch) });
-		const patch = (id: string) => () => id;
-		expect(gate([], 7, "aaa", patch("f1"))).toEqual({ state: "none", patchChanged: false });
+		const patch = (id: string, policyFiles: string[] = []) => () => ({ patchId: id, policyFiles });
+		expect(gate([], 7, "aaa", patch("f1"))).toEqual({ state: "none", patchChanged: false, policyRefused: false });
 		expect(gate([row("old", "live-ui-verified")], 7, "aaa", patch("f1")).state).toBe("void");
 		expect(gate([row("aaa", "verifier-blocked")], 7, "aaa", patch("f1")).state).toBe("fail");
-		expect(gate([row("aaa", "live-ui-verified")], 7, "aaa", patch("f2"))).toEqual({ state: "void", verdict: "live-ui-verified", sha: "aaa", patchChanged: true });
-		expect(gate([row("aaa", "live-ui-verified")], 7, "aaa", patch("f1"))).toEqual({ state: "pass", verdict: "live-ui-verified", sha: "aaa", patchChanged: false });
+		expect(gate([row("aaa", "live-ui-verified")], 7, "aaa", patch("f2"))).toEqual({ state: "void", verdict: "live-ui-verified", sha: "aaa", patchChanged: true, policyRefused: false });
+		expect(gate([row("aaa", "live-ui-verified")], 7, "aaa", patch("f1"))).toEqual({ state: "pass", verdict: "live-ui-verified", sha: "aaa", patchChanged: false, policyRefused: false });
 		expect(gate([row("aaa", "countersigned")], 7, "aaa", patch("f1")).state).toBe("pass");
+		// A diff that touches a policy path passes only a countersign, however the passing row was written.
+		const policy = [".claude/skills/verify-app"];
+		for (const verdict of ["live-ui-verified", "unit-test-verified"]) expect(gate([row("aaa", verdict)], 7, "aaa", patch("f1", policy))).toEqual({ state: "fail", verdict, sha: "aaa", patchChanged: false, policyRefused: true });
+		expect(gate([row("aaa", "countersigned")], 7, "aaa", patch("f1", policy))).toEqual({ state: "pass", verdict: "countersigned", sha: "aaa", patchChanged: false, policyRefused: false });
+		expect(gate([row("aaa", "verifier-blocked")], 7, "aaa", patch("f1", policy))).toEqual({ state: "fail", verdict: "verifier-blocked", sha: "aaa", patchChanged: false, policyRefused: false });
 		// No row for the head: the diff is never fetched.
 		expect(gate([row("old", "live-ui-verified")], 7, "aaa", () => { throw new Error("fetched the diff"); }).state).toBe("void");
 	});
@@ -106,6 +125,11 @@ describe("verdicts", () => {
 			".agents/skills/verify-app/FEATURES/readme.md",
 			".agents/skills/verify-app",
 			".agents/skills/verify-app/features",
+			".claude/skills/verify-app",
+			".Claude/Skills/Verify-App",
+			".codex/skills/verify-app/SKILL.md",
+			".pi/skills/verify-app/features/README.md",
+			".cursor/skills/verify-app/features",
 			"skills/babysit-and-ship/SKILL.md",
 			"skills/babysit-and-ship/references/shipping.md",
 			"skills/babysit-and-ship/references/pr-body.md",
@@ -114,7 +138,7 @@ describe("verdicts", () => {
 			"agentic/tools/verify",
 			"agentic/vendor/orch/store.ts",
 			"agentic/bin/agentic",
-		])).toHaveLength(14);
+		])).toHaveLength(19);
 		expect(verify.policyFiles([
 			".agents/skills/verify-app/features/login.md",
 			".agents/skills/verify-app/scripts/verify-app",
@@ -125,6 +149,10 @@ describe("verdicts", () => {
 			".agents/skills/other/SKILL.md",
 			"skills/verify-app/SKILL.md",
 			"x/.agents/skills/verify-app/SKILL.md",
+			"claude/skills/verify-app",
+			".claude/skills/other",
+			".claude/skills/verify-app/scripts/verify-app",
+			".claude/x/skills/verify-app",
 			"skills/create-verification/SKILL.md",
 			"skills/babysit-and-ship/SKILLS.md",
 			"claude/agents/build.md",
@@ -139,6 +167,12 @@ describe("verdicts", () => {
 		for (const verdict of ["live-ui-verified", "unit-test-verified"]) expect(verify.policyRefusal(verdict, touched)).toContain("countersigned");
 		for (const verdict of ["countersigned", "verifier-blocked", "verifier-failed", "type-check-only"]) expect(verify.policyRefusal(verdict, touched)).toBeUndefined();
 		expect(verify.policyRefusal("live-ui-verified", [])).toBeUndefined();
+	});
+
+	test("repointing a runtime's discovery symlink to a verification skill touches a policy path", () => {
+		const diff = REPOINT_DIFF;
+		expect(verify.policyFiles(verify.changedPaths(diff))).toEqual([".claude/skills/verify-app"]);
+		expect(verify.policyRefusal("live-ui-verified", verify.policyFiles(verify.changedPaths(diff)))).toContain("changes the verification policy (.claude/skills/verify-app)");
 	});
 
 	test("changed paths come from each file's header, old and new names alike, never from hunk content", () => {
@@ -232,6 +266,7 @@ describe("agentic verify, end to end", () => {
 			changePatch: (text = OTHER_DIFF) => writeFileSync(join(root, "diff.patch"), text),
 			patchId: () => spawnSync("git", ["patch-id", "--verbatim"], { input: spawnSync("cat", [join(root, "diff.patch")], { encoding: "utf8" }).stdout, encoding: "utf8" }).stdout.split(" ")[0],
 			ledger: () => readLedger(join(root, "orch")),
+			store: join(root, "orch"),
 		};
 	}
 
@@ -283,6 +318,31 @@ describe("agentic verify, end to end", () => {
 		expect(pr.cli(["record", "7", "--verdict", "countersigned", "--patch", pr.patchId(), "--evidence", "user-message.txt"], "coordinator").status).toBe(0);
 		const status = pr.cli(["status", "7"]);
 		expect([status.status, status.stdout.includes("ledger pass (countersigned")]).toEqual([0, true]);
+	});
+
+	test("a repointed discovery symlink to a verification skill takes no passing verdict but a countersign", () => {
+		const pr = setup("a".repeat(40), "OPEN", REPOINT_DIFF);
+		const refused = pr.cli(["record", "7", "--verdict", "live-ui-verified", "--evidence", "run.log"]);
+		expect([refused.status, refused.stderr.includes("changes the verification policy (.claude/skills/verify-app)")]).toEqual([1, true]);
+		expect(pr.ledger()).toEqual([]);
+	});
+
+	test("status re-applies the policy refusal: a passing row written another way does not clear the gate, a countersign does", async () => {
+		const pr = setup("a".repeat(40), "OPEN", POLICY_DIFF);
+		// A row record would refuse, written straight into the store as anything outside record could.
+		const store = openStore(pr.store);
+		try {
+			await store.init();
+			await store.ledger.record({ pr: 7, sha: "a".repeat(40), verdict: "live-ui-verified", evidence: evidenceCell("run.log", pr.patchId()), verifier: "verifier-1" });
+		} finally {
+			await store.close();
+		}
+		const status = pr.cli(["status", "7"]);
+		expect([status.status, status.stdout.includes("ledger fail, the pull request changes the verification policy, so only countersigned passes (live-ui-verified on aaaaaaaaaaaa)")]).toEqual([1, true]);
+		expect(pr.cli(["record", "7", "--verdict", "verifier-blocked", "--evidence", "run.log"]).status).toBe(0);
+		expect(pr.cli(["record", "7", "--verdict", "countersigned", "--patch", pr.patchId(), "--evidence", "user-message.txt"], "coordinator").status).toBe(0);
+		const signed = pr.cli(["status", "7"]);
+		expect([signed.status, signed.stdout.includes("ledger pass (countersigned")]).toEqual([0, true]);
 	});
 
 	test("a verification skill's feature files and drive scripts land on ordinary verdicts; its verdict rules do not", () => {

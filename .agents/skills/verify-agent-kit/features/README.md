@@ -15,7 +15,7 @@ This directory is the maintained source for verifying what agent-kit does for th
 
 - Drive through `scripts/verify-kit drive RUN_ID <feature>`. Use raw commands only to diagnose a failure the drive reported.
 - Read-only GitHub calls only: merged and open pull requests are read, never commented on, given a status, or merged. `agentic rulesets apply` changes GitHub and is never driven here; a drive that runs a dry run reads the live state before and after and fails on any change.
-- A verdict recorded by a drive is a non-passing smoke verdict in this run's own orch store, and the only countersigns it attempts are ones `record` must refuse; the drive fails if the real ledger changes.
+- A verdict recorded by a drive is a non-passing smoke verdict in this run's own orch store. The only passing verdicts a drive attempts are ones `record` must refuse: countersigns with no `verifier-blocked` verdict or a patch the user was never shown, and `unit-test-verified` for a pull request that touches a policy path. The drive fails if the real ledger changes.
 - To compare parent and head for a pull request, launch one run with `--checkout` on each and drive the same feature in both.
 
 ## Proof and skip reporting

@@ -4,7 +4,7 @@
 // Nothing posts the verdict to the forge. Nothing local stops the author from recording: verifier
 // independence rests on the instructions. A verdict covers one head SHA, and status recomputes the
 // patch ID (whitespace included) and refuses a verdict whose patch changed. A pull request that touches
-// a policy path takes no passing verdict but a countersign.
+// a policy path takes no passing verdict but a countersign, and status refuses any other passing row.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -31,13 +31,16 @@ export function passes(verdict: string): boolean {
  * A verification skill's verdict rules are its `SKILL.md` (verdicts) and `features/README.md` (proof
  * and skip rules); its feature files and drive scripts land on ordinary verdicts, since trunk's copy
  * of the skill decides each verdict. The skill's directory and its `features` name appear in a diff
- * only as a file git tracks there, such as a symlink, which would swap in other verdict rules.
+ * only as a file git tracks there, such as a symlink, which would swap in other verdict rules. The
+ * skill lives in `.agents/skills/`, and a runtime that reads project skills only from its own
+ * dot-directory (`.claude/skills/`, and so on) finds it through a symlink there, so every leading
+ * dot-directory's `skills/verify-*` is covered the same way: repointing that symlink swaps the rules too.
  */
 export const POLICY_PATHS = [
-	".agents/skills/verify-*/SKILL.md",
-	".agents/skills/verify-*/features/README.md",
-	".agents/skills/verify-*",
-	".agents/skills/verify-*/features",
+	".*/skills/verify-*/SKILL.md",
+	".*/skills/verify-*/features/README.md",
+	".*/skills/verify-*",
+	".*/skills/verify-*/features",
 	"skills/babysit-and-ship/SKILL.md",
 	"skills/babysit-and-ship/references/",
 	"claude/agents/autopilot-owner.md",
@@ -186,18 +189,30 @@ export interface Gate {
 	verdict?: string;
 	sha?: string;
 	patchChanged: boolean;
+	/** The diff touches a policy path and the head's passing verdict is not a countersign, so it fails. */
+	policyRefused: boolean;
+}
+
+/** What the gate reads from the pull request's current diff. */
+export interface CurrentPatch {
+	patchId: string;
+	/** The policy paths the diff touches (`policyFiles(changedPaths(diff))`). */
+	policyFiles: readonly string[];
 }
 
 /**
- * The local merge gate: the verdict for the head decides, and a patch that changed since the verdict
- * voids it. The current patch ID is computed only when a row covers the head, since it needs the diff.
+ * The local merge gate: the verdict for the head decides, a patch that changed since the verdict voids
+ * it, and for a diff that touches a policy path only a countersign passes, whichever way the row was
+ * written. The current patch is read only when a row covers the head, since it needs the diff.
  */
-export function gate(ledger: readonly Required<LedgerEntry>[], pr: number, headSha: string, currentPatch: () => string): Gate {
+export function gate(ledger: readonly Required<LedgerEntry>[], pr: number, headSha: string, current: () => CurrentPatch): Gate {
 	const verdict = currentVerdict(ledger, pr, headSha);
 	const row = rowForHead(ledger, pr, headSha);
-	if (!row) return { ...verdict, patchChanged: false };
-	const patchChanged = parseEvidenceCell(row.evidence).patchId !== currentPatch();
-	return patchChanged ? { state: "void", verdict: verdict.verdict, sha: verdict.sha, patchChanged } : { ...verdict, patchChanged };
+	if (!row) return { ...verdict, patchChanged: false, policyRefused: false };
+	const patch = current();
+	if (parseEvidenceCell(row.evidence).patchId !== patch.patchId) return { state: "void", verdict: verdict.verdict, sha: verdict.sha, patchChanged: true, policyRefused: false };
+	if (policyRefusal(row.verdict, patch.policyFiles) !== undefined) return { ...verdict, state: "fail", patchChanged: false, policyRefused: true };
+	return { ...verdict, patchChanged: false, policyRefused: false };
 }
 
 const COUNTERSIGNABLE: ReadonlySet<string> = new Set<Verdict>(["verifier-blocked", "countersigned"]);

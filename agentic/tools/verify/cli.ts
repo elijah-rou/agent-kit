@@ -26,7 +26,8 @@ merge gate: every merging mode runs status right before each merge, and merges o
       verifier ID and evidence to it, since the countersign replaces that row.
   status <pr> [--repo owner/repo]
       Shows whether the verdict for the current head passes and still covers its patch. A new
-      push, rebase, or changed patch voids it.
+      push, rebase, or changed patch voids it. For a pull request whose diff touches a policy path,
+      only countersigned passes, however the row was written.
 
 Exit status: 0 done (status: a passing verdict covers the head and its patch), 1 failure or no
 passing verdict, 2 usage error.
@@ -66,8 +67,12 @@ async function main(args: string[]): Promise<number> {
 	const diff = (): string => run("gh", ["pr", "diff", String(pr), "-R", slug]);
 
 	if (command === "status") {
-		const result = gate(readLedger(store), pr, head.headRefOid, () => patchIdOf(diff()));
-		const state = result.patchChanged ? "void, patch changed" : result.state;
+		const result = gate(readLedger(store), pr, head.headRefOid, () => {
+			// The patch and the policy files come from one fetch of the diff, as in record.
+			const text = diff();
+			return { patchId: patchIdOf(text), policyFiles: policyFiles(changedPaths(text)) };
+		});
+		const state = result.patchChanged ? "void, patch changed" : result.policyRefused ? "fail, the pull request changes the verification policy, so only countersigned passes" : result.state;
 		console.log(`${slug}#${pr} (${head.state}, ${head.headRefName} at ${head.headRefOid.slice(0, 12)}): ledger ${state}${result.verdict ? ` (${result.verdict} on ${result.sha?.slice(0, 12)})` : ""}`);
 		return result.state === "pass" ? 0 : 1;
 	}

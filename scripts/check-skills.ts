@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // Checks every skill's frontmatter and local references, the runtime-neutral Claude export, and that
-// the Codex and Claude skill lists and instructions only name skills that exist.
+// the Claude skill list and instructions only name skills that exist.
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
@@ -71,11 +71,7 @@ for (const directory of skillDirectories("skills")) {
 for (const directory of skillDirectories("claude/skills")) checkSkill(directory);
 if (existsSync(join(ROOT, ".agents/skills"))) for (const directory of skillDirectories(".agents/skills")) checkSkill(directory);
 
-for (const name of readFileSync(join(ROOT, "codex/skills.txt"), "utf8").split("\n").filter(Boolean)) {
-  if (!shared.has(name)) fail(`codex/skills.txt names a missing skill: ${name}`);
-}
-
-// Claude's export must stay runtime-neutral: it is loaded outside Pi and Codex.
+// Claude's export must stay runtime-neutral: it is loaded outside Pi.
 const exported = new Set<string>();
 for (const entry of readFileSync(join(ROOT, "claude/skills.txt"), "utf8").split("\n").filter(Boolean)) {
   if (!/^(?:claude\/)?skills\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry)) { fail(`claude/skills.txt: malformed entry ${entry}`); continue; }

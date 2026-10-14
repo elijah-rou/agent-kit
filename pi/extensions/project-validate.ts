@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createLocalBashOperations } from "@earendil-works/pi-coding-agent";
@@ -12,7 +12,7 @@ const MAX_TIMEOUT_MS = 300_000;
 const MAX_OUTPUT_CHARS = 30_000;
 const ROOT_MARKERS = ["package.json", "bun.lock", "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "Cargo.toml", "go.mod", "pyproject.toml", "uv.lock", "Makefile", "justfile"];
 
-type Action = "test" | "lint" | "typecheck";
+type Action = "test" | "lint" | "typecheck" | "validate";
 type ValidationOutcome = "passed" | "failed" | "timed_out" | "cancelled" | "execution_error" | "unsupported";
 
 interface Params {
@@ -71,6 +71,8 @@ function relativeEscapes(boundary: string, candidate: string): boolean {
 
 function commandFor(root: string, action: Action): CommandSpec | null {
 	const has = (name: string) => existsSync(resolve(root, name));
+	// The repository's one validate entry point, the command its CI runs; never a guess assembled from parts.
+	if (action === "validate") return has("scripts/validate") && statSync(resolve(root, "scripts/validate")).isFile() ? { command: "scripts/validate", reason: "the repository's validate entry point" } : null;
 	if (has("package.json")) {
 		const runner = has("bun.lock") ? "bun run" : has("pnpm-lock.yaml") ? "pnpm" : has("yarn.lock") ? "yarn" : "npm run";
 		switch (action) {
@@ -142,15 +144,16 @@ export default function projectValidateExtension(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "project_validate",
 		label: "Project Validate",
-		description: "Run bounded project tests, lints, or typechecks with structured diagnostics. Commands execute with local permissions; callers must select non-mutating validation. This is not a sandbox.",
+		description: "Run bounded project tests, lints, typechecks, or the repository's validate entry point with structured diagnostics. Commands execute with local permissions; callers must select non-mutating validation. This is not a sandbox.",
 		promptSnippet: "Run bounded project tests/lints/typechecks with parsed failure output",
 		promptGuidelines: [
 			"Use project_validate when the task needs test, lint, or typecheck verification and structured failure output is more useful than raw bash output.",
 			"Do not use project_validate for install, fix, format-write, deploy, or arbitrary task-runner commands.",
 			"Prefer an explicit command in project_validate when repo-specific validation is known; otherwise choose action test, lint, or typecheck.",
+			"Before every push, run project_validate with action validate on the committed head: it runs scripts/validate from the repository root, the one validate entry point CI also runs. Where the repository's AGENTS.md names another validate command, pass it as command.",
 		],
 		parameters: Type.Object({
-			action: Type.Union([Type.Literal("test"), Type.Literal("lint"), Type.Literal("typecheck")], { description: "Validation kind to run." }),
+			action: Type.Union([Type.Literal("test"), Type.Literal("lint"), Type.Literal("typecheck"), Type.Literal("validate")], { description: "Validation kind to run. validate runs from the repository root." }),
 			command: Type.Optional(Type.String({ description: "Explicit read-only command to run instead of detection." })),
 			cwd: Type.Optional(Type.String({ description: "Project directory. Defaults to current working directory or nearest project root." })),
 			timeoutMs: Type.Optional(Type.Number({ description: "Timeout in milliseconds. Defaults to 120000, max 300000." })),
@@ -158,14 +161,16 @@ export default function projectValidateExtension(pi: ExtensionAPI) {
 		async execute(_id, params: Params, signal, _onUpdate, ctx) {
 			const requestedCwd = normalizePath(ctx.cwd, params.cwd);
 			const discovery = findProjectRoot(requestedCwd);
-			const root = discovery.root;
+			// Validate runs from the repository root, where scripts/validate and the AGENTS.md command live.
+			const root = params.action === "validate" ? repositoryBoundary(requestedCwd).boundary : discovery.root;
 			const timeoutMs = clampTimeout(params.timeoutMs);
 			const receipt = beginVerification(root, "project_validate", params.action);
 			const explicit = typeof params.command === "string" && params.command.trim().length > 0;
 			const spec = explicit ? { command: params.command!.trim(), reason: "explicit command" } : commandFor(root, params.action);
 			if (!spec) {
 				const verificationReceipt = finishVerification(receipt, "unsupported", { command: null, exitCode: null, signal: null, truncated: false, exercisedPaths: [], residualGaps: ["No supported automatic command was detected."] });
-				return { content: [{ type: "text" as const, text: `No ${params.action} command detected within ${root}. Pass command explicitly.` }], isError: true, details: { outcome: "unsupported", action: params.action, cwd: root, repositoryBounded: discovery.inGit, verificationReceipt } };
+				const hint = params.action === "validate" ? `No scripts/validate within ${root}. Pass the validate command the repository's AGENTS.md names as command.` : `No ${params.action} command detected within ${root}. Pass command explicitly.`;
+				return { content: [{ type: "text" as const, text: hint }], isError: true, details: { outcome: "unsupported", action: params.action, cwd: root, repositoryBounded: discovery.inGit, verificationReceipt } };
 			}
 
 			const result = await runShell(spec.command, root, timeoutMs, signal);

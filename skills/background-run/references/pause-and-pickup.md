@@ -4,11 +4,12 @@
 
 Pause only on an explicit request ("pause", "I'm going offline", "about to restart"). "Keep going" and "don't stop" never pause.
 
-1. **Stop at a safe boundary.** Finish the current atomic step or back out of it. Start nothing new. Cancel running subagents and record what each was doing.
-2. **Take no irreversible action to pause.** No new push or pull request unless one was already out.
-3. **Make the work durable.** Commit uncommitted edits as one `wip:` commit on the current branch. If the tree is broken, say so in one line of the commit body.
-4. **Write the resume note** to `.audit/<task-slug>.resume.md` beside the decision log, uncommitted: the goal and done predicate, what you were doing, progress and what is verified, current state (branch, worktree, base, open PRs), next steps, key files, gotchas, and the authority in effect (the standing default, and any mode the user invoked). Point to the decision log instead of repeating it.
-5. **Log the pause:** a row with phase `pause`, what stopped, why, the resume note path as evidence, and result `paused`.
+1. **Stop at a safe boundary.** Finish the current atomic step or back out of it. Start nothing new. In a program with several agents, first append the `run` row to `children.tsv` as `held` (`coordination.md`), so a tick between this and the cancel sees it. Cancel running subagents and record what each was doing.
+2. **Stop what the run keeps running.** Remove the heartbeat and call `unwatch_pull_request` for each T3 pull-request watch the run holds (the skill's section 3). In a program with several agents, also append every child's row to `children.tsv` as `held`, and delete the audit tick (`coordination.md`).
+3. **Take no irreversible action to pause.** No new push or pull request unless one was already out.
+4. **Make the work durable.** Commit uncommitted edits as one `wip:` commit on the current branch. If the tree is broken, say so in one line of the commit body.
+5. **Write the resume note** to `.audit/<task-slug>.resume.md` beside the decision log, uncommitted: the goal and done predicate, what you were doing, progress and what is verified, current state (branch, worktree, base, open PRs), next steps, key files, gotchas, and the authority in effect (the standing default, and any mode the user invoked). Point to the decision log instead of repeating it.
+6. **Log the pause:** a row with phase `pause`, what stopped, why, the resume note path as evidence, and result `paused` (`held` for a program).
 
 **Reply:** where you are in the loop, what is on disk versus only in your head, the commits made and whether the tree is clean, and the first action on resume. This is a pause, not a final report.
 

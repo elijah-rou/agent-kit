@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { screen, type Origin, type Repo, type Withheld } from "./egress.ts";
 import { applyModes, decide, explicitCommand, noteFor, policyId, sessionFor, type Answers, type Classify, type ClassifyFailure, type Policy, type Route, type Session } from "./route.ts";
 
-export type Runtime = "claude" | "codex" | "pi" | "cli";
+export type Runtime = "claude" | "pi" | "cli";
 export type RouteInput = {
 	prompt: string;
 	cwd: string;

@@ -36,7 +36,7 @@ If these concepts are unfamiliar or terminology obstructs a design choice, read 
 Create or update the approved outputs in the target repo, tailored to the agreed design:
 
 - The **sensor** and **controller** as version-controlled commands/scripts the user can run locally.
-- A repo-local `SKILL.md` — the **actuator** skill capturing the agent's judgement. Use `.agents/skills/<skill-name>/SKILL.md` for Codex or shared skills; retain `.pi/skills/<skill-name>/SKILL.md` for an established Pi-only layout.
+- A repo-local `SKILL.md` — the **actuator** skill capturing the agent's judgement. Use `.agents/skills/<skill-name>/SKILL.md` for shared skills; retain `.pi/skills/<skill-name>/SKILL.md` for an established Pi-only layout.
 - The recurring **workflow** that runs the loop and produces a reviewable patch artifact. Add automatic PR publication only after its credential and trust boundaries are approved.
 - A **memory/feedback file** that carries standing feedback between runs.
 - Optionally, a **dampener** (regression gate) that keeps the problem from getting worse while the loop improves it.
@@ -71,7 +71,7 @@ Design the loop with the user. Work through each unresolved component below, sta
 3. **Controller.** How will the loop choose the next increment from the measurement, sized to stay low-risk and reviewable? Design this *with* the user: how to prioritize targets, how big one increment is, and what "one reviewable unit of work" means here. A controller can be anything from fully deterministic (a script that selects the next target) to fully agentic (an agent that decides from natural-language criteria), and it may be **fused** with the sensor or the actuator. The controller is the part you will **tune over time** from loop output — start simple and expect to revise it.
 
 4. **Actuator.** A coding agent plus a repo-local skill applies the change.
-   - **Agent + credentials.** Select the approved upstream Codex or Pi release, model, bounded credential/usage arrangement, and matching headless command from `references/agent-runner-templates.md`. Local subscription sign-in does not establish an approved unattended CI credential or spend limit.
+   - **Agent + credentials.** Select the approved upstream Pi release, model, bounded credential/usage arrangement, and matching headless command from `references/agent-runner-templates.md`. Local subscription sign-in does not establish an approved unattended CI credential or spend limit.
    - **Golden patterns first.** Before automating, establish what a good change looks like: ask the user whether existing patterns in the codebase should be followed, and inspect the code to find them. Capture these in the actuator skill (Phase C).
    - **Validation.** Decide which commands must pass before the agent finalizes its uncommitted patch (propose these from Phase A and confirm).
 
@@ -93,7 +93,7 @@ Write a repo-local skill that captures the actuator's judgement for this task. I
 - Include a response template (e.g. `references/response-template.md`) defining how the agent formats its final output, which becomes the PR body. Instruct the skill to read and follow it.
 - Use `references/skill-template.md` as the skeleton and `references/example-skill.md` as a concrete example. See https://agentskills.io/specification for the skill spec.
 
-**IMPORTANT:** the `name` in the skill's frontmatter must match its directory slug: a skill named `migrate-foo` lives at `.agents/skills/migrate-foo/SKILL.md` for Codex/shared use, or `.pi/skills/migrate-foo/SKILL.md` in a Pi-only layout.
+**IMPORTANT:** the `name` in the skill's frontmatter must match its directory slug: a skill named `migrate-foo` lives at `.agents/skills/migrate-foo/SKILL.md` for shared use, or `.pi/skills/migrate-foo/SKILL.md` in a Pi-only layout.
 
 Completion criterion: the skill explains the job clearly enough that the agent can do it unattended, including how to format its final response.
 
@@ -170,7 +170,7 @@ Each phase above names the references relevant to it — read each one when you 
 
 - `references/control-loop-taxonomy.md` — the control-loop components and design questions; use it when the concepts are unfamiliar or terminology needs clarification.
 - `references/example-control-loop.md` — one fully worked loop, annotated component-by-component. An illustration, not a template.
-- `references/agent-runner-templates.md` — shared isolation/output contract and runtime-specific headless commands; use only the chosen runtime's branch.
+- `references/agent-runner-templates.md` — shared isolation/output contract and the Pi headless command.
 - `references/workflow-template.yml` — recurring loop workflow skeleton with discrete sensor/controller/actuator steps.
 - `references/prompt-template.md` — embedded prompt structure for the actuator step.
 - `references/memory-template.md` — memory/feedback file skeleton.

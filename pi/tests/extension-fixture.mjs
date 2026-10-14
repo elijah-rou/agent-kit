@@ -4,13 +4,14 @@ import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { after } from "node:test";
 
-export async function loadExtension(name) {
+// options.bashRuntime replaces Pi's bash runtime module for project-validate, for tests that need no pinned runtime.
+export async function loadExtension(name, options = {}) {
   const root = mkdtempSync(join(tmpdir(), "pi-extension-test-"));
   after(() => rmSync(root, { recursive: true, force: true }));
   const bashRuntime = name === "project-validate"
-    ? process.env.PI_BASH_OPERATIONS_TEST_RUNTIME_PATH
+    ? options.bashRuntime ?? (process.env.PI_BASH_OPERATIONS_TEST_RUNTIME_PATH
       ? pathToFileURL(process.env.PI_BASH_OPERATIONS_TEST_RUNTIME_PATH).href
-      : import.meta.resolve("@earendil-works/pi-coding-agent")
+      : import.meta.resolve("@earendil-works/pi-coding-agent"))
     : undefined;
   const source = readFileSync(new URL(`../extensions/${name}.ts`, import.meta.url), "utf8")
     .replace('from "@earendil-works/pi-coding-agent"', `from ${JSON.stringify(bashRuntime)}`)

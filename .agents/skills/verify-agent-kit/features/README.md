@@ -33,7 +33,7 @@ Each feature file starts with an H1 title and one paragraph describing the behav
 
 ## Features
 
-- [Prompt routing](./task-route.md): the UserPromptSubmit hook for Claude Code and Codex, its records, its withheld and opted-out prompts, the manual route command, and the route report.
+- [Prompt routing](./task-route.md): the Claude Code UserPromptSubmit hook, its records, its withheld and opted-out prompts, the manual route command, and the route report.
 - [Verdict gate](./verdict-gate.md): recording a fresh verifier's verdict, the local gate that checks it before each merge, the countersign refusal, planning the GitHub history backstop, and the advisory PR-risk score.
 - [Pull request state](./pr-state.md): reading a pull request's feedback, checks, and readiness, and watching it.
 - [Skill catalog](./skill-catalog.md): the skills and subagent roles each runtime receives, and repository skill discovery.

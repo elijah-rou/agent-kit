@@ -14,6 +14,9 @@ test("validation parser accepts defaults, all actions, explicit undefined and li
   for (const timeoutMs of [1000, 120000, 300000]) expect(parseValidationInput({ action: "lint", timeoutMs }).timeoutMs).toBe(timeoutMs);
   expect(parseValidationInput({ action: "typecheck", command: "x".repeat(8192), cwd: "/" + "x".repeat(4095) }).command?.length).toBe(8192);
   expect(INPUT_SCHEMA.properties.timeoutMs.maximum).toBe(300000);
+  expect(parseValidationInput({ action: "validate" }).action).toBe("validate");
+  expect(INPUT_SCHEMA.properties.action.enum).toContain("validate");
+  expect(INPUT_SCHEMA.properties.cwd.description).toContain("except action validate, which always runs from the repository root");
 });
 
 test("validation parser rejects distinguishable malformed input before execution", () => {

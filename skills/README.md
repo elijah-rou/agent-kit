@@ -1,9 +1,8 @@
 # Shared agent skills
 
-Pi loads this library directly. Codex exports the reviewed selection in
-[`codex/skills.txt`](../codex/skills.txt) through the standard shared skill directory;
-see [the Codex instructions](../codex/AGENTS.md). Runtime-specific behavior stays in explicit
-branches, so the two consumers do not need separate copies.
+Pi loads this library directly. Claude Code loads the selection in
+[`claude/skills.txt`](../claude/skills.txt), which also names runtime-neutral adaptations
+under `claude/skills/`. Pi-specific behavior in a shared skill stays in an explicit branch.
 
 The `show-me` and `design-control-loop` skills are adapted from
 [humanlayer/skills](https://github.com/humanlayer/skills) at commit
@@ -18,7 +17,7 @@ The `writing-for-agents` and `diagnosing-bugs` skills are adapted from
 [mattpocock/skills](https://github.com/mattpocock/skills) at commit
 `6654f6b60cd9d5be8b54c6fafe44346dabeb3b76`.
 
-Local adaptations support Pi and Codex skill contracts, narrow automatic triggers, remove
+Local adaptations support Pi skill contracts, narrow automatic triggers, remove
 foreign-harness orchestration and implicit publication, and keep application debugging
 separate from the coredump workflow. `diagnosing-bugs` is resynced to
 `f3fc5632f401156837ee3872f14fe33ccf1024ea` ([`RESYNC.md`](RESYNC.md)); drift is tracked in `provenance.toml`.

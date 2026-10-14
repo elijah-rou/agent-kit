@@ -17,7 +17,7 @@ test("repository skills parse and load through the installed Pi consumer", { ski
   assert.match(skills.find(skill => skill.name === "omarchy").description, /Excludes unrelated/);
 });
 
-test("Pi deduplicates the shared Codex skill links and retains manual invocation", { skip: !runtime || !existsSync(runtime) }, async () => {
+test("Pi deduplicates skill links found in both .pi and .agents skill folders and retains manual invocation", { skip: !runtime || !existsSync(runtime) }, async () => {
   const { loadSkills } = await import(pathToFileURL(runtime).href);
   const root = mkdtempSync(join(tmpdir(), "shared-skills-"));
   try {

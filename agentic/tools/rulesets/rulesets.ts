@@ -1,22 +1,11 @@
 // Server-side backstop for agents: one GitHub ruleset, "agentic-backstop", on a
-// repository's default branch. Agents use the user's token (no agent identity, design O4), so the
-// ruleset has no bypass actors: anything the user could bypass, an agent could too. It guarantees
-// mechanical properties, not that a human approved a change.
-//
-// Tiers:
-// - baseline: the default branch cannot be deleted or force-pushed, and its history stays linear.
-//   No friction for direct pushes; apply it to every repository.
-// - merge-gate: baseline plus a pull request, the agentic/verdict check from a fresh verifier, and
-//   the repository's passing CI checks before the default branch moves. Everyone, the user
-//   included, then lands through pull requests; apply it when a repository moves to verified
-//   stacks (the ship mode).
+// repository's default branch: it cannot be deleted or force-pushed, and its history stays linear.
+// No friction for direct pushes; apply it to every repository. Agents use the user's token (no
+// agent identity, design O4), so the ruleset has no bypass actors: anything the user could bypass,
+// an agent could too. It guarantees mechanical properties, not that a human approved a change. The
+// merge gate is local: merging modes check the verdict ledger with `agentic verify status`.
 
 export const RULESET_NAME = "agentic-backstop";
-
-/** The status `agentic verify publish` posts; merge-gate requires it. */
-export const VERDICT_CONTEXT = "agentic/verdict";
-
-export type Tier = "baseline" | "merge-gate";
 
 export interface Rule {
 	type: string;
@@ -32,71 +21,23 @@ export interface Ruleset {
 	rules: Rule[];
 }
 
-/** The desired ruleset. Checks are CI status contexts that must pass besides the verdict (merge-gate only). */
-export function desiredRuleset(tier: Tier, checks: readonly string[]): Ruleset {
-	const rules: Rule[] = [{ type: "deletion" }, { type: "non_fast_forward" }, { type: "required_linear_history" }];
-	if (tier === "merge-gate") {
-		rules.push({
-			type: "pull_request",
-			parameters: {
-				required_approving_review_count: 0,
-				dismiss_stale_reviews_on_push: false,
-				require_code_owner_review: false,
-				require_last_push_approval: false,
-				required_review_thread_resolution: false,
-			},
-		});
-		rules.push({
-			type: "required_status_checks",
-			// do_not_enforce_on_create is set explicitly: GitHub's own default would otherwise go unchecked, and true loosens the gate.
-			parameters: { strict_required_status_checks_policy: false, do_not_enforce_on_create: false, required_status_checks: [...new Set([VERDICT_CONTEXT, ...checks])].sort().map((context) => ({ context })) },
-		});
-	}
+/** The desired ruleset. */
+export function desiredRuleset(): Ruleset {
 	return {
 		name: RULESET_NAME,
 		target: "branch",
 		enforcement: "active",
 		conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: [] } },
 		bypass_actors: [],
-		rules,
+		rules: [{ type: "deletion" }, { type: "non_fast_forward" }, { type: "required_linear_history" }],
 	};
 }
 
-/** Check runs on the default branch head: those that passed can be required; the rest are reported. */
-export function splitChecks(runs: readonly { name: string; conclusion: string | null }[]): { passing: string[]; other: string[] } {
-	const passing = new Set<string>();
-	const other = new Set<string>();
-	for (const run of runs) (run.conclusion === "success" ? passing : other).add(run.name);
-	for (const name of passing) other.delete(name);
-	return { passing: [...passing].sort(), other: [...other].sort() };
-}
-
-/** Rule types in the existing ruleset that differ from the desired one, as added and removed lists. */
-export function ruleDiff(current: readonly Rule[], desired: readonly Rule[]): { add: string[]; remove: string[]; change: string[] } {
-	const now = new Map(current.map((rule) => [rule.type, rule]));
-	const want = new Map(desired.map((rule) => [rule.type, rule]));
-	return {
-		add: [...want.keys()].filter((type) => !now.has(type)),
-		remove: [...now.keys()].filter((type) => !want.has(type)),
-		change: [...want.values()].filter((rule) => now.has(rule.type) && !satisfies(now.get(rule.type)!, rule)).map((rule) => rule.type),
-	};
-}
-
-/**
- * A stored rule satisfies a desired one when every parameter the desired rule sets has the same value.
- * GitHub adds its own defaults to stored rules (allowed merge methods, required reviewers, and so on),
- * so parameters the desired rule leaves unset do not count.
- */
-function satisfies(stored: Rule, desired: Rule): boolean {
-	const parameters = stored.parameters ?? {};
-	return Object.entries(desired.parameters ?? {}).every(([name, value]) => name in parameters && canonical(parameters[name]) === canonical(value));
-}
-
-/** JSON with object keys sorted and array items sorted: rule parameters hold sets, so order never matters. */
-function canonical(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonical).sort().join(",")}]`;
-	if (value !== null && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(",")}}`;
-	return JSON.stringify(value);
+/** Rule types the existing ruleset lacks or has beyond the desired one. The desired rules take no parameters. */
+export function ruleDiff(current: readonly Rule[], desired: readonly Rule[]): { add: string[]; remove: string[] } {
+	const now = new Set(current.map((rule) => rule.type));
+	const want = new Set(desired.map((rule) => rule.type));
+	return { add: [...want].filter((type) => !now.has(type)), remove: [...now].filter((type) => !want.has(type)) };
 }
 
 /**

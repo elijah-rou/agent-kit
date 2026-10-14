@@ -14,6 +14,8 @@ Changes from upstream:
   `ensureDependenciesInstalled();` call. Upstream bootstrap.ts lives outside this directory and
   runs `bun install --frozen-lockfile` against its own package.json and bun.lock at startup;
   here the dependency is declared in the agent-kit root package.json instead.
+- store.ts: added the `countersigned` ledger verdict (agent-kit's record of the user's approval of
+  a verifier-blocked pull request; see agentic/tools/verify/verify.ts).
 - Added PROVENANCE (this file) and LICENSE.
 - Dependency: `commander` 14.0.0 (the upstream pinned version) declared in the agent-kit root
   package.json, replacing upstream scripts/package.json and scripts/bun.lock.

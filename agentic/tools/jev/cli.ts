@@ -2,7 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { apiKey, httpClassifier, isPublic, originSlug, OPT_OUT_FILE, promptOrigin, repoOf, sendable } from "./egress.ts";
-import { HOLD_ABOVE, prDecision, prRisk, prState } from "./pr-risk.ts";
+import { HIGH_ABOVE, prDecision, prRisk, prState, RISK_EXIT, type Risk } from "./pr-risk.ts";
 import { buildReport, DEFAULT_DAYS, formatReport, MAX_DAYS, readCorrections, readLedger, type ReportInput } from "./route-report.ts";
 import { appendRecord, ledgerRoot, routeTask, type RouteDeps, type RouteRecord, type Runtime } from "./route-task.ts";
 import { POLICY, policyId } from "./route.ts";
@@ -15,9 +15,14 @@ Advisory Jev calls, calibrated in the agentic evals. The key comes from TYPESAFE
 macOS, the keychain item "typesafe-jev".
 
   pr-risk <pr> [--repo owner/repo]
-      For the ship mode, before landing a PR: exit 0 when P(one-way door) <= ${HOLD_ABOVE}; any other
-      exit means the PR waits for the user (a higher score, Jev unavailable or without a key, a
-      repository that is not public, or a diff with credential-shaped text, which is never sent).
+      For the landing modes, on each verification round's head. Advisory: it never holds a PR.
+      Prints and exits with one of:
+        low         exit ${RISK_EXIT.low}   P(one-way door) <= ${HIGH_ABOVE}
+        high        exit ${RISK_EXIT.high}   P(one-way door) > ${HIGH_ABOVE}: the round adds a second audit lane
+        not scored  exit ${RISK_EXIT["not scored"]}   Jev unavailable or without a key, a repository that is not
+                             public, or a PR with credential-shaped text, which is never sent;
+                             the report notes it, and nothing else changes
+      Exit 1 is an error (for example gh failing), and 2 a usage error.
   task-class --claude-hook | --codex-hook
       Routes the prompt in the runtime's UserPromptSubmit event on stdin (policy task-route, see
       route.ts), appends one record to $XDG_STATE_HOME/agentic/task-route/, and answers with
@@ -121,21 +126,14 @@ async function main(args: string[]): Promise<number> {
 	const repoIndex = rest.indexOf("--repo");
 	const slug = repoIndex === -1 ? await originSlug(process.cwd()) : rest[repoIndex + 1];
 	if (!slug || !/^[\w.-]+\/[\w.-]+$/.test(slug)) throw new Error("cannot tell the GitHub repository; pass --repo owner/repo");
-	if (!(await isPublic(slug, { fresh: true }))) {
-		console.log(`${slug}#${pr}: hold, not a public repository, so Jev does not see its diff`);
-		return 1;
-	}
+	const report = (risk: Risk): number => (console.log(`${slug}#${pr}: ${risk.kind}, ${risk.reason}`), RISK_EXIT[risk.kind]);
+	if (!(await isPublic(slug, { fresh: true }))) return report({ kind: "not scored", reason: "not a public repository, so Jev does not see its diff" });
 	const view = JSON.parse(run("gh", ["pr", "view", String(pr), "-R", slug, "--json", "title,body"])) as { title: string; body: string };
 	const diff = run("gh", ["pr", "diff", String(pr), "-R", slug]);
 	const stat = run("git", ["apply", "--stat"], diff);
 	const state = sendable(prState({ repo: slug, title: view.title, body: view.body ?? "", stat, diff }));
-	if (!state) {
-		console.log(`${slug}#${pr}: hold, the PR contains credential-shaped text, so it is not sent to Jev`);
-		return 1;
-	}
-	const decision = prDecision(await prRisk(state, { apiKey: await apiKey(), timeoutMs: 10_000 }));
-	console.log(`${slug}#${pr}: ${decision.hold ? "hold" : "clear"}, ${decision.reason}`);
-	return decision.hold ? 1 : 0;
+	if (!state) return report({ kind: "not scored", reason: "the PR contains credential-shaped text, so it is not sent to Jev" });
+	return report(prDecision(await prRisk(state, { apiKey: await apiKey(), timeoutMs: 10_000 })));
 }
 
 if (import.meta.main) {

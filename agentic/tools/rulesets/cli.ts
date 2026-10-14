@@ -1,16 +1,13 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
-import { desiredRuleset, ruleDiff, RULESET_NAME, settingsDiff, splitChecks, verified, type Rule, type Tier } from "./rulesets.ts";
+import { desiredRuleset, ruleDiff, RULESET_NAME, settingsDiff, verified, type Rule } from "./rulesets.ts";
 
-const USAGE = `Usage: rulesets <plan | apply> <owner/repo> [--tier baseline|merge-gate]
+const USAGE = `Usage: rulesets <plan | apply> <owner/repo>
 
 Keep the "${RULESET_NAME}" GitHub ruleset on a repository's default branch: the server-side
-backstop for agents. It has no bypass actors, because agents use your token.
-
-  baseline    (default) no deletion, no force-push, linear history. No friction for direct pushes.
-  merge-gate  baseline plus a pull request, the agentic/verdict check (agentic verify), and the
-              CI checks that passed on the default branch head. Everyone then lands through pull
-              requests; use it where a repository lands verified stacks (the ship mode).
+backstop for agents. It blocks deletion and force-pushes and keeps history linear, with no
+friction for direct pushes. It has no bypass actors, because agents use your token. It does not
+gate merges: merging modes check the verdict ledger locally (agentic verify status).
 
 plan   Read-only. Prints the repository, the desired ruleset, and what apply would change.
 apply  Creates or updates the ruleset (it changes remote settings, so it needs the user's
@@ -41,14 +38,12 @@ function fail(message: string, code = 1): never {
 }
 
 const args = process.argv.slice(2);
-if (args.includes("--help") || args.length < 2) {
+if (args.includes("--help") || args.length !== 2) {
 	console.log(USAGE);
 	process.exit(args.includes("--help") ? 0 : 2);
 }
 const [command, repo] = args;
-const tierIndex = args.indexOf("--tier");
-const tier = (tierIndex === -1 ? "baseline" : args[tierIndex + 1]) as Tier;
-if (!["plan", "apply"].includes(command) || !/^[\w.-]+\/[\w.-]+$/.test(repo) || !["baseline", "merge-gate"].includes(tier)) {
+if (!["plan", "apply"].includes(command) || !/^[\w.-]+\/[\w.-]+$/.test(repo)) {
 	console.error(USAGE);
 	process.exit(2);
 }
@@ -70,20 +65,11 @@ if (detail && !detail.ok) fail(`cannot read ruleset ${existing!.id}: ${detail.te
 const existingRuleset = detail?.json as Existing | undefined;
 const current: Rule[] = existingRuleset?.rules ?? [];
 
-let checks: string[] = [];
-if (tier === "merge-gate") {
-	const runs = gh([`repos/${repo}/commits/${branch}/check-runs`, "--paginate", "--jq", ".check_runs[] | {name, conclusion}"]);
-	const split = splitChecks(runs.text.split("\n").filter(Boolean).map((line) => JSON.parse(line) as { name: string; conclusion: string | null }));
-	checks = split.passing;
-	if (split.other.length > 0) console.log(`not required (did not pass on ${branch} head): ${split.other.join(", ")}`);
-}
-
-const desired = desiredRuleset(tier, checks);
+const desired = desiredRuleset();
 const diff = ruleDiff(current, desired.rules);
 const settings = existingRuleset ? settingsDiff(existingRuleset, desired) : [];
-const changes = [...settings.map((setting) => `~${setting}`), ...diff.add.map((type) => `+${type}`), ...diff.change.map((type) => `~${type}`), ...diff.remove.map((type) => `-${type}`)];
-console.log(`${repo} (${visibility}, default branch ${branch}), tier ${tier}: ${existing ? `ruleset ${existing.id}` : "no ruleset"}; ${changes.length ? `changes ${changes.join(" ")}` : "up to date"}`);
-if (tier === "merge-gate") console.log(`required checks: ${checks.join(", ")}`);
+const changes = [...settings.map((setting) => `~${setting}`), ...diff.add.map((type) => `+${type}`), ...diff.remove.map((type) => `-${type}`)];
+console.log(`${repo} (${visibility}, default branch ${branch}): ${existing ? `ruleset ${existing.id}` : "no ruleset"}; ${changes.length ? `changes ${changes.join(" ")}` : "up to date"}`);
 
 if (command === "plan") process.exit(0);
 if (changes.length === 0) process.exit(0);

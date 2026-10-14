@@ -21,6 +21,7 @@ const LOCK_FILE = ".orch.lock";
 export type Verdict =
   | "live-ui-verified"
   | "unit-test-verified"
+  | "countersigned"
   | "type-check-only"
   | "verifier-blocked"
   | "verifier-failed";
@@ -263,6 +264,7 @@ function verdictOrNull(value: string): Verdict | null {
   switch (value) {
     case "live-ui-verified":
     case "unit-test-verified":
+    case "countersigned":
     case "type-check-only":
     case "verifier-blocked":
     case "verifier-failed":
@@ -287,7 +289,7 @@ export function parseVerdict(value: string): Verdict {
   const verdict = verdictOrNull(value);
   if (verdict === null) {
     throw new UserError(
-      "verdict must be live-ui-verified, unit-test-verified, type-check-only, verifier-blocked, or verifier-failed"
+      "verdict must be live-ui-verified, unit-test-verified, countersigned, type-check-only, verifier-blocked, or verifier-failed"
     );
   }
   return verdict;

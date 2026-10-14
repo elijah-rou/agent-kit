@@ -1,27 +1,36 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
 import { openStore } from "../../vendor/orch/store.ts";
-import { currentVerdict, evidenceCell, githubSlug, isVerdict, orchStore, parseEvidenceCell, readLedger, rowForHead, STATUS_CONTEXT, statusFor, VERDICTS } from "./verify.ts";
+import { changedPaths, countersignEvidence, evidenceCell, gate, githubSlug, isVerdict, orchStore, patchIdOf, POLICY_PATHS, policyFiles, policyRefusal, readLedger, VERDICTS } from "./verify.ts";
 
-const USAGE = `Usage: verify <record | publish | status> <pr> [options]
+const USAGE = `Usage: verify <record | status> <pr> [options]
 
-Record, publish, and check verdicts for the merge ledger, kept in git's common directory.
+Record and check verdicts in the merge ledger, kept in git's common directory. The ledger is the
+merge gate: every merging mode runs status right before each merge, and merges only on exit 0.
 
-  record <pr> --verdict <verdict> --evidence <path or https URL> [--repo owner/repo]
+  record <pr> --verdict <verdict> --evidence <path or https URL> [--patch <patch ID>] [--repo owner/repo]
       Run only as a fresh verifier that did not write the change, after running the repository's
       verification skill against the pull request's head. Writes the ledger row bound to the
-      head SHA and patch ID. Local only: it publishes nothing.
+      head SHA and patch ID (git patch-id --verbatim, so whitespace counts). Local only: it
+      publishes nothing.
       Verdicts: ${VERDICTS.join(", ")}.
-  publish <pr> [--repo owner/repo]
-      Run as the coordinator. Posts the ${STATUS_CONTEXT} status on the head commit from the
-      ledger row for that head (success for a passing verdict, failure otherwise). Refuses when
-      no row covers the head or the patch changed since the verdict.
+      A pull request whose diff touches a policy path sets the verification policy its own verdict
+      rests on: record refuses every passing verdict for it but countersigned. Policy paths (a
+      trailing / covers everything below it, * matches within one path segment, case ignored):
+        ${POLICY_PATHS.join("\n        ")}
+      countersigned is the coordinator's, not the verifier's: it records the user's approval in
+      words of a pull request a fresh verifier marked verifier-blocked, and is refused unless a
+      verifier-blocked verdict covers the same patch and --patch names that patch in full: the
+      patch ID shown to the user with the head they approved. A changed patch needs new words from
+      the user. Its evidence cites the user's message; record appends the blocked verdict's
+      verifier ID and evidence to it, since the countersign replaces that row.
   status <pr> [--repo owner/repo]
-      Shows whether the latest verdict covers the current head and patch, and whether the forge
-      status agrees. A new push, rebase, or changed patch voids it.
+      Shows whether the verdict for the current head passes and still covers its patch. A new
+      push, rebase, or changed patch voids it. For a pull request whose diff touches a policy path,
+      only countersigned passes, however the row was written.
 
-Exit status: 0 done (status: verdict passes for the head and patch, and the forge agrees),
-1 failure or no passing verdict, 2 usage error.
+Exit status: 0 done (status: a passing verdict covers the head and its patch), 1 failure or no
+passing verdict, 2 usage error.
 `;
 
 function run(command: string, args: string[], input?: string): string {
@@ -44,7 +53,7 @@ async function main(args: string[]): Promise<number> {
 	const [command, prArg] = args;
 	if (args.includes("--help")) return console.log(USAGE), 0;
 	const pr = Number(prArg);
-	if (!["record", "publish", "status"].includes(command) || !Number.isInteger(pr) || pr <= 0) return console.error(USAGE), 2;
+	if (!["record", "status"].includes(command) || !Number.isInteger(pr) || pr <= 0) return console.error(USAGE), 2;
 
 	const commonDir = git(["rev-parse", "--path-format=absolute", "--git-common-dir"]);
 	if (!commonDir) throw new Error("run inside the repository's checkout; the ledger lives in its git directory");
@@ -55,53 +64,45 @@ async function main(args: string[]): Promise<number> {
 
 	const head = JSON.parse(run("gh", ["pr", "view", String(pr), "-R", slug, "--json", "headRefOid,headRefName,state"])) as { headRefOid: string; headRefName: string; state: string };
 
-	const patchId = (): string => {
-		const id = run("git", ["patch-id", "--stable"], run("gh", ["pr", "diff", String(pr), "-R", slug])).split(" ")[0]?.trim();
-		if (!id) throw new Error("the pull request has no diff to bind a verdict to");
-		return id;
-	};
+	const diff = (): string => run("gh", ["pr", "diff", String(pr), "-R", slug]);
 
 	if (command === "status") {
-		const ledger = readLedger(store);
-		const verdict = currentVerdict(ledger, pr, head.headRefOid);
-		const row = rowForHead(ledger, pr, head.headRefOid);
-		const patchMoved = row !== undefined && parseEvidenceCell(row.evidence).patchId !== patchId();
-		const statuses = JSON.parse(run("gh", ["api", `repos/${slug}/commits/${head.headRefOid}/statuses`])) as { context: string; state: string; description: string }[];
-		const forge = statuses.find((status) => status.context === STATUS_CONTEXT);
-		const passes = verdict.state === "pass" && !patchMoved;
-		// After a re-record the forge can still show the old verdict; only publish updates it.
-		const forgeStale = row !== undefined && !patchMoved && forge?.state !== (passes ? "success" : "failure");
-		console.log(`${slug}#${pr} (${head.state}, ${head.headRefName} at ${head.headRefOid.slice(0, 12)}): ledger ${patchMoved ? "void, patch changed" : verdict.state}${verdict.verdict ? ` (${verdict.verdict} on ${verdict.sha?.slice(0, 12)})` : ""}; forge ${forge ? `${forge.state}: ${forge.description}` : "no verdict status"}${forgeStale ? `; forge disagrees with the ledger, run "agentic verify publish ${pr}"` : ""}`);
-		return passes && !forgeStale ? 0 : 1;
+		const result = gate(readLedger(store), pr, head.headRefOid, () => {
+			// The patch and the policy files come from one fetch of the diff, as in record.
+			const text = diff();
+			return { patchId: patchIdOf(text), policyFiles: policyFiles(changedPaths(text)) };
+		});
+		const state = result.patchChanged ? "void, patch changed" : result.policyRefused ? "fail, the pull request changes the verification policy, so only countersigned passes" : result.state;
+		console.log(`${slug}#${pr} (${head.state}, ${head.headRefName} at ${head.headRefOid.slice(0, 12)}): ledger ${state}${result.verdict ? ` (${result.verdict} on ${result.sha?.slice(0, 12)})` : ""}`);
+		return result.state === "pass" ? 0 : 1;
 	}
 
 	if (head.state !== "OPEN") throw new Error(`${slug}#${pr} is ${head.state}; verdicts are for open pull requests`);
 
-	if (command === "publish") {
-		const row = rowForHead(readLedger(store), pr, head.headRefOid);
-		if (!row || !isVerdict(row.verdict)) throw new Error(`${slug}#${pr}: no verdict covers head ${head.headRefOid.slice(0, 12)}; a fresh verifier must record one`);
-		const recorded = parseEvidenceCell(row.evidence);
-		if (recorded.patchId !== patchId()) throw new Error(`${slug}#${pr}: the patch changed since the verdict; re-verify`);
-		const status = statusFor(row.verdict, recorded.patchId, recorded.evidence);
-		run("gh", ["api", "-X", "POST", `repos/${slug}/statuses/${head.headRefOid}`, "-f", `state=${status.state}`, "-f", `context=${STATUS_CONTEXT}`, "-f", `description=${status.description}`, ...(status.targetUrl ? ["-f", `target_url=${status.targetUrl}`] : [])]);
-		console.log(`${slug}#${pr}: posted ${STATUS_CONTEXT}=${status.state} (${row.verdict}) on ${head.headRefOid.slice(0, 12)}`);
-		return 0;
-	}
-
 	const verdict = option(args, "--verdict");
 	const evidence = option(args, "--evidence");
-	if (!verdict || !isVerdict(verdict) || !evidence) return console.error(USAGE), 2;
-	const patch = patchId();
+	if (!verdict || !isVerdict(verdict) || !evidence || (verdict !== "countersigned" && args.includes("--patch"))) return console.error(USAGE), 2;
+	// The patch and the policy files come from one fetch of the diff, so they describe the same patch.
+	const diffText = diff();
+	const patch = patchIdOf(diffText);
+	const refusal = policyRefusal(verdict, policyFiles(changedPaths(diffText)));
+	if (refusal) throw new Error(`${slug}#${pr}: ${refusal}`);
+	let recorded = evidence;
+	if (verdict === "countersigned") {
+		const signed = countersignEvidence(readLedger(store), pr, head.headRefOid, patch, option(args, "--patch"), evidence);
+		if (!signed.ok) throw new Error(`${slug}#${pr}: ${signed.reason}`);
+		recorded = signed.evidence;
+	}
 
 	const ledger = openStore(store);
 	try {
 		// Idempotent: a repository's first verdict creates its store.
 		await ledger.init();
-		await ledger.ledger.record({ pr, sha: head.headRefOid, verdict, evidence: evidenceCell(evidence, patch), verifier: process.env.AGENTIC_AGENT_ID ?? "agentic-verify" });
+		await ledger.ledger.record({ pr, sha: head.headRefOid, verdict, evidence: evidenceCell(recorded, patch), verifier: process.env.AGENTIC_AGENT_ID ?? "agentic-verify" });
 	} finally {
 		await ledger.close();
 	}
-	console.log(`${slug}#${pr}: recorded ${verdict} on ${head.headRefOid.slice(0, 12)} (patch ${patch.slice(0, 12)}); the coordinator publishes it with "agentic verify publish ${pr}"`);
+	console.log(`${slug}#${pr}: recorded ${verdict} on ${head.headRefOid.slice(0, 12)} (patch ${patch.slice(0, 12)}); check it before merging with "agentic verify status ${pr}"`);
 	return 0;
 }
 

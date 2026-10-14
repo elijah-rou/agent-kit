@@ -3,7 +3,7 @@
 Each section records one reviewed resync of a skill adapted from
 [cursor/plugins](https://github.com/cursor/plugins): the upstream range, each upstream change, and
 whether it was taken or rejected and why. The resync commit advances the skill's row in the
-machine-readable provenance table in [`README.md`](README.md). Run `agentic upstream-drift` to see
+machine-readable provenance table in [`README.md`](README.md). Run `agentic upstream-drift --upstream <cursor-plugins>` to see
 which rows have upstream changes to review, then read them with
 `git -C <cursor-plugins> diff <row commit> HEAD -- <upstream path>`.
 
@@ -139,7 +139,7 @@ Upstream: `pstack/skills/create-verification-skill`, `11713c6..997ffc7` (commit 
 | A journey whose seed data lacks a precondition reports a failure, with the reason in that feature's `Gotchas`; never weaken the journey | Taken | Adapted to the local result lines: a missing seed precondition is `FAIL`, not `SKIP`, because seed data is state the run creates, while `SKIP` stays for absent external prerequisites. A gap found while creating the skill is fixed in Launch; on a later run, the next `maintain-verification` pass triages it as a harness gap and fixes Launch's seed steps or, when the seed cannot provide it, writes the `Gotchas` entry, so no task edits the map mid-task. |
 | A proof run on a stand-in for the real target lists every setup step the stand-in did that the target will not; those stay unverified | Taken | Added to the proof step and to the reply's proof-run item. |
 
-The same change adds a local Dev loop section to `create-verification` (`test`, `--repeat N`, and a Doctor toolchain comparison with CI), which has no upstream counterpart. Every verify skill generated before it is not migrated here; as of this change that is agent-kit's `verify-agent-kit`, interview-tutor's `verify-interview-tutor`, bootstrap's `verify-bootstrap`, and icloud-photos-cli's `verify-icp`. Each adopts the levers at its next `maintain-verification` pass, through local clauses with no upstream counterpart, so that skill's provenance row stays at 11713c6: step 1 checks the control CLI for every subcommand and lever `create-verification` step 2 requires and triages a missing one as a harness gap; the harness-gap triage keeps an added or changed lever only after `create-verification` step 4's step 9 checks pass, and fixes a missing seed precondition in Launch's seed steps or, when the seed cannot provide it, in the feature's `Gotchas`.
+The same change adds a local Dev loop section to `create-verification` (`test`, `--repeat N`, and a Doctor toolchain comparison with CI), which has no upstream counterpart. Every verify skill generated before it, including agent-kit's own `verify-agent-kit`, is not migrated here. Each adopts the levers at its next `maintain-verification` pass, through local clauses with no upstream counterpart, so that skill's provenance row stays at 11713c6: step 1 checks the control CLI for every subcommand and lever `create-verification` step 2 requires and triages a missing one as a harness gap; the harness-gap triage keeps an added or changed lever only after `create-verification` step 4's step 9 checks pass, and fixes a missing seed precondition in Launch's seed steps or, when the seed cannot provide it, in the feature's `Gotchas`.
 
 ## 2026-10-14: catch-up adopted from ketchup at 5108b71
 

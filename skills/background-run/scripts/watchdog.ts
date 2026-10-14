@@ -21,8 +21,10 @@ import { isAbsolute, join } from "node:path";
 export const GRACE_MINUTES = 15;
 const REGISTRY_VERSION = 1;
 const MAX_INTERVAL_MINUTES = 24 * 60;
-/** Twice the 15-minute timer bootstrap installs: one missed scan is slack, two mean the timer is not running. */
-export const MAX_SCAN_AGE_MINUTES = 30;
+/** A timer must run `scan` every SCAN_INTERVAL_MINUTES for a run to count as watched (background-run's SKILL.md). */
+export const SCAN_INTERVAL_MINUTES = 15;
+/** Twice the scan interval: one missed scan is slack, two mean the timer is not running. */
+export const MAX_SCAN_AGE_MINUTES = 2 * SCAN_INTERVAL_MINUTES;
 /** Only the log's tail is read; the newest row is the last one, so this bounds the work without changing the answer. */
 const TAIL_BYTES = 64 * 1024;
 const TEXT_MAX = 300;
@@ -50,6 +52,7 @@ register, notify, scan, and status also take --now <ISO timestamp>, a test clock
 
 Registry: $AGENTIC_WATCHDOG_DIR, else $XDG_STATE_HOME/agentic/watchdog, else ~/.local/state/agentic/watchdog.
 register refuses a run ID registered for a different log unless --replace; re-registering the same log re-arms it.
+A timer outside any agent must run scan every ${SCAN_INTERVAL_MINUTES} minutes for a registered run to count as watched.
 scan notifies once per registered run whose log has had no new row, and whose registration is no newer, for twice its
 interval plus ${GRACE_MINUTES} minutes, or whose log is missing, and clears that state when the log moves again.
 status prints "last-scan<TAB><fresh|stale|never><TAB><time or ->", where stale means older than

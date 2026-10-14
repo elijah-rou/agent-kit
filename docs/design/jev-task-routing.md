@@ -242,7 +242,7 @@ The main flow is three files deep: the adapter, then `route.ts`, then `egress.ts
 | `pi/extensions/task-class.ts` | the Pi adapter above, including `registryClassifier`, which parses Pi's `ClassifierAnswer` into the shared answer shape, and routing on `input`, before Pi's expansion | built, rewritten in place |
 | `docs/adr/0002-task-routing.md` | amends ADR 0001 decision 5 | accepted |
 
-`taskClass`, `taskHint`, and `taskHintFor` are deleted in the same change that migrates their callers and tests. `pi-t3-runtime` is out of scope for now and needs no routing code.
+`taskClass`, `taskHint`, and `taskHintFor` are deleted in the same change that migrates their callers and tests. T3's Pi runtime is out of scope for now and needs no routing code.
 
 ### Children and Hermes
 
@@ -331,7 +331,7 @@ All three converged on the same core:
 - **A single four-way question (lookup, rigor, loop, door).** It loses the calibrated door question and can't express "a loop that is also a door".
 - **Jev choosing the skill directly.** It needs recalibration on every skill edit, and invites Jev into choosing manual or authority-bearing skills.
 - **Making `background-run` model-invocable, with no Jev for loops.** This sends nothing, but it lets the model start unattended runs on unmeasured judgment. The user kept it manual (open question 3). It is the fallback if Jev's loop precision fails its bar.
-- **Sharing one engine extracted from `pi-t3-runtime`.** That repository is out of scope for now, and sharing `egress.ts` gives one source of truth for the real invariant.
+- **Sharing one engine extracted from T3's Pi runtime.** That code is out of scope for now, and sharing `egress.ts` gives one source of truth for the real invariant.
 
 ## Open questions
 

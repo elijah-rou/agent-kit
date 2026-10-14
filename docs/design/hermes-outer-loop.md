@@ -15,13 +15,13 @@ Here the same split has three parts:
 | T3 Code, with Orchestrator V2 | The coding org | Threads, worktrees, delegated tasks on Pi and Claude, and pull requests |
 | agent-kit | The method | Instructions and skills that every coding agent in T3 runs on |
 
-`pi-t3-runtime` (`~/Projects/pi-t3-runtime`) is T3's Pi runtime and sits inside the coding org.
+T3's Pi runtime sits inside the coding org.
 
 ## One interface: a signed job into T3
 
 Hermes starts coding work only by posting a job to a T3 webhook task: `schedule_task` with `{"type":"webhook"}` and a `signature.secretRef`. The job carries named fields (repository, issue or pull request, requested work class, requester). The T3 task's prompt reads them only through `{{body.path}}` placeholders, never as free text.
 
-Hermes never drives coding agents itself. Its bundled `claude-code` and `codex` skills could, but that would create a second executor beside V2. `pi-t3-runtime`'s design gives V2 sole ownership of "delegated launches, task IDs, lifecycle, cancellation, results and app persistence", and replaces its Pi fork's own subprocess fleet in T3 mode. Results flow back the other way: the T3 thread finishes, and Hermes relays the outcome to the user.
+Hermes never drives coding agents itself. Its bundled `claude-code` and `codex` skills could, but that would create a second executor beside V2. The design of T3's Pi runtime gives V2 sole ownership of "delegated launches, task IDs, lifecycle, cancellation, results and app persistence", and replaces its Pi fork's own subprocess fleet in T3 mode. Results flow back the other way: the T3 thread finishes, and Hermes relays the outcome to the user.
 
 Jev routing is built, with its notes delivered on trial since 2026-10-14 (`jev-task-routing.md`). A job may later carry an explicit work class for it; until a job does, the T3 side classifies the job like any other task.
 

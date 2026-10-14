@@ -16,7 +16,7 @@ Every prompt typed in Claude Code passes through agent-kit's UserPromptSubmit ho
 
 ## How to get to it (user POV)
 
-- Type any prompt in Claude Code; bootstrap's `settings.json` runs `bun <kit>/agentic/tools/jev/cli.ts task-class --claude-hook` with the event on stdin.
+- Type any prompt in Claude Code; the install's `settings.json` (`claude/README.md`, Install) runs `bun <kit>/agentic/tools/jev/cli.ts task-class --claude-hook` with the event on stdin.
 - Run `agentic jev task-class "<task>"` in a terminal to see a task's route.
 - Set `AGENTIC_ROUTE=off` (or `shadow`) for a session, or commit `.agents/jev-opt-out` in a repository.
 - Read the records under `$XDG_STATE_HOME/agentic/task-route/<machine>/<runtime>-<session>.jsonl`.

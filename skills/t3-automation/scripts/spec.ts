@@ -1,13 +1,12 @@
 #!/usr/bin/env bun
 // t3-automation: render the exact title, prompt, and schedule of a known T3 scheduled automation, so the stored
 // contract lives in code and tests. It only reads git; creating the schedule is the agent's call to T3's
-// schedule_task with this output. A schedule outlives a revert of this file or a rollback of the kit's pin, so the
+// schedule_task with this output. A schedule outlives a revert of this file or a rollback of the installed kit, so the
 // prompt carries a version marker and tells each run to stop when its instructions no longer recognize it.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { homedir } from "node:os";
-import { isAbsolute, join, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const USAGE = `Usage: spec.ts upkeep --skill <dir> [--checkout <path>]
 
@@ -19,9 +18,9 @@ bindToCurrentThread, repo}. Pass title, prompt, schedule, and bindToCurrentThrea
   --checkout <path> Any checkout of the repository; the prompt names its main checkout. Default: the current directory.
 
 The repository is origin's GitHub owner/repo (https or ssh), and the trunk is origin's HEAD. The skill must be on
-origin's trunk. This script must run from bootstrap's agent-kit install, $BOOTSTRAP_ROOT/tools/agent-kit (default
-~/.local/share/bootstrap), a detached checkout that is not a linked worktree, and that install's maintain-verification
-skill must have a "## Scheduled runs" section naming this version's marker.
+origin's trunk. This script must run from the installed kit: a git checkout of agent-kit that is detached (no branch
+checked out) and not a linked worktree. That kit's maintain-verification skill must have a "## Scheduled runs" section
+naming this version's marker, and the prompt names that skill by the kit's real path.
 
 Exit status: 0 printed, 1 a git read or precondition failed, 2 usage error.
 `;
@@ -36,9 +35,6 @@ export const UPKEEP_TITLE_PREFIX = "Weekly verification upkeep: ";
 // T3's fixed_time weekdays number 0 Sunday to 6 Saturday (schedule_task's schema), so [1..5] is Monday to Friday.
 export const UPKEEP_WEEKDAYS = [1, 2, 3, 4, 5] as const;
 export const UPKEEP_WINDOW = { startMinute: 4 * 60, slots: 36, slotMinutes: 5 } as const;
-// Bootstrap installs this kit at <bootstrap root>/tools/agent-kit, its root defaulting as bootstrap's install.sh does.
-const INSTALL_SUBDIR = join("tools", "agent-kit");
-const DEFAULT_BOOTSTRAP_ROOT = join(".local", "share", "bootstrap");
 
 const SKILL_DIR = /^\.agents\/skills\/(verify-([a-z0-9]+(?:-[a-z0-9]+)*))$/;
 const GITHUB_NAME = "([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)/([A-Za-z0-9._-]+?)(?:\\.git)?/?";
@@ -133,23 +129,17 @@ function git(cwd: string, args: string[]): { ok: boolean; out: string } {
 	return { ok: result.status === 0, out: result.stdout.trim() };
 }
 
-// The maintain-verification path a stored prompt names: under bootstrap's install path, never resolved through a
-// symlink, so a schedule keeps following bootstrap's pin when development mode's link is swapped for the pinned clone.
-// The script must run from inside that install, and the install must be a detached checkout that is not a linked
-// worktree; otherwise a schedule would read a worktree's or a branch's unreviewed instructions every week.
-export function installedInstructions(script: string, env: Record<string, string | undefined>, home: string): string {
-	const root = env.BOOTSTRAP_ROOT || join(home, DEFAULT_BOOTSTRAP_ROOT);
-	if (!isAbsolute(root)) throw new Failure(`BOOTSTRAP_ROOT must be an absolute path, got "${root}"`);
-	const install = join(root, INSTALL_SUBDIR);
-	if (!existsSync(install)) throw new Failure(`agent-kit is not installed at ${install}; run this script from bootstrap's install`);
-	const realInstall = realpathSync(install);
-	if (!realpathSync(script).startsWith(realInstall + sep)) throw new Failure(`${script} is not inside the agent-kit install at ${install}; run the script installed there`);
-	const top = git(install, ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"]);
+// The maintain-verification path a stored prompt names: in the kit checkout this script runs from (three levels
+// above its directory, through any symlink). That kit must be a git checkout rooted there, detached, and not a linked worktree;
+// otherwise a schedule would read a worktree's, a branch's, or a copy's unreviewed instructions every week.
+export function kitInstructions(script: string): string {
+	const kit = resolve(dirname(realpathSync(script)), "..", "..", "..");
+	const top = git(kit, ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"]);
 	const [toplevel, gitDir, commonDir] = top.out.split("\n");
-	if (!top.ok || toplevel === undefined || realpathSync(toplevel) !== realInstall) throw new Failure(`the agent-kit install at ${install} is not a git checkout`);
-	if (gitDir !== commonDir) throw new Failure(`the agent-kit install at ${install} is a linked worktree; install the kit with bootstrap`);
-	if (git(install, ["symbolic-ref", "-q", "HEAD"]).ok) throw new Failure(`the agent-kit install at ${install} has a branch checked out; bootstrap's install is detached at its pin`);
-	return join(install, "skills", "maintain-verification", "SKILL.md");
+	if (!top.ok || toplevel === undefined || realpathSync(toplevel) !== kit) throw new Failure(`the kit at ${kit} that runs this script is not a git checkout; run the script from the installed kit`);
+	if (gitDir !== commonDir) throw new Failure(`the kit at ${kit} is a linked worktree; run the script from the installed kit, a detached checkout`);
+	if (git(kit, ["symbolic-ref", "-q", "HEAD"]).ok) throw new Failure(`the kit at ${kit} has a branch checked out; run the script from the installed kit, a detached checkout`);
+	return join(kit, "skills", "maintain-verification", "SKILL.md");
 }
 
 // Reads git to fill in the upkeep input; every read that fails stops with the command to run instead.
@@ -195,7 +185,7 @@ export function main(argv: string[]): number {
 	}
 	try {
 		const { skill, checkout } = parseArgs(argv);
-		const instructions = installedInstructions(import.meta.path, process.env, homedir());
+		const instructions = kitInstructions(import.meta.path);
 		process.stdout.write(`${JSON.stringify(renderUpkeep(resolveUpkeep(skill, checkout, instructions)), null, 2)}\n`);
 		return 0;
 	} catch (error) {

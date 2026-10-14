@@ -50,7 +50,7 @@ definition of an action item, extends the scope from one chat to the user's top-
 requests where the thread tools exist, and drops the visuals and the user-only invocation; [`RESYNC.md`](RESYNC.md)
 records what it took and rejected.
 
-The `code-design`, `git-workflow`, `github-rulesets`, `new-project`, `repo-baseline`, `technology-selection`, `source-grounded-research`, `spike`, and `verification` skills are original to this repository. `git-workflow`'s `references/pr-review.md` condenses the reviewer prompt and rubric of pstack's `interrogate` (MIT, `PSTACK-LICENSE`) into one fresh reviewer, adds a precedent lens and the repository's review rules, and drops the multi-model panel and Cursor tooling.
+The `code-design`, `git-workflow`, `github-rulesets`, `new-project`, `repo-baseline`, `technology-selection`, `source-grounded-research`, `spike`, and `verification` skills are original to this repository. `git-workflow`'s `references/pr-review.md` condenses the reviewer prompt and rubric of pstack's `interrogate` (MIT, `PSTACK-LICENSE`) into one fresh reviewer, adds a precedent lens and the repository's review rules, and drops the multi-model panel and Cursor tooling. Its comments lens adapts pstack's `no-comments` skill and Comment Sicko agent at cursor/plugins commit `837067b75aa20ab58d7b2a2f6c0531e37118c596` into a check by the reviewer that did not write the comments, as notes rather than deletions; [`RESYNC.md`](RESYNC.md) records what it took and rejected.
 
 The `feature-shaping` skill is original to this repository. Its risk-scaled design workflow
 is informed by HumanLayer's
@@ -125,6 +125,8 @@ A resync advances a row's commit; [`RESYNC.md`](RESYNC.md) records what each res
 | `skills/correct` | `pstack/skills/correct` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/git-workflow/references/pr-review.md` | `pstack/skills/interrogate/references/reviewer-prompt.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/git-workflow/references/pr-review.md` | `pstack/skills/interrogate/references/rubric.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/git-workflow/references/pr-review.md` | `pstack/skills/no-comments/SKILL.md` | `837067b75aa20ab58d7b2a2f6c0531e37118c596` |
+| `skills/git-workflow/references/pr-review.md` | `pstack/agents/comment-sicko.md` | `837067b75aa20ab58d7b2a2f6c0531e37118c596` |
 | `skills/create-verification` | `pstack/skills/create-verification-skill` | `997ffc7fe26bdaa6478a14e7f5b8d5f9ed747102` |
 | `skills/create-verification/references/web.md` | `cursor-team-kit/skills/control-ui/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/create-verification/references/cli-tui.md` | `cursor-team-kit/skills/control-cli/SKILL.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |

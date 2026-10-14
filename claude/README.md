@@ -18,51 +18,45 @@ Mods enabled); model, effort, and permissions stay user choices.
 
 `agentic/tools/git-guard/cli.ts --claude-hook` is a PreToolUse hook that applies the git policy Pi's
 `git-interceptor` applies, to every tool that runs a shell command: Bash, Monitor, and PowerShell (Claude
-Code 2.1.296's tools that execute code and take a command). It refuses skipping git hooks (`--no-verify`,
-`git commit -n` or `git am -n`, a `-c` or `GIT_CONFIG_*` override of `core.hooksPath` or a `hook.*` key, or
-a hook manager's skip variable (`HUSKY`, `HUSKY_SKIP_HOOKS`, `SKIP`, `PRE_COMMIT_ALLOW_NO_CONFIG`,
-`LEFTHOOK`, `LEFTHOOK_EXCLUDE`, `OVERCOMMIT_DISABLE`) in a command that runs git, set on the git command, on
-a program the guard follows into that runs it (`sh -c`, `eval`, `env`, a here document fed to a shell, and
-the other wrappers), as a standalone assignment, through `export`, `declare`, `typeset`, `local`, or
-`readonly`, or with PowerShell's `$env:NAME =`, `Set-Item`, `New-Item`, or `Set-Content` on `env:NAME`, or
-`[Environment]::SetEnvironmentVariable`) in every session, and refuses `git push`, `pull`, `merge`,
-`rebase`, `cherry-pick`, `revert`, `am`, `apply`, `tag` (except listing or verifying tags), `send-pack`,
-`http-push`, `git subtree push`, `pull`, and `merge`, and `gh pr merge` inside a subagent (an event carrying
-`agent_id`) unless its `agent_type` is `autopilot-owner`. The main session may publish. It denies with
-Claude Code's JSON decision, which holds in bypass-permission mode too, and allows by printing nothing. An
-event it cannot read is denied.
+Code 2.1.296's tools that execute code and take a command). The policy is text patterns; the guard does not
+read the command as a shell would. They find `git` or `gh`, by name or by absolute path (`/usr/bin/git`), at
+the start of a line or after `;`, `&`, or `|`. In every session they refuse skipping hooks:
+
+- `--no-verify` after `git` (but not `--no-verify-signatures`), on the same line or on a later line that a
+  quoted string or a line-ending backslash carries the command onto, as in Claude Code's usual commit form
+  `git commit -m "$(cat <<'EOF' ... EOF\n)" --no-verify`;
+- `-n` on `git commit` or `git am`, alone or after short flags that take no value (`-an`, `-nm`, `-anm`),
+  up to the next `;`, `&`, or `|`; a word git itself refuses as a misspelled long option (`-include`,
+  `-only`, `-no-op`) does not count;
+- a hook manager's skip variable (`HUSKY`, `HUSKY_SKIP_HOOKS`, `SKIP`, `PRE_COMMIT_ALLOW_NO_CONFIG`,
+  `LEFTHOOK`, `LEFTHOOK_EXCLUDE`, `OVERCOMMIT_DISABLE`) assigned at the start of a command, alone or after
+  `export` and its kin, on a line that runs git, or on a line of only assignments just before a line that
+  starts git (`HUSKY=0 git commit`, `export SKIP=lint && git commit`, `export HUSKY=0` then `git commit` on
+  the next line);
+- `core.hooksPath` or a `hook.*` key set with `git -c` or `--config-env` before the subcommand, or set,
+  unset, or removed with `git config` (reading one with `git config <key>` or `--get` passes, and
+  redirections such as `2>/dev/null` and a trailing `# comment` are not read as a value).
+
+Inside a subagent (an event carrying `agent_id`), unless its `agent_type` is `autopilot-owner`, they also
+refuse a line, or a command after `;`, `&`, or `|`, that starts `git push`, `pull`, `merge`, `rebase`,
+`cherry-pick`, `revert`, `am`, `apply`, or `tag` (except listing or verifying tags), optionally after
+`git -C <path>` options, or `gh pr merge`; `git merge-base` and other hyphenated subcommands do not match.
+The main session may publish. It denies with Claude Code's JSON decision, which holds in bypass-permission
+mode too, and allows by printing nothing. An event it cannot read is denied.
 
 What it refuses that it need not (the same list is in ADR 0001 and the verify-agent-kit `git-guard` feature):
 
-- Mentions. Two readers decide, and either refusing refuses: text patterns that see a git command at the
-  start of any line, even inside a quoted commit message, a here document, or a search pattern, and a
-  command reader that reads what the shell would run. When only the patterns refuse, the reason says the
-  text may be a mention: commit such a message from a file (write it with the editor tool, then
-  `git commit -F <file>`), and search for `--no-verify` without its leading dashes.
+- Mentions. The patterns see a git command at the start of any line or after `;`, `&`, or `|`, even inside
+  a quoted commit message, a here document, or a search pattern (`rg "error|git push"`); `--no-verify`
+  anywhere in a quoted message or here document that spans lines after `git` (including a
+  `gh pr create --body` after `git push` on the same command, whose reason also names `--body-file`); and a word that git would read as `-n`
+  anywhere in a `git commit` or `git am` command before its next `;`, `&`, or `|`
+  (`git commit -m "fix -n handling"`). The
+  reason says the text may be a mention: commit such a message from a file (write it with the editor tool,
+  then `git commit -F <file>`), and search for `--no-verify` without its leading dashes, or for a command
+  without `git` or `gh` in front.
+- A skip variable assigned for another command on a line that also runs git (`SKIP=1 make && git status`).
 - A child's harmless uses of a refused subcommand, such as `git rebase --abort`.
-- A skip variable set alone or exported in a command whose git command runs no hooks, such as
-  `export SKIP=lint; git log`.
-- `git config` changes to `core.hooksPath` or any `hook.*` key (git's config-based hooks), for every
-  session, even to turn on a repository's own hooks, and unsetting `core.hooksPath` (which turns a husky
-  repository's hooks off): ask the user to change them. Reading them passes.
-- A command the reader cannot read, for every session: an unclosed quote, substitution, or here document,
-  nesting past 8 levels, a glob or brace in a program name or in git's or gh's subcommand or option words,
-  a PowerShell `-EncodedCommand` that is not base64 of UTF-16LE, and commands fed to a shell (or to
-  `Invoke-Expression`) from anything but a here document, a here-string, or `cat <<EOF |`, such as
-  `printf ... | sh`, `curl ... | sh`, `bash <(...)`, or `source <(...)`; a shell started with no input
-  (`bash -l`, `exec zsh`); a single-quoted span holding `}` or `"` inside a double-quoted `${...}`, which
-  bash and zsh read differently; a PowerShell option abbreviation that could name two options (`-in`); a
-  PowerShell value option whose value names `-Command`, `-EncodedCommand`, or `-File` (`-wd /c`); a `wsl`
-  argument holding spaces or quotes without `-e` (wsl joins its words into one line); `wsl -e` running a
-  shell that reads its input; a `[[ ]]` holding a process substitution or `$'...'`, or followed by a
-  redirection; a PowerShell assignment whose value is read as a program, so a quoted value naming a shell
-  (`$m = 'Switch the hook to /bin/sh'`) reads as starting that shell; an `@"..."@` here-string whose body
-  holds a `"`, or that the double-quote reader does not read up to its own closing `"@`; a lone carriage
-  return in PowerShell, which it reads as a line break; any curly quote in a PowerShell command, which its
-  tokenizer reads as a quote; an `env:` path or `SetEnvironmentVariable` name that is not a literal; a
-  backtick before a lone carriage return; a backtick continuing a line from inside a word; and a lone
-  carriage return in a PowerShell comment. The
-  reason asks for a plainer command; a shell given a script operand reads its input as data and passes.
 
 Bootstrap does not wire it yet: that is a pending bootstrap change, and until it lands no Claude Code
 session runs the guard. The change adds this PreToolUse entry to `settings.json`, where `<kit>` is the
@@ -97,18 +91,23 @@ agent-kit checkout:
 
 What the guard does not stop (the same list is in ADR 0001 and the verify-agent-kit `git-guard` feature):
 
-- Commands that appear only after expansion or evaluation. The reader follows common shell syntax, so a
-  command whose program or arguments appear only after expansion or evaluation can get past it: parameter
-  expansion (`$x push`), arithmetic, brace or glob expansion in git's operands, unusual quoting or syntax
-  forms, shell aliases and functions, git and gh aliases, script files, and programs that run their
-  arguments or input as commands beyond the wrappers it follows (for example `parallel`, `ssh`, `trap`,
-  `xargs git` with the subcommand on stdin, a Python script, PowerShell's `Start-Process`). So can other
-  programs that publish (`gh pr create` or `comment`, `gh api`). Anything it cannot read is refused.
-- Hooks disabled another way: editing `.git/hooks` or `.git/config` (or a file it includes),
-  `GIT_CONFIG_GLOBAL` or `GIT_CONFIG_SYSTEM` pointing at a file, a `GIT_CONFIG_*` variable exported by an
-  earlier command, or a skip variable of a hook manager the guard does not list (it refuses `HUSKY`,
-  `HUSKY_SKIP_HOOKS`, `SKIP`, `PRE_COMMIT_ALLOW_NO_CONFIG`, `LEFTHOOK`, `LEFTHOOK_EXCLUDE`, and
-  `OVERCOMMIT_DISABLE`).
+- A git or gh command the patterns do not see in the text: one not at the start of a line or after `;`,
+  `&`, or `|` (leading spaces, a path that does not start with `/` such as `./git` or `~/bin/git`, a name
+  with an extension such as `git.exe push`, an assignment other than a skip variable, a redirection, or a
+  keyword before it, a wrapper such as `command`, `env`, `sh -c`, `eval`, or `xargs`, a subshell or
+  substitution, PowerShell's call operator or backtick escapes), git options before the subcommand other
+  than `-C` (`git --git-dir=x push`; `-c` and `--config-env` are read only for hook keys), `--no-verify` on
+  a later line that the command reaches another way (an unquoted `$(...)` spanning lines, or a here
+  document inside a quoted string that holds an unpaired double quote), shell aliases and functions, git
+  and gh aliases, and script files.
+- Hooks skipped another way: a prefix of `--no-verify` such as `--no-veri`; `-n` after a quoted `;`, `&`,
+  or `|` in its `git commit` command, or on a later line than its `git commit` (after a commit message in a
+  here document); a `GIT_CONFIG_*` variable carrying a hook key; a skip variable set through a wrapper
+  (`env HUSKY=0 git commit`), set on an earlier line unless that line holds only assignments and the next line starts
+  with git (`export HUSKY=0`, then `make`, then `git commit`, one per line), or set the PowerShell way (`$env:HUSKY = '0'; git commit`,
+  `Set-Item env:HUSKY 0; git commit`); and editing `.git/hooks` or `.git/config`.
+- Other programs that publish: `git send-pack`, `git http-push`, `git subtree push`, `pull`, or `merge`,
+  `gh pr create` or `comment`, and `gh api`.
 - Identity it cannot tell: a nested `claude -p` started from a subagent's shell has no `agent_id`, so it is
   treated as a main session; a child that holds the Agent tool (the built-in `general-purpose`) can launch an
   `autopilot-owner` grandchild, which may publish; and `agent_id` for teammates is documented but not observed.

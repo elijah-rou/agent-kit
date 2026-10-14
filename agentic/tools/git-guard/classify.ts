@@ -2,15 +2,15 @@
 // extension and Claude Code's PreToolUse hook (cli.ts). Each runtime decides who is acting; this module
 // decides what that actor may run. It reads the command text only and never runs anything.
 //
-// Two readers decide together, and either one refusing refuses the command. The text patterns (kept
-// from Pi's original interceptor, narrowed only where they matched other git commands) catch a git
-// command at the start of any line, even inside a quoted message; shell.ts reads the commands the line
-// would run, which catches what the patterns miss (absolute paths, wrappers, options before the
-// subcommand, redirections, here documents, short flags, config). When only the patterns refuse, the
-// reason says the match may be a mention and how to rephrase it.
-import { invocations, programName, Unreadable, type Dialect, type Invocation } from "./shell.ts";
-
-export type { Dialect } from "./shell.ts";
+// The policy is text patterns: the two kept from Pi's original interceptor (--no-verify, and publication
+// or integration), narrowed only where they matched other git commands (--no-verify-signatures,
+// merge-base, and listing tags), and patterns for what a shell reader, since removed, used to find:
+// git commit or am -n, a hook manager's skip variable, a core.hooksPath or hook.* override or config
+// write, and gh pr merge. They find git or gh, by name or absolute path, at the start of a line or after
+// ;, &, or |, so they also match a mention in a quoted message or a search, and each reason says how to
+// rephrase one. --no-verify also counts on a later line that a quoted string or a line-ending backslash
+// carries git's command onto. They do not read the shell otherwise: git reached another way (a wrapper,
+// a substitution, a `sh -c` string) is not seen.
 
 /** Who issued the command. The coordinating session publishes; a child publishes only as an autopilot-full owner. */
 export type Actor = { kind: "main" } | { kind: "child"; role: string | undefined };
@@ -18,22 +18,72 @@ export type Actor = { kind: "main" } | { kind: "child"; role: string | undefined
 /** The one child role that carries its own pull request through the merge (babysit-and-ship). */
 export const PUBLISHING_CHILD_ROLE = "autopilot-owner";
 
-// --no-verify after a git at the start of a line, but not git's own --no-verify-signatures.
-const NO_VERIFY = /(^|[;&|\n]\s*)git\s+[^\n]*--no-verify(?![\w-])/;
+// Where a command starts: the start of the text, or after ;, &, |, or a newline and any spaces.
+const START = String.raw`(?:^|[;&|\n]\s*)`;
+/** A program by name or by absolute path (/usr/bin/git). */
+const program = (name: string) => String.raw`(?:(?:/[^\s/;&|<>()'"]*)*/)?${name}`;
+const GIT = program("git");
+// git's -C <path> options, the only options the patterns skip before a subcommand. A path is a run of
+// quoted and bare parts; each part starts with a different character and a bare part holds no
+// whitespace, so a run of options reads one way and cannot backtrack exponentially.
+const GIT_DASH_C = String.raw`(?:\s+-C\s+(?:'[^']*'|"[^"]*"|[^\s'"])+)*`;
+// One word: quoted, or up to whitespace or a separator.
+const WORD = String.raw`(?:'[^'\n]*'|"[^"\n]*"|[^\s;&|'"]+)`;
+// An assignment's value: quoted parts and unquoted characters, read to the whole value (up to whitespace,
+// a separator, or the end) so a long value cannot backtrack into many shorter ones.
+const VALUE = String.raw`(?:'[^'\n]*'|"[^"\n]*"|[^\s;&|'"])*(?![^\s;&|])`;
+const ASSIGNMENT = String.raw`[A-Za-z_]\w*=${VALUE}`;
+
+// --no-verify, but not git's own --no-verify-signatures.
+const NO_VERIFY_FLAG = new RegExp(String.raw`--no-verify(?![\w-])`);
+// --no-verify after a git at the start of a line.
+const NO_VERIFY = new RegExp(String.raw`${START}${GIT}\s+[^\n]*${NO_VERIFY_FLAG.source}`);
+// A git at the start of a line, and the rest of its command: unquoted text up to a newline or a comment,
+// with quoted strings and backslash escapes that may carry it onto later lines (a commit message in a
+// here document, or a backslash at a line's end). Each alternative starts with a different character,
+// so the text reads one way.
+const GIT_COMMAND = new RegExp(String.raw`${START}${GIT}[^\S\n]((?:[^\n'"\\\s#]|[^\S\n](?!#)|(?<!\s)#|\\[\s\S]|'[^']*'|"(?:[^"\\]|\\[\s\S])*")*)`, "g");
+// git commit's and git am's short options that take no value, and their long options that begin like a
+// cluster holding n (git refuses a single-dash word of three or more letters that begins a long option's
+// name or begins with no-, as in -include or -no-op, before any hook runs).
+const COMMIT_SHORT_FLAGS = "qvseaipoz";
+const AM_SHORT_FLAGS = "iqsukmcr3";
+const COMMIT_LONG_LIKE_N = ["include", "inter-hunk-context", "interactive", "only"];
+const AM_LONG_LIKE_N = ["include", "interactive"];
+/** -n in a cluster of `flags` (alone, -an, -nm), unless git refuses the word as a misspelled long option. */
+function shortN(flags: string, longNames: string[]): string {
+	const prefixes = longNames.flatMap((name) => [...name].slice(2).map((_, i) => name.slice(0, i + 3)));
+	return String.raw`\s-(?!no-|(?:${prefixes.join("|")})(?![^\s'";&|)]))[${flags}]*n`;
+}
+// -n (--no-verify) on git commit or git am, alone or after short options that take no value (-an), and
+// before any option, which may take the rest of the cluster as its value (-nm). The search stops at ;,
+// &, or | so a later command's -n (git log -n 3) is not taken for it.
+const NO_VERIFY_SHORT = new RegExp(String.raw`${START}${GIT}${GIT_DASH_C}\s+(?:commit(?![\w-])[^\n;&|]*?${shortN(COMMIT_SHORT_FLAGS, COMMIT_LONG_LIKE_N)}|am(?![\w-])[^\n;&|]*?${shortN(AM_SHORT_FLAGS, AM_LONG_LIKE_N)})`);
+// Variables hook managers read to skip hooks: husky, pre-commit, lefthook, overcommit.
+const SKIP_VARIABLES = ["HUSKY_SKIP_HOOKS", "HUSKY", "SKIP", "PRE_COMMIT_ALLOW_NO_CONFIG", "LEFTHOOK_EXCLUDE", "LEFTHOOK", "OVERCOMMIT_DISABLE"];
+// A skip variable assigned where a command starts (alone, among other assignments, or after export and
+// its kin), with git run on the same line, as that command (HUSKY=0 git commit) or after a separator, or
+// starting the next line when only assignments come between (export HUSKY=0, then git commit).
+const SKIP_VARIABLE = new RegExp(String.raw`${START}(?:(?:export|declare|typeset|local|readonly)(?:\s+-\w+)*\s+)?(?:${ASSIGNMENT}\s+)*(?:${SKIP_VARIABLES.join("|")})=${VALUE}(?:(?:\s+${ASSIGNMENT})*\s+|[^\n]*?[;&|]\s*)${GIT}\s`);
+/** One option: a `valued` option and the next word, or any other option word. The two never overlap, so a run of options reads one way and cannot backtrack exponentially. */
+function option(valued: string[]): string {
+	const names = valued.join("|");
+	return String.raw`(?:\s+(?:${names})\s+${WORD}|\s+(?!(?:${names})(?:\s|$))-[^\s;&|]+)`;
+}
+/** A pattern for `text` that ignores the case of its letters only; the i flag would also let -c match -C. */
+const anyCase = (text: string) => [...text].map((letter) => (/[a-z]/i.test(letter) ? `[${letter.toLowerCase()}${letter.toUpperCase()}]` : `\\${letter}`)).join("");
+// A core.hooksPath or hook.* key (git config keys ignore case) set by -c or --config-env among git's
+// options before its subcommand.
+const HOOKS_OVERRIDE = new RegExp(String.raw`${START}${GIT}${option(["-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace"])}*?\s+(?:-c\s+|--config-env(?:=|\s+))['"]?(?:${anyCase("core.hookspath")}|${anyCase("hook.")})`);
+// git config at the start of a line; its words decide whether it writes a hook key.
+const GIT_CONFIG = new RegExp(String.raw`${START}${GIT}${GIT_DASH_C}\s+config(?![\w-])`, "g");
 // A git invocation (at the start or after ;, &, |, or a newline, past any -C <path> options) that
 // publishes or integrates history; merge-base and other hyphenated subcommands are not these.
-const PUBLICATION = /(?:^|[;&|\n]\s*)git(?:\s+-C\s+(?:'[^']*'|"[^"]*"|\S+))*\s+(push|pull|merge|rebase|cherry-pick|revert|am|apply|tag)(?![\w-])/g;
-const PUBLICATION_SUBCOMMANDS = new Set(["push", "pull", "merge", "rebase", "cherry-pick", "revert", "am", "apply", "tag", "send-pack", "http-push"]);
-const SUBTREE_PUBLICATION = new Set(["push", "pull", "merge"]);
-// git subtree options, which may come before its action, that take the next word as their value.
-const SUBTREE_VALUED = new Set(["-P", "--prefix", "-m", "--message", "-b", "--branch", "--annotate", "--onto"]);
+const PUBLICATION = new RegExp(String.raw`${START}${GIT}${GIT_DASH_C}\s+(push|pull|merge|rebase|cherry-pick|revert|am|apply|tag)(?![\w-])`, "g");
+// gh pr merge, with any options between its words.
+const GH_OPTIONS = `${option(["-R", "--repo", "--hostname"])}*`;
+const GH_PR_MERGE = new RegExp(String.raw`${START}${program("gh")}${GH_OPTIONS}\s+pr${GH_OPTIONS}\s+merge(?![\w-])`);
 
-/** Index of the first word that is not an option or an option's value; `--opt=value` carries its own value. */
-function skipOptions(args: string[], valued: Set<string>): number {
-	let i = 0;
-	while (i < args.length && args[i]!.startsWith("-") && args[i] !== "-") i += valued.has(args[i]!) ? 2 : 1;
-	return i;
-}
 // `git tag` options: those that make it list or verify tags, those that create or delete one, and
 // those that take the next word as their value.
 const TAG_LISTS = new Set(["-l", "--list", "--contains", "--no-contains", "--points-at", "--merged", "--no-merged", "-v", "--verify"]);
@@ -44,163 +94,11 @@ const TAG_VALUED = new Set(["-m", "--message", "-F", "--file", "-u", "--local-us
 // Short tag options that select a listing mode.
 const TAG_LIST_SHORT = /^-(l|v|n\d*)$/;
 
-// git's options before the subcommand that take the next word as their value.
-const GIT_VALUED = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix", "--attr-source"]);
-// Short options that take a value for the subcommands whose -n means --no-verify, so a cluster ends at
-// them: in commit -nm the n is a flag, in -mn it is the message.
-const NO_VERIFY_SHORT_VALUED: Record<string, Set<string>> = { commit: new Set(["m", "F", "c", "C", "t", "S", "u"]), am: new Set(["C", "p", "S"]) };
-// `git config` options that take the next word as their value, and those that only read or remove.
-const CONFIG_VALUED = new Set(["-f", "--file", "--blob", "--type", "--default", "--comment", "--value", "--url"]);
-const CONFIG_READS = new Set(["--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "-l", "--unset", "--unset-all", "--get-color", "--get-colorbool"]);
-const CONFIG_READ_ACTIONS = new Set(["get", "list"]);
-const CONFIG_UNSETS = new Set(["--unset", "--unset-all"]);
-const HOOKS_PATH = "core.hookspath";
-// git subcommands that run hooks and take --no-verify to skip them.
-const HOOK_SUBCOMMANDS = new Set(["commit", "merge", "pull", "push", "am", "rebase"]);
-// gh's options before its command that take the next word as their value.
-const GH_VALUED = new Set(["-R", "--repo", "--hostname"]);
-
-/** A git invocation read as git reads it: its config overrides, subcommand, and the subcommand's arguments. */
-type GitCall = { configKeys: string[]; subcommand: string | undefined; args: string[] };
-
-function gitCall(invocation: Invocation): GitCall {
-	const configKeys: string[] = [];
-	const { args } = invocation;
-	let i = 0;
-	while (i < args.length && args[i]!.startsWith("-")) {
-		const arg = args[i]!;
-		const [option, attached] = arg.startsWith("--") && arg.includes("=") ? [arg.slice(0, arg.indexOf("=")), arg.slice(arg.indexOf("=") + 1)] : [arg, undefined];
-		const value = attached ?? (GIT_VALUED.has(option) ? args[i + 1] : undefined);
-		if ((option === "-c" || option === "--config-env") && value !== undefined) configKeys.push(value.split("=")[0]!.toLowerCase());
-		i += attached === undefined && GIT_VALUED.has(option) ? 2 : 1;
-	}
-	return { configKeys, subcommand: args[i], args: args.slice(i + 1) };
-}
-
-/** True when a config key decides which hooks run: core.hooksPath, or any hook.* key (git 2.54 and later config-based hooks). */
-function isHookKey(key: string): boolean {
-	const lower = key.toLowerCase();
-	return lower === HOOKS_PATH || lower.startsWith("hook.");
-}
-
-/** True when a GIT_CONFIG_* assignment carries a hook key: GIT_CONFIG_KEY_<n>=hook.x, or GIT_CONFIG_PARAMETERS naming one. */
-function assignsHookKey(assignment: string): boolean {
-	if (!assignment.startsWith("GIT_CONFIG")) return false;
-	const value = assignment.slice(assignment.indexOf("=") + 1);
-	return /hookspath/i.test(value) || /(^|['"\s])hook\./i.test(value);
-}
-
-/**
- * True when a `git config` call writes a hook key. Reading one passes; setting, unsetting, or removing
- * or renaming its section writes it.
- */
-function writesHookKey(args: string[]): boolean {
-	const positional: string[] = [];
-	let reads = false;
-	let unsets = false;
-	for (let i = 0; i < args.length; i++) {
-		const arg = args[i]!;
-		if (CONFIG_READS.has(arg)) reads = true;
-		if (CONFIG_UNSETS.has(arg)) unsets = true;
-		if (CONFIG_VALUED.has(arg)) i++;
-		else if (!arg.startsWith("-")) positional.push(arg);
-	}
-	if (positional[0] === "unset") unsets = true;
-	// git 2.46+ subcommands that write: set, unset (above), remove-section, rename-section.
-	const sectionWrite = positional[0] === "remove-section" || positional[0] === "rename-section";
-	const keyAt = positional.findIndex(isHookKey);
-	if (keyAt === -1) return false;
-	if (sectionWrite) return true;
-	// Unsetting a hook key writes too: in a husky repository, unsetting core.hooksPath turns its hooks off.
-	if (unsets) return true;
-	if (reads || CONFIG_READ_ACTIONS.has(positional[0] ?? "")) return false;
-	// `git config <key>` alone reads it; a value after the key, or a section command, writes it.
-	return keyAt + 1 < positional.length || positional[0] === "set" || args.some((arg) => /^--(add|replace-all|remove-section|rename-section)$/.test(arg));
-}
-
-/** True when a short-option cluster holds -n (--no-verify) before any option that takes a value. */
-function clusterHasNoVerify(arg: string, valued: Set<string>): boolean {
-	if (!/^-[A-Za-z0-9]/.test(arg)) return false;
-	for (const letter of arg.slice(1)) {
-		if (letter === "n") return true;
-		if (valued.has(letter)) return false;
-	}
-	return false;
-}
-
-/** How an invocation skips git hooks: a flag, a hook-key override for one command, a config write, or a hook manager's skip variable. */
-type HookSkip = "flag" | "override" | "config-write" | "skip-variable";
-
-// Variables hook managers read to skip hooks: husky, pre-commit, lefthook, overcommit.
-const SKIP_VARIABLES = new Set(["HUSKY", "HUSKY_SKIP_HOOKS", "SKIP", "PRE_COMMIT_ALLOW_NO_CONFIG", "LEFTHOOK", "LEFTHOOK_EXCLUDE", "OVERCOMMIT_DISABLE"]);
-const EXPORTERS = new Set(["export", "declare", "typeset", "local", "readonly"]);
-// PowerShell cmdlets (and aliases) that write an item, which for env:NAME sets an environment variable.
-const ENVIRONMENT_WRITERS = new Set(["set-item", "si", "new-item", "ni", "set-content", "sc"]);
-// [Environment]::SetEnvironmentVariable(<name>, ...), with or without System.
-const SET_ENVIRONMENT_VARIABLE = /\[\s*(?:System\.)?Environment\s*\]\s*::\s*SetEnvironmentVariable\s*\(\s*/gi;
-
-/**
- * The variable an env: path names in a PowerShell item cmdlet's arguments (-Path or -LiteralPath, or the
- * first positional word), upper-cased; throws Unreadable when the env: path is not a literal name.
- */
-function environmentProviderName(args: string[]): string | undefined {
-	for (let i = 0; i < args.length; i++) {
-		const arg = args[i]!;
-		const colon = /^-(?:path|literalpath|p|pspath|lp):(.+)$/is.exec(arg);
-		const value = colon ? colon[1] : /^-(path|literalpath|p|pspath|lp)$/i.test(arg) ? args[i + 1] : arg.startsWith("-") ? undefined : arg;
-		if (value === undefined || !/^env:/i.test(value)) continue;
-		const name = /^env:([A-Za-z_][\w]*)$/i.exec(value);
-		if (!name) throw new Unreadable(`its environment path ${value} is not a literal variable name`);
-		return name[1]!.toUpperCase();
-	}
-	return undefined;
-}
-
-/** The variables [Environment]::SetEnvironmentVariable sets in PowerShell text; throws Unreadable when a name is not a literal. */
-function environmentApiNames(command: string): string[] {
-	const names: string[] = [];
-	for (const match of command.matchAll(SET_ENVIRONMENT_VARIABLE)) {
-		const literal = /^(['"])([A-Za-z_][\w]*)\1\s*,/.exec(command.slice(match.index! + match[0].length));
-		if (!literal) throw new Unreadable("it calls SetEnvironmentVariable with a name that is not a literal");
-		names.push(literal[2]!.toUpperCase());
-	}
-	return names;
-}
-
-/**
- * True when a command sets a hook manager's skip variable: in a git command's environment (its own
- * assignments, or those of a program the reader followed into, such as `HUSKY=0 sh -c 'git ...'`), as a
- * standalone assignment, through export and its kin, or with PowerShell's `$env:NAME = ...`.
- */
-function skipVariablesSet(calls: Invocation[]): boolean {
-	const named = (assignment: string) => SKIP_VARIABLES.has(assignment.slice(0, assignment.indexOf("=")));
-	return calls.some((call) => {
-		const name = programName(call.program);
-		if (name === "git" || name === "") return call.assignments.some(named);
-		if (EXPORTERS.has(name)) return call.args.some((arg) => arg.includes("=") && named(arg));
-		return ENVIRONMENT_WRITERS.has(name) && environmentProviderName(call.args) !== undefined && SKIP_VARIABLES.has(environmentProviderName(call.args)!);
-	});
-}
-
-function invocationHookSkip(invocation: Invocation): HookSkip | undefined {
-	if (invocation.assignments.some(assignsHookKey)) return "override";
-	if (programName(invocation.program) !== "git") return undefined;
-	const call = gitCall(invocation);
-	if (call.configKeys.some(isHookKey)) return "override";
-	// Any prefix git accepts for --no-verify, before a `--` that starts pathspecs, on a subcommand that runs hooks.
-	const options = call.args.indexOf("--") === -1 ? call.args : call.args.slice(0, call.args.indexOf("--"));
-	if (call.subcommand !== undefined && HOOK_SUBCOMMANDS.has(call.subcommand) && options.some((arg) => arg.length >= "--no-ve".length && "--no-verify".startsWith(arg))) return "flag";
-	const shortValued = call.subcommand === undefined ? undefined : NO_VERIFY_SHORT_VALUED[call.subcommand];
-	if (shortValued && options.some((arg) => clusterHasNoVerify(arg, shortValued))) return "flag";
-	if (call.subcommand === "config" && writesHookKey(call.args)) return "config-write";
-	return undefined;
-}
-
 /**
  * True when `git tag` with these arguments only lists or verifies tags: no option that creates or
  * deletes one, and either a listing option or no tag name. Option values (-m <msg>) are values, not options.
  */
-export function tagReads(args: string[]): boolean {
+function tagReads(args: string[]): boolean {
 	let lists = false;
 	let names = 0;
 	for (let i = 0; i < args.length; i++) {
@@ -222,95 +120,91 @@ export function tagReads(args: string[]): boolean {
 	return lists || names === 0;
 }
 
-/** The publication or integration command one invocation runs (`git push`, `git subtree push`, `gh pr merge`), if any. */
-function invocationPublication(invocation: Invocation): string | undefined {
-	const name = programName(invocation.program);
-	if (name === "git") {
-		const { subcommand, args } = gitCall(invocation);
-		if (subcommand === undefined) return undefined;
-		if (subcommand === "subtree") {
-			const action = args[skipOptions(args, SUBTREE_VALUED)];
-			return action !== undefined && SUBTREE_PUBLICATION.has(action) ? `git subtree ${action}` : undefined;
-		}
-		if (subcommand === "tag" && tagReads(args)) return undefined;
-		return PUBLICATION_SUBCOMMANDS.has(subcommand) ? `git ${subcommand}` : undefined;
-	}
-	if (name === "gh") {
-		const positional: string[] = [];
-		for (let i = 0; i < invocation.args.length && positional.length < 2; i++) {
-			const arg = invocation.args[i]!;
-			if (GH_VALUED.has(arg)) i++;
-			else if (!arg.startsWith("-")) positional.push(arg);
-		}
-		return positional[0] === "pr" && positional[1] === "merge" ? "gh pr merge" : undefined;
-	}
-	return undefined;
-}
+// `git config` options that take the next word as their value, those that only read, and those that unset.
+const CONFIG_VALUED = new Set(["-f", "--file", "--blob", "--type", "--default", "--comment", "--value", "--url"]);
+const CONFIG_READS = new Set(["--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "-l", "--get-color", "--get-colorbool"]);
+const CONFIG_UNSETS = new Set(["--unset", "--unset-all"]);
+// git 2.46+ `git config` subcommands that only read, and those that write a whole section.
+const CONFIG_READ_ACTIONS = new Set(["get", "list"]);
+const CONFIG_SECTION_WRITES = new Set(["remove-section", "rename-section", "--remove-section", "--rename-section"]);
 
-/** The publication subcommand the text patterns find, skipping `git tag` forms that only list (its words read up to the next separator). */
-function patternPublication(command: string): string | undefined {
-	for (const match of command.matchAll(PUBLICATION)) {
-		const subcommand = match[1]!;
-		if (subcommand === "tag") {
-			const rest = command.slice(match.index! + match[0].length).split(/[;&|\n)]/)[0]!;
-			const words = rest.trim().split(/\s+/).filter(Boolean).map((word) => word.replace(/^['"]|['"]$/g, ""));
-			if (tagReads(words)) continue;
-		}
-		return `git ${subcommand}`;
-	}
-	return undefined;
+/** True when a config key decides which hooks run: core.hooksPath, or any hook.* key (git 2.54 config-based hooks). */
+function isHookKey(key: string): boolean {
+	const lower = key.toLowerCase();
+	return lower === "core.hookspath" || lower.startsWith("hook.");
 }
 
 /**
- * Throws Unreadable when a git or gh invocation's subcommand word, or any option word, holds an
- * unquoted glob or brace pattern, which the shell would expand into words the guard cannot see.
- * Pathspecs and other operands may hold patterns.
+ * True when `git config` with these arguments sets or unsets a hook key, or removes or renames a hook
+ * section. Reading one (`git config core.hooksPath`, `--get`, `get`) passes.
  */
-function checkPatterns(invocation: Invocation): void {
-	const name = programName(invocation.program);
-	if (name !== "git" && name !== "gh") return;
-	const { args, patterned } = invocation;
-	// git's subcommand follows its global options; gh's command is its first operand and, except for
-	// `gh api <path>`, its second.
-	const commandWords = new Set<number>();
-	if (name === "git") commandWords.add(args.length - gitCall(invocation).args.length - 1);
-	else {
-		const operands = args.flatMap((arg, i) => (arg.startsWith("-") ? [] : [i]));
-		operands.slice(0, args[operands[0] ?? -1] === "api" ? 1 : 2).forEach((i) => commandWords.add(i));
+function configWritesHookKey(args: string[]): boolean {
+	const positional: string[] = [];
+	let reads = false;
+	let unsets = false;
+	let sectionWrite = false;
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i]!;
+		if (CONFIG_READS.has(arg)) reads = true;
+		if (CONFIG_UNSETS.has(arg)) unsets = true;
+		if (CONFIG_SECTION_WRITES.has(arg)) sectionWrite = true;
+		if (CONFIG_VALUED.has(arg)) i++;
+		else if (!arg.startsWith("-")) positional.push(arg);
 	}
-	args.forEach((arg, i) => {
-		// An option's attached value (--jq=.[0]) may hold a pattern; its name may not.
-		const isOption = arg.startsWith("-") && !arg.includes("=");
-		if (patterned[i] && (isOption || commandWords.has(i))) throw new Unreadable(`its ${name} ${isOption ? "option" : "subcommand"} word ${arg} holds an unquoted glob or brace pattern`);
-	});
+	if (positional[0] === "unset") unsets = true;
+	if (positional[0] !== undefined && CONFIG_SECTION_WRITES.has(positional[0])) sectionWrite = true;
+	const keyAt = positional.findIndex(isHookKey);
+	if (keyAt === -1) return false;
+	// Unsetting a hook key writes it too: in a husky repository, unsetting core.hooksPath turns its hooks off.
+	if (sectionWrite || unsets) return true;
+	if (reads || CONFIG_READ_ACTIONS.has(positional[0]!)) return false;
+	// `git config <key>` alone reads it; a value after the key, `set`, `--add`, or `--replace-all` writes it.
+	return keyAt + 1 < positional.length || positional[0] === "set" || args.some((arg) => arg === "--add" || arg === "--replace-all");
 }
 
-/** What each reader finds in a command. */
-type Findings = { reader: { skip: HookSkip | undefined; publication: string | undefined }; pattern: { skip: boolean; publication: string | undefined } };
+// A redirection word (2>/dev/null, >&2, 2>&1, &>log, <in); one that is only its operator takes the next word as its target.
+const REDIRECTION = /^(?:\d*[<>]|&>)/;
+const REDIRECTION_OPERATOR = /^(?:\d*(?:[<>]|>>|<<<?|<>|>\||[<>]&)|&>>?)$/;
 
-/** Reads the command with both readers. Throws Unreadable when the command reader cannot read it. */
-function findings(command: string, dialect: Dialect): Findings {
-	const calls = invocations(command, dialect);
-	for (const call of calls) checkPatterns(call);
-	const runsGit = calls.some((call) => programName(call.program) === "git");
-	const apiSets = dialect === "powershell" && environmentApiNames(command).some((name) => SKIP_VARIABLES.has(name));
-	const skip = calls.map(invocationHookSkip).find((found) => found !== undefined) ?? (runsGit && (skipVariablesSet(calls) || apiSets) ? "skip-variable" : undefined);
-	return {
-		reader: { skip, publication: calls.map(invocationPublication).find((found) => found !== undefined) },
-		pattern: { skip: NO_VERIFY.test(command), publication: patternPublication(command) },
-	};
+/**
+ * The words after a pattern's match up to the next separator or comment, with a quote at either end
+ * removed and redirections and their targets dropped. The & of a redirection (2>&1, &>) is not a separator.
+ */
+function wordsAfter(command: string, match: RegExpMatchArray): string[] {
+	const rest = command.slice(match.index! + match[0].length).split(/[;|\n)]|(?<![<>])&(?!>)/)[0]!;
+	const words: string[] = [];
+	let target = false;
+	for (const word of rest.trim().split(/\s+/).filter(Boolean)) {
+		if (word.startsWith("#")) break;
+		if (target) target = false;
+		else if (REDIRECTION.test(word)) target = REDIRECTION_OPERATOR.test(word);
+		else words.push(word.replace(/^['"]|['"]$/g, ""));
+	}
+	return words;
 }
 
-/** True when either reader finds the command skipping git hooks. Throws Unreadable. */
-export function skipsHooks(command: string, dialect: Dialect = "posix"): boolean {
-	const found = findings(command, dialect);
-	return found.reader.skip !== undefined || found.pattern.skip;
+/** How a command's text skips git hooks. */
+export type HookSkip = "no-verify" | "short-n" | "skip-variable" | "hooks-config";
+
+/** How the text skips git hooks, if it does: --no-verify, -n on commit or am, a skip variable, or a hook key override or config write. */
+export function hookSkip(command: string): HookSkip | undefined {
+	if (NO_VERIFY.test(command)) return "no-verify";
+	for (const match of command.matchAll(GIT_COMMAND)) if (NO_VERIFY_FLAG.test(match[1]!)) return "no-verify";
+	if (NO_VERIFY_SHORT.test(command)) return "short-n";
+	if (SKIP_VARIABLE.test(command)) return "skip-variable";
+	if (HOOKS_OVERRIDE.test(command)) return "hooks-config";
+	for (const match of command.matchAll(GIT_CONFIG)) if (configWritesHookKey(wordsAfter(command, match))) return "hooks-config";
+	return undefined;
 }
 
-/** The publication or integration command either reader finds (`git push`, `gh pr merge`), if any. Throws Unreadable. */
-export function publicationCommand(command: string, dialect: Dialect = "posix"): string | undefined {
-	const found = findings(command, dialect);
-	return found.reader.publication ?? found.pattern.publication;
+/** The publication or integration command (`git push`, `git tag`, `gh pr merge`) a line of the text starts, skipping `git tag` forms that only list. */
+export function publicationCommand(command: string): string | undefined {
+	for (const match of command.matchAll(PUBLICATION)) {
+		const subcommand = match[1]!;
+		if (subcommand === "tag" && tagReads(wordsAfter(command, match))) continue;
+		return `git ${subcommand}`;
+	}
+	return GH_PR_MERGE.test(command) ? "gh pr merge" : undefined;
 }
 
 /** True when the actor may publish: the main session, or a child running as an autopilot-full owner. */
@@ -323,41 +217,25 @@ export function mayPublish(actor: Actor): boolean {
 	}
 }
 
+const MENTION = "If the text only mentions it, as in a commit message, write the message to a file with the editor tool and run git commit -F <file>";
+const HOOK_SKIP_REASONS: Record<HookSkip, string> = {
+	"no-verify": "git guard blocked skipping git hooks with --no-verify after git, on its line or on a later line that a quoted string or a line-ending backslash carries the command onto: commit and push with hooks running, and fix what a hook reports instead of skipping it. If the text only mentions the flag, as in a commit message or a search, write the message to a file with the editor tool and run git commit -F <file> (or gh pr create --body-file <file> for a pull request body), or search for the flag without its leading dashes",
+	"short-n": `git guard blocked skipping git hooks with -n (--no-verify) on git commit or git am, alone or among short flags such as -nm: commit with hooks running, and fix what a hook reports instead of skipping it. ${MENTION}`,
+	"skip-variable": `git guard blocked skipping git hooks with a hook manager's skip variable (HUSKY, SKIP, LEFTHOOK, and the like) assigned on or just before a line that runs git: let the hooks run, and fix what a hook reports instead of skipping it. ${MENTION}`,
+	"hooks-config": `git guard blocked skipping git hooks by setting or unsetting core.hooksPath or a hook.* key with git -c, --config-env, or git config: let the hooks run, and fix what a hook reports instead of skipping it; ask the user to change the key if the repository needs other hooks. ${MENTION}`,
+};
+
 /**
  * Why the actor may not run the command, or undefined when the policy allows it. Skipping hooks is
  * refused for every actor; publication and integration are refused for every child except an owner.
- * A command the reader cannot read is refused for every actor.
  */
-export function blockReason(command: string, actor: Actor, dialect: Dialect = "posix"): string | undefined {
-	let found: Findings;
-	try {
-		found = findings(command, dialect);
-	} catch (error) {
-		if (!(error instanceof Unreadable)) throw error;
-		return `git guard could not read this command: ${error.message}. Rewrite it so a shell can read it plainly: close every quote, substitution, and here document, keep nesting shallow, and name programs without patterns`;
-	}
-	const publishes = !mayPublish(actor);
-	switch (found.reader.skip) {
-		case "flag":
-		case "override":
-			return "git guard blocked skipping git hooks (--no-verify, commit or am -n, or a core.hooksPath or hook.* override): commit and push with hooks running, and fix what a hook reports instead of skipping it";
-		case "skip-variable":
-			return "git guard blocked a hook manager's skip variable (HUSKY, SKIP, LEFTHOOK, and the like) on a git command: let the hooks run, and fix what they report instead of skipping them";
-		case "config-write":
-			return "git guard blocked changing core.hooksPath or a hook.* key with git config, because it can switch hooks off: ask the user to set it if the repository needs its own hooks";
-		case undefined:
-			break;
-	}
-	if (publishes && found.reader.publication !== undefined) return publicationReason(found.reader.publication);
-	if (found.pattern.skip) {
-		return "git guard blocked a command whose text has --no-verify after git on one line. It may only mention the flag, as in a commit message or a search: write such a message to a file with the editor tool and run git commit -F <file>, and search for the flag without its leading dashes";
-	}
-	if (publishes && found.pattern.publication !== undefined) {
-		return `git guard blocked a command whose text starts a line with ${found.pattern.publication}, which a child may not run. It may only mention the command, as in a commit message or a search: write such a message to a file with the editor tool and run git commit -F <file>, and search without git in front`;
+export function blockReason(command: string, actor: Actor): string | undefined {
+	const skip = hookSkip(command);
+	if (skip !== undefined) return HOOK_SKIP_REASONS[skip];
+	const publication = publicationCommand(command);
+	if (!mayPublish(actor) && publication !== undefined) {
+		const name = publication.split(" ")[0];
+		return `git guard blocked child publication/integration command: ${publication}. Only the coordinating session or an ${PUBLISHING_CHILD_ROLE} publishes or integrates; commit locally and report the branch and head SHA to your parent instead. If the text only mentions the command, as in a commit message or a search, write the message to a file with the editor tool and run git commit -F <file>, or search without ${name} in front`;
 	}
 	return undefined;
-}
-
-function publicationReason(publication: string): string {
-	return `git guard blocked child publication/integration command: ${publication}. Only the coordinating session or an ${PUBLISHING_CHILD_ROLE} publishes or integrates; commit locally and report the branch and head SHA to your parent instead`;
 }

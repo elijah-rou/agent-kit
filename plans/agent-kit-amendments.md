@@ -3,10 +3,10 @@
 ## Status
 
 - Track: interview
-- Intended outcome: approved (decisions D1 to D7, 2026-10-14)
+- Intended outcome: approved (decisions D1 to D10, 2026-10-14)
 - Slice plan: approved
-- Current slice: 0 (0a done, 0c in PR #37)
-- User checkpoints: none beyond landing each slice's PRs
+- Current slice: 1 to 8 built in the overnight autopilot-full run; see "Run status" for what landed and what waits on the user
+- User checkpoints: countersigns for policy-path PRs, bootstrap PRs, and the open decisions under "Run status"
 
 ## Authority
 
@@ -174,6 +174,18 @@ Each slice is one PR or a short stack. It is verified with `verify-agent-kit`, a
 7. **Scheduled upkeep:** A3, L5, L6, L8, A6.
 8. **Removals and Jev:** R3, J1, J2.
 9. **Outer loop:** A8 through L7 v1, only after A1 to A3 have run cleanly for a week, and only for repos with a verify skill.
+
+## Run status (autopilot-full, 2026-10-14)
+
+Merged to agent-kit `main`: #34, #35, #37, #38, #40, #41, #42, #43, #44, #48 (comments lens, A6), #47 (local validate gate and evidence hygiene, G3 and O7).
+
+Waiting on the user's countersign (verifier-blocked, policy paths): #46 (liveness and review cap: A1, L1 to L4, X6, P4), #45 (verify kit policy-path rule), #39 (Codex removal, R3/D4).
+
+Held for the user's design call (split at the review cap): #49 (weekly upkeep schedule, A3/L5: permission mode of unattended threads, worktree cleanup, reach of the standing approval), #50 (git-guard assignment-prefix reading: four open fail-open and timing findings).
+
+Bootstrap, merge-ready for the user: #29 (pin to 8a43c4c), #30 (session-start kit-lag warning, L6 first half), #31 (stop installing Codex; must land before any pin past agent-kit #39; dotfiles drops its `codex` selection in the same commit as its lock bump).
+
+Open items: L6 second half (landing mode opens the bootstrap pin PR) after #46; L9 route choice (T3 already passes the token; persistence across reboots needs a LaunchAgent or a T3 binary-path wrapper); A2 watchdog and O6 three-tick stop; stale "until the mode adopts" conditionals once #46 lands; O10 for the worktrees of the open PRs.
 
 ## Notes from slice 0a review
 

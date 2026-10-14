@@ -1,8 +1,8 @@
 // Finds each git or gh that a run of assignments hides from classify.ts's patterns (GIT_EDITOR=true git
 // commit --no-verify), which see git only at the start of a line or after ;, &, or |. One left-to-right
 // pass over the text reads it as a shell lexer would, far enough to know where a command starts and where
-// each word ends: quotes, $'...', backslash escapes and line continuations, $(...), backquotes, ${...},
-// redirections, comments, and here documents. It is not a parser: it builds no syntax tree and reads no
+// each word ends: quotes, $'...', backslash escapes and line continuations, $(...), $((...)), backquotes,
+// ${...}, redirections, comments, and here documents. It is not a parser: it builds no syntax tree and reads no
 // grammar beyond a command's leading assignments and the few reserved words that start a command.
 //
 // The result only ever adds refusals: classify.ts denies when its patterns deny the text as written, or
@@ -39,7 +39,9 @@ type CommandFrame = {
 	/** The next word is a redirection's target, not part of the command. */
 	redirectTarget: boolean;
 };
-type Frame = CommandFrame | { kind: "double" } | { kind: "brace"; quoted: boolean };
+/** $((...)): parentheses nest, and < or > is an operator, never a redirection or a here document. */
+type ArithmeticFrame = { kind: "arithmetic"; depth: number };
+type Frame = CommandFrame | ArithmeticFrame | { kind: "double" } | { kind: "brace"; quoted: boolean };
 
 /** Words that leave the word after them at a command's start. */
 const RESERVED = new Set(["!", "{", "if", "then", "elif", "else", "do", "while", "until", "time"]);
@@ -234,6 +236,24 @@ export function liftAssignedCommands(text: string, flagged: ReadonlySet<string>)
 			} else at++;
 			continue;
 		}
+		if (frame.kind === "arithmetic") {
+			if (c === "(") frame.depth++;
+			else if (c === ")" && frame.depth > 0) frame.depth--;
+			else if (c === ")") {
+				stack.pop();
+				// $((...)) ends with )); a lone ) ends it too, where bash would have read $( (...) ).
+				if (next === ")") at++;
+			} else if (c === "$" && next === "(") {
+				stack.push(commandFrame(")"));
+				at++;
+			} else if (c === "$" && next === "{") {
+				stack.push({ kind: "brace", quoted: false });
+				at++;
+			} else if (c === "`") stack.push(commandFrame("`"));
+			else if (c === '"') stack.push({ kind: "double" });
+			at++;
+			continue;
+		}
 		if (frame.kind === "brace") {
 			if (c === "\\") {
 				if (next === "\n") joins.push(at);
@@ -333,6 +353,9 @@ export function liftAssignedCommands(text: string, flagged: ReadonlySet<string>)
 				} else if (next === '"') {
 					stack.push({ kind: "double" });
 					at += 2;
+				} else if (next === "(" && text[at + 2] === "(") {
+					stack.push({ kind: "arithmetic", depth: 0 });
+					at += 3;
 				} else if (next === "(") {
 					stack.push(commandFrame(")"));
 					at += 2;

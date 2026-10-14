@@ -209,6 +209,9 @@ describe("assignments that prefix git or gh", () => {
 		for (const [command, name] of [["X=$(date +%s) git push", "git push"], ["X=`date +%s` git push", "git push"], ["X=a\\ b git rebase main", "git rebase"], ["X=$(cd a; pwd) gh pr merge 3", "gh pr merge"], ["X=$'it\\'s' git push", "git push"], ["X=$(Y=1 git log) git push", "git push"], ["X=$(Y=1 git push) git log", "git push"]] as const) publishes(command, name);
 		allowedForAll(["X=$(date +%s) git commit -m x", "X=`date` git log -n 3", "X=a\\ b git status"]);
 		allowedForChild(["X='a b' git tag -l", "X=$(date) git tag -l"]);
+		// A shift inside $((...)) is not a here document, so the lines after it are still read.
+		publishes("X=$((1<<2)) git log\nY=1 git push", "git push");
+		publishes("X=$(( (1+2) * 3 )) git push", "git push");
 	});
 	test("an escaped quote in a value is not a quote, and a command inside a value's substitution is still seen", () => {
 		for (const command of ["X=\\'; git push; echo \\' git tag -l", "X=$(true; git push) git tag -l", "X=\\\"; git push; echo \\\" git tag -l"]) publishes(command, "git push");

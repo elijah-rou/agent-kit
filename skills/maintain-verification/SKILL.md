@@ -12,7 +12,7 @@ A feature map rots as soon as the app changes. Cover every feature file from sou
 
 End with exactly one, and say which:
 
-- **clean:** every feature had source and live coverage, and nothing needs changing. No branch.
+- **clean:** every feature had source and live coverage, and nothing needs changing; or a scheduled run ended early with nothing to do (Scheduled runs). No branch.
 - **changed:** one commit series of proven corrections on one branch.
 - **blocked:** coverage could not finish, or a proven fix could not land safely. Say exactly what blocked it.
 
@@ -22,7 +22,7 @@ Edit only the verification skill's own directory (its `SKILL.md`, `features/`, a
 
 ## Pass
 
-0. **Locate the target.** Find the skill under `.agents/skills/verify-*/`. With several candidates, ask which one, recommending the one whose surface the user's request names. With none, stop and point to `create-verification`.
+0. **Locate the target.** Find the skill under `.agents/skills/verify-*/`. With several candidates, ask which one, recommending the one whose surface the user's request names. With none, end `blocked` and point to `create-verification`.
 
 1. **Index hygiene.** Read `features/README.md` and list its sibling files. Fix missing, extra, duplicate, or dead entries, check that each feature file has its four sections, check that the control CLI has exactly one drive target per feature file and every subcommand and Dev loop lever `create-verification` step 2 requires for this product (a missing one is a harness gap, step 5), and check that every agent runtime the user works with here can discover the skill: each one that does not read `.agents/skills/` has a discovery symlink resolving to the skill's `SKILL.md`. Add a missing symlink or repair a broken one as part of this step.
 
@@ -50,10 +50,10 @@ Keep run notes (features covered, unreachable prerequisites, confirmed drift) in
 
 ## Scheduled runs
 
-This pass may be run by the weekly T3 schedule `create-verification` step 5 creates, in a fresh thread whose prompt names the repository and trunk. The instructions' rule on schedules gives `maintain-verification` upkeep schedules the user's standing approval, so the schedule needs no separate approval. A scheduled run is the same pass with no one watching:
+This pass may be run by the weekly T3 schedule `create-verification` step 5 creates, in a fresh thread whose prompt names the repository, trunk, and the pull request that adds the skill. The instructions' rule on schedules gives `maintain-verification` upkeep schedules the user's standing approval, so the schedule needs no separate approval. A scheduled run is the same pass with no one watching:
 
-- If the skill the prompt names is not on current trunk yet (its pull request has not merged), end at once, changing nothing; after the reply's first line, report only `Skill not on trunk yet: <skill path>`.
-- One upkeep pull request per skill: its branch is `agent/verify-upkeep-<app>`. If a pull request from that branch is still open, end at once reporting it, with no new edits and no new pull request. If the branch exists on `origin` with no open pull request, end `blocked`, naming it.
+- If the skill the prompt names is not on current trunk yet, change nothing and check the pull request the prompt names as adding it. Still open: end `clean`; after the reply's first line, report only the outcome and `Skill not on trunk yet: <skill path>, waiting for #<number>`. Closed without merging, merged with the skill since removed, or not named: end `blocked`, naming the schedule's title (`Weekly verification upkeep: <repository> verify-<app>`) and telling the user to delete that schedule.
+- One upkeep pull request per skill at a time. If a pull request from any `agent/verify-upkeep-<app>-<YYYY-MM-DD>` branch is open, end `clean` at once reporting it, with no new edits and no new pull request. Otherwise this run's branch is `agent/verify-upkeep-<app>-<YYYY-MM-DD>`, dated with the run's day.
 - Work in a worktree of its own off current trunk (`git-workflow`), never in a checkout someone else may be writing.
 - Ask nothing. Step 0 takes the skill the prompt names; anything else that would need the user ends the pass `blocked`, saying what it needs.
 - Never merge. A `changed` pull request waits for the user, and one that step 7 makes a policy change lands only by countersign.

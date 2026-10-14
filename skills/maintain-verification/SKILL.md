@@ -1,6 +1,6 @@
 ---
 name: maintain-verification
-description: Audit and repair a repository's verification skill and feature map under `.agents/skills/verify-<app>/`, with one read-only source reader per feature, one live pass that drives every feature, triage into doc drift, harness gap, or product gap, and an outcome of clean, changed, or blocked. Use when the user invokes maintain-verification or asks to audit the verify skill. Not for creating one; use create-verification.
+description: Audit and repair a repository's verification skill and feature map under `.agents/skills/verify-<app>/`, with one read-only source reader per feature, one live pass that drives every feature, triage into doc drift, harness gap, or product gap, and an outcome of clean, changed, or blocked. Use when the user invokes maintain-verification, asks to audit the verify skill, or its weekly upkeep schedule runs it. Not for creating one; use create-verification.
 disable-model-invocation: true
 ---
 
@@ -48,6 +48,14 @@ Edit only the verification skill's own directory (its `SKILL.md`, `features/`, a
 
 Keep run notes (features covered, unreachable prerequisites, confirmed drift) in a scratch location outside the repository; do not commit them.
 
+## Scheduled runs
+
+This pass may be run by the weekly T3 schedule `create-verification` step 5 creates, in a fresh thread whose prompt names the repository and trunk. The instructions' rule on schedules gives `maintain-verification` upkeep schedules the user's standing approval, so the schedule needs no separate approval. A scheduled run is the same pass with no one watching:
+
+- Work in a worktree of its own off current trunk (`git-workflow`), never in a checkout someone else may be writing.
+- Ask nothing. Step 0 takes the skill the prompt names; anything else that would need the user ends the pass `blocked`, saying what it needs.
+- Never merge. A `changed` pull request waits for the user, and one that step 7 makes a policy change lands only by countersign.
+
 ## Reply
 
-Lead with product gaps and anything blocked. Then the outcome, coverage per feature (source and live, with evidence paths), drift fixed, harness fixes and their re-proofs, the index, section, drive-target, lever, and symlink check from step 6, and the branch or pull request if any.
+A scheduled run's reply starts with the line `Scheduled weekly upkeep: <repository>`. Lead with product gaps and anything blocked. Then the outcome, coverage per feature (source and live, with evidence paths), drift fixed, harness fixes and their re-proofs, the index, section, drive-target, lever, and symlink check from step 6, and the branch or pull request if any.

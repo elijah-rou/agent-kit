@@ -6,7 +6,7 @@ Written 2026-10-13. It compares how a user drives four kinds of work through pst
 
 pstack has one front door. The user types `/poteto-mode`, ideally pinned as a Custom Mode so it stays in context, and states a goal, a done check, and the proof they want. The mode matches one of 23 playbooks and copies its steps into the todo list. Rigor is opt-in per chat; the guide says to save `/poteto-mode` for work that needs it.
 
-agent-kit has no front door, by design: `skills/README.md` calls `poteto-mode` "a mode skill with no equivalent here". The method is always on through `claude/CLAUDE.md` and `pi/AGENTS.md`. The user states the outcome and what done means; the agent decides everything reversible and stops only at one-way doors (`design-checkpoint`), decisions that are the user's, and blockers. The user's levers are the manual skills (`create-verification`, `maintain-verification`, `babysit-and-ship`, `background-run`, `correct`, `reflect`) and the words that invoke a landing mode ("autopilot this", "ship it", "full autopilot"). Jev classifies every prompt (ADR 0002), but its notes are all in shadow, so nothing routes a prompt automatically yet.
+agent-kit has no front door, by design: `skills/README.md` calls `poteto-mode` "a mode skill with no equivalent here". The method is always on through `claude/CLAUDE.md` and `pi/AGENTS.md`. The user states the outcome and what done means; the agent decides everything reversible and stops only at one-way doors (`design-checkpoint`), decisions that are the user's, and blockers. The user's levers are the manual skills (`create-verification`, `maintain-verification`, `babysit-and-ship`, `background-run`, `correct`, `reflect`) and the words that invoke a landing mode ("autopilot this", "ship it", "full autopilot"). Jev records every prompt and withholds short, long, credential-bearing, child-session, and opted-out ones from TypeSafe (ADR 0002), but its notes are all in shadow, so nothing routes a prompt automatically yet.
 
 ## Flow by flow
 
@@ -19,12 +19,12 @@ pstack: `/setup-pstack` once per machine picks models and offers to generate a v
 agent-kit:
 
 1. The user states the outcome and done. If the stack is open, `technology-selection` applies.
-2. The first data model, CLI or API surface, and file formats are one-way doors, so `design-checkpoint` produces at least two candidates, grafts the best into a base, commits the sketch, and stops for review. This is the only pre-build stop.
+2. Persisted formats and public contracts others will depend on are one-way doors, and so is a data structure that is persisted or, in systems and games work, a core structure. A new CLI or API with no existing callers is reversible. At a door, `design-checkpoint` produces at least two candidates, grafts the best into a base, commits the sketch, and stops for review. This is the only pre-build stop; any other data-model choice is a hard part the agent presents with a default (see the quick-prototype flow).
 3. Multi-slice work gets a `feature-shaping` plan in `plans/<slug>.md` and thin end-to-end slices without further approval.
 4. Creating the GitHub repository is outward-facing and needs authorization; `github-rulesets` applies `baseline` after the first push under the same authorization.
 5. Once something runs, `create-verification` writes `.agents/skills/verify-<app>/`. No landing mode starts without it.
 6. Prompts from the repository go to TypeSafe unless it commits `.agents/jev-opt-out`.
-7. In a private repository, `ship` is never available (it requires a public repository); `autopilot-stack` is, and `autopilot-full` runs with only the local `agentic verify status` check behind it.
+7. In a private repository, `ship` is never available (it requires a public repository); `autopilot-stack` is, and `autopilot-full` still needs the `merge-gate` ruleset on a plan that offers rulesets. Only where rulesets are unavailable (`agentic rulesets plan` exits 3) does it run with just the local `agentic verify status` check behind it.
 
 ### Maintaining a project
 
@@ -50,7 +50,7 @@ agent-kit sets depth by risk, not size:
 - **A one-way door:** `design-checkpoint` stops for review; reversible work that does not depend on the shape continues.
 - **Multi-slice:** a `feature-shaping` plan, pausing only on an invalidated decision, a blocker, or a checkpoint the user asked for.
 
-The differences: pstack's `architect` runs on any boundary-crossing change and implements immediately unless asked to stop, while agent-kit always stops at a door and never otherwise. pstack mandates delegating the code; agent-kit delegates when it helps. pstack reviews with multi-model `interrogate` panels; agent-kit uses one fresh reviewer, or two for elevated risk.
+The differences: pstack's `architect` runs on any boundary-crossing change and implements immediately unless asked to stop, while agent-kit stops before building only at a door, and otherwise stops only for a checkpoint the user asked for, an unresolved product decision (which `feature-shaping` works through with the user), or a blocker. pstack mandates delegating the code; agent-kit delegates when it helps. pstack reviews with multi-model `interrogate` panels; agent-kit uses one fresh reviewer, or two for elevated risk.
 
 ### A quick prototype
 
@@ -65,14 +65,14 @@ A throwaway spike with no decision behind it has no flow in either kit. Both say
 1. **No guide for the user.** pstack ships a ten-page guide with copyable prompts, and `/poteto-help`, which answers "which skill fits" without starting work. agent-kit's README describes its architecture, not how to prompt it. This analysis exists because the flows were not discoverable from the repository.
 2. **No new-project sequence.** The pieces exist, but nothing orders them or names the steps an agent cannot infer, such as the Jev opt-out decision and the absence of `ship` in a private repository.
 3. **Verification upkeep has no cadence.** pstack advises a daily run, ideally scheduled. agent-kit offers it only when a task stumbles on a gap (#29), and the instructions forbid creating a schedule silently. `design-control-loop` can build a scheduled loop, but it ships to Pi and Codex only, and nothing points to it for this. Every landing mode depends on the verify skill being current.
-4. **No lighter mode for a spike.** `prototype-to-decide` inverts the quality bar only for a fork. A plain spike gets the full repository rules (no TODOs, adversarial review before a PR, a durable regression case) unless the user says "throwaway, scratch dir, no PR". pstack's Prototype playbook states the inversion outright.
+4. **No lighter mode for a spike.** `prototype-to-decide` inverts the quality bar only for a fork. A plain spike gets the full repository rules (no TODOs, adversarial review before a PR) unless the user says "throwaway, scratch dir, no PR". pstack's Prototype playbook states the inversion outright.
 5. **No independent comment pass.** `code-design` already says comments explain why and code that needs a what-comment is rewritten, and #30 forbids comments that justify workarounds. That is the author's own pass. pstack's `no-comments` hands comments to a reviewer that did not write them, because an author defends its own. agent-kit's PR review reports only blocking findings, so narrating comments and defensive padding pass.
 
 ### Playbooks with partial or no counterpart
 
 | pstack | agent-kit |
 |---|---|
-| Perf issue, Hillclimb | Measurement is covered (`verification/references/command-benchmarks.md`, `explain-the-number.md`) and looping by `background-run`. Nothing joins them into hypothesis, measure, keep or revert. |
+| Perf issue, Hillclimb | Measurement is covered (`verification/references/command-benchmarks.md`, `explain-the-number.md`), and `background-run`'s loop already states a hypothesis, makes the smallest change, verifies it, keeps or discards it, and logs a row. What Hillclimb adds: a measurement harness shown to be sensitive and then frozen, a regression gate, and a rule that a kept change must move the metric past noise. `background-run` is also invoked manually and framed for unattended runs. |
 | Runtime and Trace forensics | Partly `diagnosing-bugs`. Nothing for reading a captured profile or trace. |
 | Visual parity | None. |
 | Worktree cleanup | `git-workflow` says when a worktree may be removed; no audit-and-prune flow. |

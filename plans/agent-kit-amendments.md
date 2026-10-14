@@ -11,7 +11,7 @@
 ## Authority
 
 - User request (2026-10-14): turn the thread analysis, the pstack comparison, and the gaps found in both into one plan to amend agent-kit, in five groups: our own changes, changes pstack suggests, removals, replacements with a pstack concept, and additions from pstack.
-- Existing artifacts: `docs/analysis/2026-10-13-pstack-interaction-flows.md` (PR #34), `skills/spike` (PR #35).
+- Existing artifacts: `docs/analysis/2026-10-13-pstack-interaction-flows.md` (PR #34), `claude/skills/spike` (PR #35).
 - Sources:
   - T3 threads for agent-kit, webshite, interview-tutor, icloud-photos-cli, pi-t3-runtime (2026-10-07 to 10-13), chiefly "Agent-Kit Behavior Alignment Audit" (`f98107a2`);
   - pstack at cursor/plugins `c86f349`;
@@ -33,9 +33,9 @@ The audit thread needed nine user interventions and ended with six of its eleven
 - No PR in an autopilot run takes more than two review rounds without either landing with listed notes or splitting into a follow-up.
 - Every merged agent-kit change is live in the next session on the user's machine.
 
-## Before anything: the installed kit lags `main`
+## Before anything: the installed kit lagged `main`
 
-`~/.claude/CLAUDE.md` links to bootstrap's pinned copy at `~/.local/share/bootstrap/tools/agent-kit`, at `543b756`, 32 commits behind `main`. Everything merged since 2026-10-12 (#25 to #33) is not live. That includes the rule about stalled children (`claude/CLAUDE.md:35`) and the fixed `agentic rulesets plan`. Slice 0 fixes this first; otherwise nothing below takes effect.
+On 2026-10-14, `~/.claude/CLAUDE.md` linked to bootstrap's pinned copy at `~/.local/share/bootstrap/tools/agent-kit`, at `543b756`, 32 commits behind `main`, so nothing merged since 2026-10-12 (#24 to #33) was live, including the rulesets plan fix (#24) and the rule about stalled children (`claude/CLAUDE.md:35`). Slice 0a moved the pin to `14659cb` (everything but #28); see Slices.
 
 ## 1. Our own changes (from thread evidence)
 
@@ -58,7 +58,7 @@ The audit thread needed nine user interventions and ended with six of its eleven
 
 | ID | Change | pstack source |
 |---|---|---|
-| P1 | Trigger words: "autopilot", "full autopilot", "merge when verified", and "land these" mean the merging mode. Only explicit words ("stack them, I'll land") mean the non-merging stack. The user's words are the invocation; the mode logs them as evidence. | `poteto-mode/SKILL.md` playbook table |
+| P1 | Trigger words: "autopilot", "full autopilot", "merge when verified", and "land these" mean the merging mode. Only explicit words ("stack them, I'll land") mean the non-merging stack. The user's words are the invocation; the mode logs them as evidence. | Adapted from the `poteto-mode/SKILL.md` playbook table, which maps "full autopilot" and "autopilot this queue" to the merging mode and needs explicit words ("stack them, don't ship") for the stack; the wider word list is ours |
 | P2 | Under a granted mode or a standing default: decide, act, report. For a call only the user can make, apply a default and report it, saying what they could tell you to do instead. No reply words, no offers, never a check or command the agent could run itself. | `poteto-mode` triggers; "Writing the reply"; `principle-never-block-on-the-human` |
 | P3 | Session overrides: "going to bed", "run until done", "don't stop" mean keep going; "keep going" never triggers a pause. | `poteto-mode` Autonomy; `pause-safely.md` |
 | P4 | Fresh subagents by default for every fix round and retry, with consolidated scope. Never resume-chain. | `poteto-mode` Subagents |
@@ -96,7 +96,7 @@ The audit thread needed nine user interventions and ended with six of its eleven
 |---|---|---|---|
 | A1 | Liveness: `children.tsv` with expected runtimes; a lane past its runtime with no side effect is stuck and replaced at once | `autopilot-full.md` step 6 | Would have caught the Codex child stuck on approval |
 | A2 | Out-of-session watchdog through T3 `schedule_task`: it checks the program's threads and notifies the user when the root has failed (auth, session limit) | none (pstack runs owners in the cloud) | Gap in both; the in-session tick died with the session |
-| A3 | `maintain-verification` on a T3 schedule per repo (weekly, plus after merges that touch mapped paths), opt-in when the verify skill lands | `maintain-verification-skill` daily automation | User's example |
+| A3 | `maintain-verification` on a T3 schedule per repo (weekly, plus after merges that touch mapped paths), opt-in when the verify skill lands | guide `06-verify-and-ship.md` (advises a daily scheduled run) | User's example |
 | A4 | Catch-up: `ketchup`, extended across threads with T3 thread and PR state | `ketchup/SKILL.md` | "is anything running?", "what pr is waiting", "is anything not done?" |
 | A5 | A user guide and a help entry ("which skill fits") | `docs/guide/`, `poteto-help` | Builds on PR #34 |
 | A6 | An independent comment pass | `no-comments` | Gap 5 of the PR #34 analysis |
@@ -110,7 +110,7 @@ The audit thread needed nine user interventions and ended with six of its eleven
 |---|---|---|---|
 | Wake | `/loop` for Autonomous run, autopilot ticks, the Shipping watch | Yes | T3 `watch_pull_request` for PR waits; ticks as T3 `schedule_task` bound to the thread, not in-session cron (A1, A2) |
 | Durable execution | Cursor cloud agents and Projects, so runs continue with the laptop closed | Yes, for overnight runs | Laptop-local T3. Watchdog that notifies (A2) now; cloud execution only if stalls recur after it |
-| Scheduled upkeep | `maintain-verification-skill` daily automation | Yes, verdicts depend on it | T3 `fixed_time` schedule (A3) |
+| Scheduled upkeep | guide `06-verify-and-ship.md` advises running `maintain-verification-skill` daily from a scheduled automation (pstack ships none) | Yes, verdicts depend on a current verify skill | T3 `fixed_time` schedule (A3) |
 | Event intake | `benny`: Slack report, triage, reproduce, draft PR, Linear | No, team-shaped | One GitHub-driven loop (A8) |
 | Review bots | Bugbot, agentic security review, triaged by Babysit | No, the verification swarm is primary | `pr-review` role; skip |
 | Forge | Origin, optional | No | `gh` |

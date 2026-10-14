@@ -47,10 +47,14 @@ function commit(directory: string, file: string, email: string, message: string,
   }
 }
 
-// A trunk whose history holds OLD_EMAIL as author and committer, with a feature branch checked out on top.
-function branchOffTrunk(trunkMessage = "Trunk"): string {
+// A trunk whose history holds TRUNK_EMAIL as author and committer, pushed to a bare "origin" remote, with a feature branch checked out on top.
+function branchOffTrunk(trunkMessage = "Trunk", trunkEmail = OLD_EMAIL): string {
   const directory = repository();
-  commit(directory, "trunk.txt", OLD_EMAIL, trunkMessage);
+  const origin = scratch();
+  git(origin, "init", "-q", "--bare");
+  commit(directory, "trunk.txt", trunkEmail, trunkMessage);
+  git(directory, "remote", "add", "origin", origin);
+  git(directory, "push", "-q", "origin", "main");
   git(directory, "checkout", "-q", "-b", "feature");
   return directory;
 }
@@ -152,12 +156,10 @@ describe("--commits scans commit metadata", () => {
 
 describe("--commits --known exempts only identities the reference's history holds", () => {
   test("a new personal identity behind a known HEAD identity is still a finding", () => {
-    const directory = repository();
-    commit(directory, "trunk.txt", FORGE_NOREPLY_EMAIL, "Trunk");
-    git(directory, "checkout", "-q", "-b", "feature");
+    const directory = branchOffTrunk("Trunk", FORGE_NOREPLY_EMAIL);
     commit(directory, "a.txt", PERSONAL_EMAIL, "Blocked commit");
     commit(directory, "b.txt", FORGE_NOREPLY_EMAIL, "After the email fix");
-    const result = scan("--repo", directory, "--commits", "main..HEAD", "--known", "main");
+    const result = scan("--repo", directory, "--commits", "origin/main..HEAD", "--known", "origin/main");
     expect(result.code).toBe(1);
     expect(findings(result.stderr)).toHaveLength(2);
     expect(result.stderr).toMatch(/commit [0-9a-f]{12} author:1: personal email address/);
@@ -168,13 +170,13 @@ describe("--commits --known exempts only identities the reference's history hold
   test("mixed identities: the known one passes, the new one is flagged", () => {
     const directory = branchOffTrunk();
     commit(directory, "a.txt", OLD_EMAIL, "Known identity");
-    const known = scan("--repo", directory, "--commits", "main..HEAD", "--known", "main");
+    const known = scan("--repo", directory, "--commits", "origin/main..HEAD", "--known", "origin/main");
     expect(known.stderr).toBe("");
     expect(known.code).toBe(0);
-    const unexempted = scan("--repo", directory, "--commits", "main..HEAD");
+    const unexempted = scan("--repo", directory, "--commits", "origin/main..HEAD");
     expect(unexempted.code).toBe(1);
     commit(directory, "b.txt", PERSONAL_EMAIL, "New identity");
-    const mixed = scan("--repo", directory, "--commits", "main..HEAD", "--known", "main");
+    const mixed = scan("--repo", directory, "--commits", "origin/main..HEAD", "--known", "origin/main");
     expect(mixed.code).toBe(1);
     expect(findings(mixed.stderr)).toHaveLength(2);
     expect(mixed.stderr).not.toContain(OLD_EMAIL);
@@ -183,7 +185,7 @@ describe("--commits --known exempts only identities the reference's history hold
   test("a new committer behind a known author is a finding on the committer alone", () => {
     const directory = branchOffTrunk();
     commit(directory, "a.txt", OLD_EMAIL, "Committed elsewhere", PERSONAL_EMAIL);
-    const result = scan("--repo", directory, "--commits", "main..HEAD", "--known", "main");
+    const result = scan("--repo", directory, "--commits", "origin/main..HEAD", "--known", "origin/main");
     expect(result.code).toBe(1);
     expect(findings(result.stderr)).toEqual([expect.stringMatching(/^commit [0-9a-f]{12} committer:1: personal email address$/)]);
   });
@@ -191,7 +193,7 @@ describe("--commits --known exempts only identities the reference's history hold
   test("an address differing from a known one only in case is a finding", () => {
     const directory = branchOffTrunk();
     commit(directory, "a.txt", OLD_EMAIL.toUpperCase(), "Shouted identity");
-    const result = scan("--repo", directory, "--commits", "main..HEAD", "--known", "main");
+    const result = scan("--repo", directory, "--commits", "origin/main..HEAD", "--known", "origin/main");
     expect(result.code).toBe(1);
     expect(findings(result.stderr)).toHaveLength(2);
   });
@@ -199,22 +201,34 @@ describe("--commits --known exempts only identities the reference's history hold
   test("an address only in a trunk commit message is not known, and messages are never exempt", () => {
     const directory = branchOffTrunk(`Trunk\n\nCo-authored-by: P <${PERSONAL_EMAIL}>`);
     commit(directory, "a.txt", PERSONAL_EMAIL, "Message-only address");
-    const author = scan("--repo", directory, "--commits", "main..HEAD", "--known", "main");
+    const author = scan("--repo", directory, "--commits", "origin/main..HEAD", "--known", "origin/main");
     expect(author.code).toBe(1);
     expect(findings(author.stderr)).toHaveLength(2);
     git(directory, "reset", "-q", "--hard", "main");
     commit(directory, "b.txt", OLD_EMAIL, `Quotes a known identity\n\nSee ${OLD_EMAIL}`);
-    const message = scan("--repo", directory, "--commits", "main..HEAD", "--known", "main");
+    const message = scan("--repo", directory, "--commits", "origin/main..HEAD", "--known", "origin/main");
     expect(message.code).toBe(1);
     expect(findings(message.stderr)).toEqual([expect.stringMatching(/^commit [0-9a-f]{12} message:3: personal email address$/)]);
   });
 
-  test("--known needs --commits and an existing reference", () => {
+  test("--known needs --commits and an existing remote-tracking branch", () => {
     const directory = branchOffTrunk();
-    expect(scan("--repo", directory, "--known", "main").code).toBe(2);
-    const missing = scan("--repo", directory, "--commits", "main..HEAD", "--known", "absent");
-    expect(missing.code).toBe(1);
-    expect(missing.stderr).toContain("public-safety scan error");
+    expect(scan("--repo", directory, "--known", "origin/main").code).toBe(2);
+    const missing = scan("--repo", directory, "--commits", "origin/main..HEAD", "--known", "origin/absent");
+    expect(missing.code).toBe(2);
+    expect(missing.stderr).toContain("--known takes a remote-tracking branch");
+  });
+
+  test("--known rejects a local branch, HEAD, and an option, any of which could hold the range itself", () => {
+    const directory = branchOffTrunk();
+    commit(directory, "a.txt", PERSONAL_EMAIL, "New identity");
+    git(directory, "branch", "-f", "main", "feature");
+    for (const known of [["--known", "main"], ["--known", "feature"], ["--known", "HEAD"], ["--known=--all"]]) {
+      const result = scan("--repo", directory, "--commits", "origin/main..HEAD", ...known);
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain("--known takes a remote-tracking branch");
+      expect(result.stdout).not.toContain("passed");
+    }
   });
 });
 

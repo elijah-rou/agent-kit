@@ -128,9 +128,20 @@ def path_entries(paths: list[str]) -> list[Entry]:
     return entries
 
 
-def known_addresses(repository: pathlib.Path, reference: str) -> frozenset[bytes]:
-    """Every author and committer address in REFERENCE's history, compared byte for byte."""
-    log = git(repository, "log", "--format=%ae%n%ce", reference, "--")
+def remote_tracking_ref(repository: pathlib.Path, reference: str) -> Optional[str]:
+    """REFERENCE's full name when it resolves to a remote-tracking branch; None for anything else, such as HEAD, a local branch, or an option."""
+    result = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "--verify", "--symbolic-full-name", "--end-of-options", reference],
+        check=False,
+        capture_output=True,
+    )
+    name = result.stdout.decode("utf-8", errors="replace").strip()
+    return name if result.returncode == 0 and name.startswith("refs/remotes/") else None
+
+
+def known_addresses(repository: pathlib.Path, remote_ref: str) -> frozenset[bytes]:
+    """Every author and committer address in REMOTE_REF's history, compared byte for byte."""
+    log = git(repository, "log", "--format=%ae%n%ce", remote_ref, "--")
     return frozenset(address for address in log.split(b"\n") if address)
 
 
@@ -213,7 +224,7 @@ def main() -> int:
     modes.add_argument("--worktree", action="store_true", help="scan the working tree's tracked files")
     modes.add_argument("--paths", nargs="+", metavar="PATH", help="scan these files and directories, such as an evidence directory")
     modes.add_argument("--commits", metavar="RANGE", help="scan the author, committer, and message of each commit in RANGE")
-    parser.add_argument("--known", metavar="REF", help="with --commits, exempt author and committer addresses that REF's history already holds (an exact match; messages are still scanned)")
+    parser.add_argument("--known", metavar="REF", help="with --commits, exempt author and committer addresses that REF's history already holds (an exact match; messages are still scanned); REF must be a remote-tracking branch such as origin/main")
     arguments = parser.parse_args()
     if arguments.known is not None and not arguments.commits:
         parser.error("--known applies only with --commits")
@@ -223,7 +234,12 @@ def main() -> int:
         else:
             repository = pathlib.Path(git(pathlib.Path(arguments.repo), "rev-parse", "--show-toplevel").decode().strip())
             if arguments.commits:
-                known = known_addresses(repository, arguments.known) if arguments.known is not None else frozenset()
+                known: frozenset[bytes] = frozenset()
+                if arguments.known is not None:
+                    remote_ref = remote_tracking_ref(repository, arguments.known)
+                    if remote_ref is None:
+                        parser.error("--known takes a remote-tracking branch such as origin/main, never HEAD, a local branch, a commit, or an option")
+                    known = known_addresses(repository, remote_ref)
                 mode, entries = "commits", commit_entries(repository, arguments.commits, known)
             elif arguments.worktree:
                 mode, entries = "worktree", worktree_entries(repository)

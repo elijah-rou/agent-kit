@@ -7,15 +7,17 @@
 // merge-base, and listing tags), and patterns for what a shell reader, since removed, used to find:
 // git commit or am -n, a hook manager's skip variable, a core.hooksPath or hook.* override or config
 // write, and gh pr merge. They find git or gh, by name or absolute path, at the start of a line or after
-// ;, &, or |, past assignments that prefix it on its line (GIT_EDITOR=true git commit, X=$(date) git
-// push; VALUE says which values they read), so they also match a mention in a quoted message or a
-// search, and each reason says how to rephrase one. --no-verify also counts on a later line that a
-// quoted string or a line-ending backslash carries git's command onto. They do not read the shell
-// otherwise: git reached another way (a wrapper, a substitution, a `sh -c` string) is not seen.
+// ;, &, or |, so they also match a mention in a quoted message or a search, and each reason says how to
+// rephrase one. --no-verify also counts on a later line that a quoted string or a line-ending backslash
+// carries git's command onto. They do not read the shell otherwise: git reached another way (a wrapper,
+// a substitution, a `sh -c` string) is not seen.
 //
-// CommandText finds where each command starts and reads the assignments before it once per text, so a
-// text whose quoted values hold many separators (each a command's start) is still read in linear time;
-// each pattern below starts at the git or gh it finds there.
+// One more check only adds refusals: prefix.ts finds each git or gh that a run of assignments hides
+// from the patterns (GIT_EDITOR=true git commit --no-verify) and lifts it to the start of its own line,
+// and blockReason refuses what the patterns refuse in the text as written or in the lifted text, plus a
+// hook manager's skip variable among those assignments.
+
+import { liftAssignedCommands } from "./prefix.ts";
 
 /** Who issued the command. The coordinating session publishes; a child publishes only as an autopilot-full owner. */
 export type Actor = { kind: "main" } | { kind: "child"; role: string | undefined };
@@ -23,6 +25,8 @@ export type Actor = { kind: "main" } | { kind: "child"; role: string | undefined
 /** The one child role that carries its own pull request through the merge (babysit-and-ship). */
 export const PUBLISHING_CHILD_ROLE = "autopilot-owner";
 
+// Where a command starts: the start of the text, or after ;, &, |, or a newline and any spaces.
+const START = String.raw`(?:^|[;&|\n]\s*)`;
 /** A program by name or by absolute path (/usr/bin/git). */
 const program = (name: string) => String.raw`(?:(?:/[^\s/;&|<>()'"]*)*/)?${name}`;
 const GIT = program("git");
@@ -32,41 +36,20 @@ const GIT = program("git");
 const GIT_DASH_C = String.raw`(?:\s+-C\s+(?:'[^']*'|"[^"]*"|[^\s'"])+)*`;
 // One word: quoted, or up to whitespace or a separator.
 const WORD = String.raw`(?:'[^'\n]*'|"[^"\n]*"|[^\s;&|'"]+)`;
-// What separates the assignments that prefix one command: spaces, tabs, and a backslash-newline, which
-// the shell removes. A newline ends the command.
-const BLANK = String.raw`(?:[^\S\n]|\\\n)`;
-// Whitespace of any kind, newlines included, and backslash-newlines.
-const SPACE = String.raw`(?:\s|\\\n)`;
-// Where a value ends: whitespace, a separator, a backslash-newline, or the end of the text.
-const VALUE_END = String.raw`(?=[\s;&|]|\\\n|$)`;
-// An assignment's value, as parts: a single-quoted string, a double-quoted string (its backslash escapes
-// included), a $(...) substitution holding no parenthesis, a ${...} expansion holding no brace, a
-// backquoted substitution, a backslash escape of anything but a newline or a separator, and an unquoted
-// character that starts none of these and is not a parenthesis. No part spans lines. Each part starts
-// with a different character, so a value reads one way (an escaped quote, as in \', is an escape, never
-// a quote's start), and it is read whole, up to VALUE_END, so a long value cannot backtrack into many
-// shorter ones.
-const VALUE = String.raw`(?:'[^'\n]*'|"[^"\\\n]*(?:\\[^\n][^"\\\n]*)*"|\$\([^()\n]*\)|\$\{[^{}\n]*\}|\$(?![({])|\x60[^\x60\\\n]*(?:\\[^\n][^\x60\\\n]*)*\x60|\\[^\n;&|]|[^\s;&|'"\\$\x60()])*${VALUE_END}`;
-// An assignment's value read as a word: quoted strings without escapes, and any other character but
-// whitespace, a separator, or a backslash before a newline. It reads values VALUE does not, such as
-// $((n+1)) and ${A:-${B}}, as long as they hold no whitespace; the skip-variable check reads values both
-// ways, so a value either reading accepts can carry a skip variable. Its parts also start with different
-// characters.
-const WORD_VALUE = String.raw`(?:'[^'\n]*'|"[^"\n]*"|\\(?!\n)|[^\s;&|'"\\])*${VALUE_END}`;
-/** One assignment at the position it is tried at, with = or += (X+=1); the name is group 1. */
-const assignment = (value: string) => new RegExp(String.raw`([A-Za-z_]\w*)\+?=${value}`, "y");
-const ASSIGNMENT = assignment(VALUE);
-const WORD_ASSIGNMENT = assignment(WORD_VALUE);
+// An assignment's value: quoted parts and unquoted characters, read to the whole value (up to whitespace,
+// a separator, or the end) so a long value cannot backtrack into many shorter ones.
+const VALUE = String.raw`(?:'[^'\n]*'|"[^"\n]*"|[^\s;&|'"])*(?![^\s;&|])`;
+const ASSIGNMENT = String.raw`[A-Za-z_]\w*=${VALUE}`;
 
 // --no-verify, but not git's own --no-verify-signatures.
 const NO_VERIFY_FLAG = new RegExp(String.raw`--no-verify(?![\w-])`);
-// --no-verify after a git that starts a command.
-const NO_VERIFY = new RegExp(String.raw`${GIT}\s+[^\n]*${NO_VERIFY_FLAG.source}`, "y");
-// A git that starts a command, and the rest of its command: unquoted text up to a newline or a comment,
+// --no-verify after a git at the start of a line.
+const NO_VERIFY = new RegExp(String.raw`${START}${GIT}\s+[^\n]*${NO_VERIFY_FLAG.source}`);
+// A git at the start of a line, and the rest of its command: unquoted text up to a newline or a comment,
 // with quoted strings and backslash escapes that may carry it onto later lines (a commit message in a
 // here document, or a backslash at a line's end). Each alternative starts with a different character,
 // so the text reads one way.
-const GIT_COMMAND = new RegExp(String.raw`${GIT}[^\S\n]((?:[^\n'"\\\s#]|[^\S\n](?!#)|(?<!\s)#|\\[\s\S]|'[^']*'|"(?:[^"\\]|\\[\s\S])*")*)`, "y");
+const GIT_COMMAND = new RegExp(String.raw`${START}${GIT}[^\S\n]((?:[^\n'"\\\s#]|[^\S\n](?!#)|(?<!\s)#|\\[\s\S]|'[^']*'|"(?:[^"\\]|\\[\s\S])*")*)`, "g");
 // git commit's and git am's short options that take no value, and their long options that begin like a
 // cluster holding n (git refuses a single-dash word of three or more letters that begins a long option's
 // name or begins with no-, as in -include or -no-op, before any hook runs).
@@ -82,17 +65,14 @@ function shortN(flags: string, longNames: string[]): string {
 // -n (--no-verify) on git commit or git am, alone or after short options that take no value (-an), and
 // before any option, which may take the rest of the cluster as its value (-nm). The search stops at ;,
 // &, or | so a later command's -n (git log -n 3) is not taken for it.
-const NO_VERIFY_SHORT = new RegExp(String.raw`${GIT}${GIT_DASH_C}\s+(?:commit(?![\w-])[^\n;&|]*?${shortN(COMMIT_SHORT_FLAGS, COMMIT_LONG_LIKE_N)}|am(?![\w-])[^\n;&|]*?${shortN(AM_SHORT_FLAGS, AM_LONG_LIKE_N)})`, "y");
+const NO_VERIFY_SHORT = new RegExp(String.raw`${START}${GIT}${GIT_DASH_C}\s+(?:commit(?![\w-])[^\n;&|]*?${shortN(COMMIT_SHORT_FLAGS, COMMIT_LONG_LIKE_N)}|am(?![\w-])[^\n;&|]*?${shortN(AM_SHORT_FLAGS, AM_LONG_LIKE_N)})`);
 // Variables hook managers read to skip hooks: husky, pre-commit, lefthook, overcommit.
-const SKIP_VARIABLES = new Set(["HUSKY_SKIP_HOOKS", "HUSKY", "SKIP", "PRE_COMMIT_ALLOW_NO_CONFIG", "LEFTHOOK_EXCLUDE", "LEFTHOOK", "OVERCOMMIT_DISABLE"]);
-// export and its kin before the assignments of a command's start: they put a variable in the environment
-// of every later command, so the skip-variable check lets their assignments run onto later lines.
-const EXPORT = new RegExp(String.raw`(?:export|declare|typeset|local|readonly)(?:${SPACE}+-\w+)*${SPACE}+`, "y");
-// git after a run of assignments, on its line or, after export, on a later one.
-const GIT_AFTER_BLANK = new RegExp(String.raw`${BLANK}+${GIT}\s`, "y");
-const GIT_AFTER_SPACE = new RegExp(String.raw`${SPACE}+${GIT}\s`, "y");
-// A git after ;, &, or |: a skip variable earlier on the separator's line reaches it (export HUSKY=0; git push).
-const SEPARATOR_GIT = new RegExp(String.raw`[;&|]\s*${GIT}\s`, "g");
+const SKIP_VARIABLES = ["HUSKY_SKIP_HOOKS", "HUSKY", "SKIP", "PRE_COMMIT_ALLOW_NO_CONFIG", "LEFTHOOK_EXCLUDE", "LEFTHOOK", "OVERCOMMIT_DISABLE"];
+const SKIP_VARIABLE_NAMES: ReadonlySet<string> = new Set(SKIP_VARIABLES);
+// A skip variable assigned where a command starts (alone, among other assignments, or after export and
+// its kin), with git run on the same line, as that command (HUSKY=0 git commit) or after a separator, or
+// starting the next line when only assignments come between (export HUSKY=0, then git commit).
+const SKIP_VARIABLE = new RegExp(String.raw`${START}(?:(?:export|declare|typeset|local|readonly)(?:\s+-\w+)*\s+)?(?:${ASSIGNMENT}\s+)*(?:${SKIP_VARIABLES.join("|")})=${VALUE}(?:(?:\s+${ASSIGNMENT})*\s+|[^\n]*?[;&|]\s*)${GIT}\s`);
 /** One option: a `valued` option and the next word, or any other option word. The two never overlap, so a run of options reads one way and cannot backtrack exponentially. */
 function option(valued: string[]): string {
 	const names = valued.join("|");
@@ -102,15 +82,15 @@ function option(valued: string[]): string {
 const anyCase = (text: string) => [...text].map((letter) => (/[a-z]/i.test(letter) ? `[${letter.toLowerCase()}${letter.toUpperCase()}]` : `\\${letter}`)).join("");
 // A core.hooksPath or hook.* key (git config keys ignore case) set by -c or --config-env among git's
 // options before its subcommand.
-const HOOKS_OVERRIDE = new RegExp(String.raw`${GIT}${option(["-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace"])}*?\s+(?:-c\s+|--config-env(?:=|\s+))['"]?(?:${anyCase("core.hookspath")}|${anyCase("hook.")})`, "y");
-// git config starting a command; its words decide whether it writes a hook key.
-const GIT_CONFIG = new RegExp(String.raw`${GIT}${GIT_DASH_C}\s+config(?![\w-])`, "y");
-// A git invocation (past any -C <path> options) that publishes or integrates history; merge-base and
-// other hyphenated subcommands are not these.
-const PUBLICATION = new RegExp(String.raw`${GIT}${GIT_DASH_C}\s+(push|pull|merge|rebase|cherry-pick|revert|am|apply|tag)(?![\w-])`, "y");
+const HOOKS_OVERRIDE = new RegExp(String.raw`${START}${GIT}${option(["-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace"])}*?\s+(?:-c\s+|--config-env(?:=|\s+))['"]?(?:${anyCase("core.hookspath")}|${anyCase("hook.")})`);
+// git config at the start of a line; its words decide whether it writes a hook key.
+const GIT_CONFIG = new RegExp(String.raw`${START}${GIT}${GIT_DASH_C}\s+config(?![\w-])`, "g");
+// A git invocation (at the start or after ;, &, |, or a newline, past any -C <path> options) that
+// publishes or integrates history; merge-base and other hyphenated subcommands are not these.
+const PUBLICATION = new RegExp(String.raw`${START}${GIT}${GIT_DASH_C}\s+(push|pull|merge|rebase|cherry-pick|revert|am|apply|tag)(?![\w-])`, "g");
 // gh pr merge, with any options between its words.
 const GH_OPTIONS = `${option(["-R", "--repo", "--hostname"])}*`;
-const GH_PR_MERGE = new RegExp(String.raw`${program("gh")}${GH_OPTIONS}\s+pr${GH_OPTIONS}\s+merge(?![\w-])`, "y");
+const GH_PR_MERGE = new RegExp(String.raw`${START}${program("gh")}${GH_OPTIONS}\s+pr${GH_OPTIONS}\s+merge(?![\w-])`);
 
 // `git tag` options: those that make it list or verify tags, those that create or delete one, and
 // those that take the next word as their value.
@@ -195,11 +175,11 @@ const REDIRECTION = /^(?:\d*[<>]|&>)/;
 const REDIRECTION_OPERATOR = /^(?:\d*(?:[<>]|>>|<<<?|<>|>\||[<>]&)|&>>?)$/;
 
 /**
- * The words after `end` up to the next separator or comment, with a quote at either end removed and
- * redirections and their targets dropped. The & of a redirection (2>&1, &>) is not a separator.
+ * The words after a pattern's match up to the next separator or comment, with a quote at either end
+ * removed and redirections and their targets dropped. The & of a redirection (2>&1, &>) is not a separator.
  */
-function wordsAfter(command: string, end: number): string[] {
-	const rest = command.slice(end).split(/[;|\n)]|(?<![<>])&(?!>)/)[0]!;
+function wordsAfter(command: string, match: RegExpMatchArray): string[] {
+	const rest = command.slice(match.index! + match[0].length).split(/[;|\n)]|(?<![<>])&(?!>)/)[0]!;
 	const words: string[] = [];
 	let target = false;
 	for (const word of rest.trim().split(/\s+/).filter(Boolean)) {
@@ -211,205 +191,28 @@ function wordsAfter(command: string, end: number): string[] {
 	return words;
 }
 
-const isSeparator = (character: string) => ";&|\n".includes(character);
-const BLANKS = new RegExp(`${BLANK}+`, "y");
-const SPACES = new RegExp(`${SPACE}+`, "y");
-
-/** A run of assignments read from one position: where its last value ends, and where the first skip variable's value in it ends (-1 for none). */
-type Chain = { end: number; skipEnd: number };
-/** A pattern's match at a command's git or gh, and where it ends in the text. */
-type Found = { end: number; match: RegExpExecArray };
-
-/**
- * The runs of assignments that `assignment` reads in `text`, `gap` apart, from any position. Each run is
- * remembered by where it starts, so the runs from many starts that reach the same assignment (as those
- * from each separator inside a quoted value do) read the rest once, and all of them take linear time.
- */
-function chains(text: string, assignment: RegExp, gap: RegExp): (at: number) => Chain | undefined {
-	const known = new Map<number, Chain | undefined>();
-	return (from) => {
-		const path: { at: number; end: number; skip: boolean }[] = [];
-		let rest: Chain | undefined;
-		for (let at = from; ; ) {
-			if (known.has(at)) {
-				rest = known.get(at);
-				break;
-			}
-			assignment.lastIndex = at;
-			const match = assignment.exec(text);
-			if (match === null) {
-				known.set(at, undefined);
-				break;
-			}
-			const end = at + match[0].length;
-			path.push({ at, end, skip: SKIP_VARIABLES.has(match[1]!) });
-			gap.lastIndex = end;
-			const space = gap.exec(text);
-			if (space === null) break;
-			at = end + space[0].length;
-		}
-		for (const { at, end, skip } of path.reverse()) {
-			rest = { end: rest?.end ?? end, skipEnd: skip ? end : (rest?.skipEnd ?? -1) };
-			known.set(at, rest);
-		}
-		return rest;
-	};
-}
-
-/** The first number in the ascending `sorted` that is at least `value`, or undefined. */
-function firstFrom(sorted: number[], value: number): number | undefined {
-	let low = 0;
-	let high = sorted.length;
-	while (low < high) {
-		const middle = (low + high) >>> 1;
-		if (sorted[middle]! < value) low = middle + 1;
-		else high = middle;
-	}
-	return sorted[low];
-}
-
-/**
- * A command text and where its commands start: the start of the text, and each ;, &, |, or newline
- * (with the whitespace after it), past the assignments that prefix that command on its line
- * (GIT_EDITOR=true git commit).
- */
-class CommandText {
-	/** The position of each command's start: 0 and each separator, ascending. */
-	private readonly starts: number[] = [0];
-	/** For each position, the first position at or after it that is not whitespace. */
-	private readonly nonSpace: Int32Array;
-	/** The assignments that prefix a command, read as VALUE reads values, on one line. */
-	private readonly sameLine: (at: number) => Chain | undefined;
-
-	constructor(readonly text: string) {
-		for (let i = 0; i < text.length; i++) if (isSeparator(text[i]!)) this.starts.push(i);
-		this.nonSpace = new Int32Array(text.length + 1).fill(text.length);
-		for (let i = text.length - 1; i >= 0; i--) this.nonSpace[i] = /\s/.test(text[i]!) ? this.nonSpace[i + 1]! : i;
-		this.sameLine = chains(text, ASSIGNMENT, BLANKS);
-	}
-
-	/** Where the command at `start` begins: past its separator and the whitespace after it, or at 0. */
-	private commandAt(start: number): number {
-		return start === 0 && !isSeparator(this.text[0] ?? "") ? 0 : this.nonSpace[start + 1]!;
-	}
-
-	/** Where git or gh may start in the command at `start`: past its assignments and the blanks after them, or undefined when only assignments are there. */
-	private programAt(start: number): number | undefined {
-		const at = this.commandAt(start);
-		const chain = this.sameLine(at);
-		if (chain === undefined) return at;
-		BLANKS.lastIndex = chain.end;
-		return BLANKS.test(this.text) ? BLANKS.lastIndex : undefined;
-	}
-
-	/** The match of the sticky `pattern` at the git or gh of the command at `start`. */
-	private matchAt(pattern: RegExp, start: number): Found | undefined {
-		const at = this.programAt(start);
-		if (at === undefined) return undefined;
-		pattern.lastIndex = at;
-		const match = pattern.exec(this.text);
-		return match === null ? undefined : { end: at + match[0].length, match };
-	}
-
-	/** True when `pattern` matches at the git or gh of any command. */
-	some(pattern: RegExp): boolean {
-		return this.starts.some((start) => this.matchAt(pattern, start) !== undefined);
-	}
-
-	/**
-	 * Every match of `pattern` at a command, left to right, past the end of the one before, and also
-	 * every match at a separator inside an earlier match before its body (`bodyStart`, by default the
-	 * match's end): a command inside an assignment's value, such as the `git push` in
-	 * `X=$(true; git push) git tag -l`. No match's body is searched again, so a match that reads on past
-	 * later commands (GIT_COMMAND's) is not read again from each of them.
-	 */
-	*every(pattern: RegExp, bodyStart = (found: Found) => found.end): Generator<Found> {
-		let resume = 0;
-		for (let index = 0; index < this.starts.length; index++) {
-			if (this.starts[index]! < resume) continue;
-			const found = this.matchAt(pattern, this.starts[index]!);
-			if (found === undefined) continue;
-			yield found;
-			const prefixEnd = bodyStart(found);
-			// The body of the latest match found inside this one's prefix, which is not searched again.
-			let skip = { from: prefixEnd, to: prefixEnd };
-			for (let inner = index + 1; inner < this.starts.length && this.starts[inner]! < prefixEnd; inner++) {
-				const start = this.starts[inner]!;
-				if (start >= skip.from && start < skip.to) continue;
-				const innerFound = this.matchAt(pattern, start);
-				if (innerFound === undefined) continue;
-				yield innerFound;
-				skip = { from: bodyStart(innerFound), to: innerFound.end };
-			}
-			resume = found.end;
-		}
-	}
-
-	/**
-	 * True when a hook manager's skip variable is assigned where a command starts (alone, among other
-	 * assignments, or after export and its kin) and git runs with it: as that command (HUSKY=0 git
-	 * commit), after a separator on its line (HUSKY=0; git push), or, when exported, at the start of a
-	 * later line that only assignments come before (export HUSKY=0, then git commit). Values are read both
-	 * as VALUE and as WORD_VALUE reads them, so a value either reading accepts can carry a skip variable.
-	 */
-	skipVariable(): boolean {
-		const text = this.text;
-		const separatorGits = [...text.matchAll(SEPARATOR_GIT)].map((match) => match.index);
-		// The newlines that end a line; a backslash-newline continues it.
-		const newlines = this.starts.filter((start) => text[start] === "\n" && text[start - 1] !== "\\");
-		// A ;, &, or | at or after `at` on its line, with git after it.
-		const separatorGitFrom = (at: number) => {
-			const separator = firstFrom(separatorGits, at);
-			const newline = firstFrom(newlines, at);
-			return separator !== undefined && (newline === undefined || separator < newline);
-		};
-		// Assignments on one line, then git after blanks; or, after export, on any lines, then git after any whitespace.
-		const oneLine = { chains: [this.sameLine, chains(text, WORD_ASSIGNMENT, BLANKS)], git: GIT_AFTER_BLANK, gitAt: new Map<number, boolean>() };
-		const exported = { chains: [chains(text, ASSIGNMENT, SPACES), chains(text, WORD_ASSIGNMENT, SPACES)], git: GIT_AFTER_SPACE, gitAt: new Map<number, boolean>() };
-		for (const start of this.starts) {
-			let at = this.commandAt(start);
-			EXPORT.lastIndex = at;
-			const reading = EXPORT.test(text) ? exported : oneLine;
-			if (reading === exported) at = EXPORT.lastIndex;
-			for (const chainAt of reading.chains) {
-				const chain = chainAt(at);
-				if (chain === undefined || chain.skipEnd === -1) continue;
-				if (separatorGitFrom(chain.skipEnd)) return true;
-				if (!reading.gitAt.has(chain.end)) {
-					reading.git.lastIndex = chain.end;
-					reading.gitAt.set(chain.end, reading.git.test(text));
-				}
-				if (reading.gitAt.get(chain.end)) return true;
-			}
-		}
-		return false;
-	}
-}
-
 /** How a command's text skips git hooks. */
 export type HookSkip = "no-verify" | "short-n" | "skip-variable" | "hooks-config";
 
 /** How the text skips git hooks, if it does: --no-verify, -n on commit or am, a skip variable, or a hook key override or config write. */
 export function hookSkip(command: string): HookSkip | undefined {
-	const text = new CommandText(command);
-	if (text.some(NO_VERIFY)) return "no-verify";
-	for (const { match } of text.every(GIT_COMMAND, (found) => found.end - found.match[1]!.length)) if (NO_VERIFY_FLAG.test(match[1]!)) return "no-verify";
-	if (text.some(NO_VERIFY_SHORT)) return "short-n";
-	if (text.skipVariable()) return "skip-variable";
-	if (text.some(HOOKS_OVERRIDE)) return "hooks-config";
-	for (const { end } of text.every(GIT_CONFIG)) if (configWritesHookKey(wordsAfter(command, end))) return "hooks-config";
+	if (NO_VERIFY.test(command)) return "no-verify";
+	for (const match of command.matchAll(GIT_COMMAND)) if (NO_VERIFY_FLAG.test(match[1]!)) return "no-verify";
+	if (NO_VERIFY_SHORT.test(command)) return "short-n";
+	if (SKIP_VARIABLE.test(command)) return "skip-variable";
+	if (HOOKS_OVERRIDE.test(command)) return "hooks-config";
+	for (const match of command.matchAll(GIT_CONFIG)) if (configWritesHookKey(wordsAfter(command, match))) return "hooks-config";
 	return undefined;
 }
 
 /** The publication or integration command (`git push`, `git tag`, `gh pr merge`) a line of the text starts, skipping `git tag` forms that only list. */
 export function publicationCommand(command: string): string | undefined {
-	const text = new CommandText(command);
-	for (const { end, match } of text.every(PUBLICATION)) {
+	for (const match of command.matchAll(PUBLICATION)) {
 		const subcommand = match[1]!;
-		if (subcommand === "tag" && tagReads(wordsAfter(command, end))) continue;
+		if (subcommand === "tag" && tagReads(wordsAfter(command, match))) continue;
 		return `git ${subcommand}`;
 	}
-	return text.some(GH_PR_MERGE) ? "gh pr merge" : undefined;
+	return GH_PR_MERGE.test(command) ? "gh pr merge" : undefined;
 }
 
 /** True when the actor may publish: the main session, or a child running as an autopilot-full owner. */
@@ -435,9 +238,11 @@ const HOOK_SKIP_REASONS: Record<HookSkip, string> = {
  * refused for every actor; publication and integration are refused for every child except an owner.
  */
 export function blockReason(command: string, actor: Actor): string | undefined {
-	const skip = hookSkip(command);
+	const lift = liftAssignedCommands(command, SKIP_VARIABLE_NAMES);
+	const lifted = lift.text === command ? undefined : lift.text;
+	const skip = hookSkip(command) ?? (lift.flagged ? "skip-variable" : lifted === undefined ? undefined : hookSkip(lifted));
 	if (skip !== undefined) return HOOK_SKIP_REASONS[skip];
-	const publication = publicationCommand(command);
+	const publication = publicationCommand(command) ?? (lifted === undefined ? undefined : publicationCommand(lifted));
 	if (!mayPublish(actor) && publication !== undefined) {
 		const name = publication.split(" ")[0];
 		return `git guard blocked child publication/integration command: ${publication}. Only the coordinating session or an ${PUBLISHING_CHILD_ROLE} publishes or integrates; commit locally and report the branch and head SHA to your parent instead. If the text only mentions the command, as in a commit message or a search, write the message to a file with the editor tool and run git commit -F <file>, or search without ${name} in front`;

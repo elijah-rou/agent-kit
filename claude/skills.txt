@@ -30,3 +30,4 @@ skills/github-rulesets
 skills/repo-baseline
 skills/spike
 skills/new-project
+skills/t3-automation

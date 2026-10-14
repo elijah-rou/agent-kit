@@ -38,7 +38,7 @@ const WORD = String.raw`(?:'[^'\n]*'|"[^"\n]*"|[^\s;&|'"]+)`;
 // with a different character, so a value reads one way (an escaped quote, as in \', is an escape, never
 // a quote's start), and it is read whole, up to whitespace, a separator, or the end, so a long value
 // cannot backtrack into many shorter ones.
-const VALUE = String.raw`(?:'[^'\n]*'|"(?:[^"\\\n]|\\[^\n])*"|\$\([^()\n]*\)|\$\{[^{}\n]*\}|\$(?![({])|\x60(?:[^\x60\\\n]|\\[^\n])*\x60|\\[^\n;&|]|[^\s;&|'"\\$\x60()])*(?![^\s;&|])`;
+const VALUE = String.raw`(?:'[^'\n]*'|"[^"\\\n]*(?:\\[^\n][^"\\\n]*)*"|\$\([^()\n]*\)|\$\{[^{}\n]*\}|\$(?![({])|\x60[^\x60\\\n]*(?:\\[^\n][^\x60\\\n]*)*\x60|\\[^\n;&|]|[^\s;&|'"\\$\x60()])*(?![^\s;&|])`;
 const ASSIGNMENT = String.raw`[A-Za-z_]\w*=${VALUE}`;
 // Where a git or gh command starts: a command's start and any assignments that prefix it for that one
 // command (GIT_EDITOR=true git commit), on the same line. Each assignment reads to its whole value, so a

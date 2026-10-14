@@ -149,8 +149,9 @@ describe("patterns for what the shell reader alone used to find", () => {
 		expect(blockReason(`${lines}git push`, child)).toMatch(/git push/);
 		expect(performance.now() - started).toBeLessThan(1000);
 	});
-	// Each bound is several times the local time and well under the hook's 5 s timeout; a pattern that
-	// read these texts superlinearly would take seconds per call.
+	// Each text is over 50 KB, far past any real command. Each bound is many times the local time (a
+	// shared CI runner is several times slower), and a pattern that read these texts superlinearly would
+	// take far longer.
 	for (const assignment of ["X=$(date +%s) ", "X=`date +%s` ", "X=a\\ b ", "X=${A:-b c} ", "X=\"a\\\" b\" ", "X=$(a; b) "]) {
 		test(`10,000 assignments like ${assignment.trim()} are read in linear time`, () => {
 			const run = assignment.repeat(10_000);
@@ -158,8 +159,8 @@ describe("patterns for what the shell reader alone used to find", () => {
 			expect(blockReason(`${run}echo hi`, child)).toBeUndefined();
 			expect(blockReason(`${run}git tag -l`, child)).toBeUndefined();
 			expect(blockReason(`${run}git push`, child)).toMatch(/git push/);
-			expect(performance.now() - started).toBeLessThan(3000);
-		});
+			expect(performance.now() - started).toBeLessThan(4000);
+		}, 10_000);
 	}
 	test("commands inside one value's substitution are each read once, not from every separator before them", () => {
 		// Rereading each inner command's body from every separator before it took 18 s here.

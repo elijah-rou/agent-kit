@@ -102,9 +102,10 @@ describe("verdicts", () => {
 		expect(verify.policyFiles([
 			".agents/skills/verify-app/SKILL.md",
 			".agents/skills/verify-app/features/README.md",
-			".agents/skills/verify-app/scripts/verify-app",
+			".Agents/Skills/VERIFY-app/skill.md",
+			".agents/skills/verify-app/FEATURES/readme.md",
 			".agents/skills/verify-app",
-			".Agents/Skills/VERIFY-app/SKILL.md",
+			".agents/skills/verify-app/features",
 			"skills/babysit-and-ship/SKILL.md",
 			"skills/babysit-and-ship/references/shipping.md",
 			"skills/babysit-and-ship/references/pr-body.md",
@@ -113,8 +114,14 @@ describe("verdicts", () => {
 			"agentic/tools/verify",
 			"agentic/vendor/orch/store.ts",
 			"agentic/bin/agentic",
-		])).toHaveLength(13);
+		])).toHaveLength(14);
 		expect(verify.policyFiles([
+			".agents/skills/verify-app/features/login.md",
+			".agents/skills/verify-app/scripts/verify-app",
+			".agents/skills/verify-app/scripts/SKILL.md",
+			".agents/skills/verify-app/features/sub/README.md",
+			".agents/skills/verify-app/scripts",
+			".agents/skills/verify-app/SKILL.md.bak",
 			".agents/skills/other/SKILL.md",
 			"skills/verify-app/SKILL.md",
 			"x/.agents/skills/verify-app/SKILL.md",
@@ -276,6 +283,22 @@ describe("agentic verify, end to end", () => {
 		expect(pr.cli(["record", "7", "--verdict", "countersigned", "--patch", pr.patchId(), "--evidence", "user-message.txt"], "coordinator").status).toBe(0);
 		const status = pr.cli(["status", "7"]);
 		expect([status.status, status.stdout.includes("ledger pass (countersigned")]).toEqual([0, true]);
+	});
+
+	test("a verification skill's feature files and drive scripts land on ordinary verdicts; its verdict rules do not", () => {
+		const change = (path: string) => `diff --git a/${path} b/${path}\nindex 0000001..0000002 100644\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-a\n+b\n`;
+		for (const path of [".agents/skills/verify-x/features/login.md", ".agents/skills/verify-x/scripts/verify-x"]) {
+			const pr = setup("a".repeat(40), "OPEN", change(path));
+			expect(pr.cli(["record", "7", "--verdict", "live-ui-verified", "--evidence", "run.log"]).status).toBe(0);
+			const status = pr.cli(["status", "7"]);
+			expect([path, status.status, status.stdout.includes("ledger pass (live-ui-verified")]).toEqual([path, 0, true]);
+		}
+		for (const path of [".agents/skills/verify-x/SKILL.md", ".agents/skills/verify-x/features/README.md"]) {
+			const pr = setup("a".repeat(40), "OPEN", change(path));
+			const refused = pr.cli(["record", "7", "--verdict", "live-ui-verified", "--evidence", "run.log"]);
+			expect([path, refused.status, refused.stderr.includes(`changes the verification policy (${path})`)]).toEqual([path, 1, true]);
+			expect(pr.ledger()).toEqual([]);
+		}
 	});
 
 	test("publish is gone: it is a usage error that touches neither the ledger nor GitHub", () => {

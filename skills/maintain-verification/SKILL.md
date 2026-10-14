@@ -44,7 +44,7 @@ Edit only the verification skill's own directory (its `SKILL.md`, `features/`, a
 
 6. **Land or stop.** For `changed`, re-read every changed file, recheck the index, sections, drive targets, levers, and symlinks, and commit on one branch. In a repository the user owns, push an `agent/*` branch and open one pull request; otherwise leave the branch for the user. For `clean` or `blocked`, change nothing and report.
 
-7. **Policy rule.** Any change to the skill's directory is a verification-policy change: `agentic verify record` refuses every passing verdict but a countersign for it, so a `changed` pull request lands only by countersign (the `babysit-and-ship` skill's Countersign rule). A skill created before its Verdict rules said so, whose self-policy rule names only the verdict rules or `features/README.md`, is covered by that path check anyway: it needs no migration, and its older wording is not drift.
+7. **Policy rule.** A change to the skill's `SKILL.md` or `features/README.md` (its verdict, proof, and skip rules) is a verification-policy change: `agentic verify record` refuses every passing verdict but a countersign for it, so such a `changed` pull request lands only by countersign (the `babysit-and-ship` skill's Countersign rule). A pull request that changes only feature files or drive scripts takes an ordinary verdict. A skill whose self-policy rule is worded differently from `create-verification`'s current rule is covered by that path check anyway: it needs no migration, and its older wording is not drift.
 
 Keep run notes (features covered, unreachable prerequisites, confirmed drift) in a scratch location outside the repository; do not commit them.
 

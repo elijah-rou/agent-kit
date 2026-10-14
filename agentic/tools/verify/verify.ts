@@ -28,9 +28,16 @@ export function passes(verdict: string): boolean {
  * paths sets the policy its own verdict rests on, so `record` refuses every passing verdict for it but
  * `countersigned`. A path ending in `/` covers that name and everything below it; `*` matches within
  * one path segment; matching ignores case, since a case-insensitive checkout folds names together.
+ * A verification skill's verdict rules are its `SKILL.md` (verdicts) and `features/README.md` (proof
+ * and skip rules); its feature files and drive scripts land on ordinary verdicts, since trunk's copy
+ * of the skill decides each verdict. The skill's directory and its `features` name appear in a diff
+ * only as a file git tracks there, such as a symlink, which would swap in other verdict rules.
  */
 export const POLICY_PATHS = [
-	".agents/skills/verify-*/",
+	".agents/skills/verify-*/SKILL.md",
+	".agents/skills/verify-*/features/README.md",
+	".agents/skills/verify-*",
+	".agents/skills/verify-*/features",
 	"skills/babysit-and-ship/SKILL.md",
 	"skills/babysit-and-ship/references/",
 	"claude/agents/autopilot-owner.md",

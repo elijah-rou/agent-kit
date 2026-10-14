@@ -17,6 +17,8 @@ The relaxed rules apply only to a workspace that exists for the spike. Admit exa
 
 Refuse anything else, including an existing project that was never pushed and a graduated spike, and propose a new directory instead.
 
+If a remote is added during the run (which needs authorization), the workspace no longer qualifies: the relaxed rules end for it, tell the user so, and follow the standing rules from then on.
+
 Completion criterion: the workspace is one of the two cases, is a git repository, and has `SPIKE.md`.
 
 ## 2. Rules for this run
@@ -25,7 +27,7 @@ For this workspace and until the run ends, these replace the standing rules on t
 
 - **No one-way doors yet.** Nothing is persisted, published, or depended on, so the data model, contracts, core structures, and concurrency model are reversible here. Do not run `design-checkpoint`; raise these choices in conversation (step 3).
 - **No ceremony.** No pull requests, review children, plan files, `.audit/` decision logs, `show-me-your-work`, or `feature-shaping`.
-- **Code design.** Do not apply `code-design` or the standing code-structure rules. Keep only failing loudly on programmer error, which makes debugging faster.
+- **Code design.** Do not apply `code-design` or the standing code-structure rules. Keep only failing loudly on programmer error, which makes debugging faster, and setting library options explicitly where their defaults affect security, such as a dev server that binds every interface.
 - **Debt is allowed and marked.** Take shortcuts, and mark each with a `SPIKE:` comment saying what is faked or skipped; it needs no tracking issue. No regression case per bug; fix it and move on.
 - **Replies.** Short and conversational, no report headings.
 - **The user is in the room.** Bring every design fork with real consequences to the user with your recommendation, instead of deciding it silently. Decide trivia yourself.
@@ -39,7 +41,7 @@ Repeat until the user graduates or drops the spike:
 
 1. **Think with the user.** Engage with each idea: name its consequence, the strongest alternative, and the question that would decide between them. Push back on weak assumptions. When the shape is the question, sketch it inline as types, signatures, or data flow before writing code.
 2. **Build to answer a question.** When running something can answer the open question, build the smallest piece that does (a script, a REPL session, a printed trace) and show the output. For a fork that observation can settle, build both variants behind one switch and show both.
-3. **Delegate building, not thinking.** Once a piece's shape is agreed and it splits into independent parts, or is bulk work (scaffolding, fixtures, generated data, boilerplate), launch `quick` children in the background. Each brief names the files the child owns, the agreed shape, the check it runs, that it never runs git, and that shortcuts get a `SPIKE:` comment. Keep talking with the user while they work, and edit only files no running child owns. Make small edits yourself, since a brief costs more than a few lines. Run a child's result before presenting it.
+3. **Delegate building, not thinking.** Once a piece's shape is agreed and it splits into independent parts or bulk work (scaffolding, fixtures, generated data, boilerplate), launch children in the background: `build` children for parts that still need implementation choices, and `quick` children only for bulk work whose brief states the exact transformation. Each brief names the files the child owns, the agreed shape, the check it runs, that it never runs git, and that shortcuts get a `SPIKE:` comment. Keep talking with the user while they work, and edit only files no running child owns. Make small edits yourself, since a brief costs more than a few lines. Run a child's result before presenting it.
 4. **Record.** Add a decision to `SPIKE.md` only when the user made or agreed to it, one line with its reason. Keep open questions there too.
 5. **Checkpoint.** Run no git command that writes while a child is running. Once none is, commit each working change with a message naming what it tried. To undo, reset to the earlier checkpoint once the working tree is clean; the abandoned commits stay reachable through the reflog.
 
@@ -50,7 +52,7 @@ Completion criterion for each turn: the user has the output, sketch, or question
 When the user says to graduate, or agrees the design has settled:
 
 1. Fill the Handoff section of `SPIKE.md`: settled decisions, open questions, every `SPIKE:` shortcut (grep for them), and what the code proved and did not prove.
-2. In the Handoff section, list every decision the spike made that crosses a one-way door as `design-checkpoint` defines them in its first step. Mark each as settled under spike rules: the real build takes each through `design-checkpoint`, seeded with the spike's decision, instead of reusing it as settled.
+2. One-way-door decisions made in a spike are not settled for the real build, even ones the user agreed to, because spike rules skip `design-checkpoint`. In the Handoff section, list every decision the spike made that crosses a one-way door as `design-checkpoint` defines them in its first step, and mark each as unsettled: the real build takes each through `design-checkpoint`, seeded with the spike's decision.
 3. Recommend rebuilding from scratch or hardening in place, with the reason. The user decides.
 4. Add a first line `Graduated: <date>` to `SPIKE.md` and commit, so step 1 never admits this workspace again.
 

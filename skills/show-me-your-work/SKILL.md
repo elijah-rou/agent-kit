@@ -1,6 +1,6 @@
 ---
 name: show-me-your-work
-description: Keep an append-only decision log (`.audit/<task>.tsv`) for long, multi-phase, or unattended runs, audit it against this run's own transcript before handing back, and end the report with an "Attention" section from a fresh reviewer. Use for background or autonomous runs, work the user reviews after stepping away, or when the user invokes show-me-your-work or asks to be caught up on a run. Not for short interactive tasks.
+description: Keep an append-only decision log (`.audit/<task>.tsv`) for long, multi-phase, or unattended runs, audit it against this run's own transcript before handing back, and end the report with an "Attention" section from a fresh reviewer. Use for background or autonomous runs, work the user reviews after stepping away, or when the user invokes show-me-your-work or asks to be caught up on one such run. Not for short interactive tasks, or for a general "catch me up" across threads, which `catch-up` covers.
 ---
 
 # Show me your work

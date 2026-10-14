@@ -44,6 +44,12 @@ Local adaptations use narrow automatic triggers, remove Cursor tools, model rout
 MCP assumptions, cross-skill invocation, and publication behavior, and preserve evidence
 and source boundaries. The upstream MIT license is preserved in `PSTACK-LICENSE`.
 
+The `catch-up` skill is adapted from pstack's `ketchup` at cursor/plugins commit
+`5108b719a7aa484ef1a9781f587c7bbeac793f92` (MIT, `PSTACK-LICENSE`). It keeps the plain catch-up voice and the
+definition of an action item, extends the scope from one chat to the user's top-level threads and their linked pull
+requests where the thread tools exist, and drops the visuals and the user-only invocation; [`RESYNC.md`](RESYNC.md)
+records what it took and rejected.
+
 The `code-design`, `git-workflow`, `github-rulesets`, `new-project`, `repo-baseline`, `technology-selection`, `source-grounded-research`, `spike`, and `verification` skills are original to this repository. `git-workflow`'s `references/pr-review.md` condenses the reviewer prompt and rubric of pstack's `interrogate` (MIT, `PSTACK-LICENSE`) into one fresh reviewer, adds a precedent lens and the repository's review rules, and drops the multi-model panel and Cursor tooling.
 
 The `feature-shaping` skill is original to this repository. Its risk-scaled design workflow
@@ -140,6 +146,7 @@ A resync advances a row's commit; [`RESYNC.md`](RESYNC.md) records what each res
 | `skills/babysit-and-ship/references/autopilot-full.md` | `pstack/skills/poteto-mode/playbooks/autopilot-full.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/babysit-and-ship/references/pr-body.md` | `pstack/skills/poteto-mode/playbooks/opening-a-pr.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
 | `skills/babysit-and-ship/references/bot-triage.md` | `pstack/skills/poteto-mode/references/bugbot-triage.md` | `11713c683fe4add4fd403ea880580abbc9e0875f` |
+| `skills/catch-up` | `pstack/skills/ketchup` | `5108b719a7aa484ef1a9781f587c7bbeac793f92` |
 
 ## Skill boundaries
 

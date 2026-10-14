@@ -140,3 +140,20 @@ Upstream: `pstack/skills/create-verification-skill`, `11713c6..997ffc7` (commit 
 | A proof run on a stand-in for the real target lists every setup step the stand-in did that the target will not; those stay unverified | Taken | Added to the proof step and to the reply's proof-run item. |
 
 The same change adds a local Dev loop section to `create-verification` (`test`, `--repeat N`, and a Doctor toolchain comparison with CI), which has no upstream counterpart. Every verify skill generated before it is not migrated here; as of this change that is agent-kit's `verify-agent-kit`, interview-tutor's `verify-interview-tutor`, bootstrap's `verify-bootstrap`, and icloud-photos-cli's `verify-icp`. Each adopts the levers at its next `maintain-verification` pass, through local clauses with no upstream counterpart, so that skill's provenance row stays at 11713c6: step 1 checks the control CLI for every subcommand and lever `create-verification` step 2 requires and triages a missing one as a harness gap; the harness-gap triage keeps an added or changed lever only after `create-verification` step 4's step 9 checks pass, and fixes a missing seed precondition in Launch's seed steps or, when the seed cannot provide it, in the feature's `Gotchas`.
+
+## 2026-10-14: catch-up adopted from ketchup at 5108b71
+
+Upstream: `pstack/skills/ketchup`, added in 978ca6e (#539) and changed in `11713c6..5108b71` by ea32d95 (`show /ketchup decisions as before/after visuals`, #570), d00ba6e (`shorten /ketchup replies and build them on real visuals`, #595), and c86f349 (`make /ketchup read like /bro in 150 words`, #609). The 2026-10-11 resync did not adopt it. agent-kit #44 adopts it because thread audits showed the user asking "is anything running?" and "what pr is waiting" across threads, which neither the "Needs you" opening nor `show-me-your-work` answers.
+
+| Upstream text | Decision | Reason |
+| --- | --- | --- |
+| Catch up since the user's last message in this chat; notifications and subagent results are not their messages | Changed | Each thread's window starts at the user's last message in that thread, since the user's last message in the catch-up conversation says nothing about what they saw elsewhere. Threads still working, waiting on the user, or ended `failed` or `interrupted` are reported whatever the window. The rule on what counts as the user's message is kept. |
+| Plain words, short sentences, no hashes or paths unless needed to act, names the user knows | Taken | Kept without `/bro`, which agent-kit does not have. |
+| Read-only turn; check the current state of each PR, CI run, or agent | Taken | Extended: the current state is read from the forge, thread and PR text is treated as untrusted, and helper threads are never read, since reading a direct child's final result acknowledges its completion. |
+| Action items: only what the user can do, including ones raised earlier; never invent one | Taken | Extended with countersigns, landing, open thread questions, and permission prompts, and each item names the thread where the answer counts. |
+| A step the user did not ask for and the work does not need is not an action item unless it is irreversible and waits on the user; it gets one line and no "what happens if" line | Taken | |
+| Under 150 words, open with how many things need the user, cut history before action items | Taken | |
+| Action item as recommendation plus what happens if the user does not answer | Taken | |
+| Scope is one chat | Changed | Where the thread tools exist, the scope is the user's top-level threads in the project that are not settled, and their linked PRs; elsewhere it is this conversation, and the reply says so. |
+| `disable-model-invocation: true` | Rejected | The skill is read-only and should load when the user asks "catch me up" or "what's waiting on me" in their own words. A catch-up on one unattended run's decision log stays with `show-me-your-work`. |
+| A visual of at most four boxes, before-and-after visuals for every action item, screenshots, Mermaid, `/visualize` | Rejected | The reply is a few plain sentences; agent-kit draws only on an explicit request (`show-me`). |

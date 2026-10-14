@@ -25,6 +25,7 @@ skills/prototype-to-decide
 skills/reflect
 skills/show-me-your-work
 skills/teach
+skills/catch-up
 skills/github-rulesets
 skills/repo-baseline
 skills/spike

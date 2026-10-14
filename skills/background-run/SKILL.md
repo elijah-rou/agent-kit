@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 You own the exit condition. Define done, then drive to it without waiting on the user, inside the authority the run has.
 
-When the user asks to pause, or to pick up a previous run, read `references/pause-and-pickup.md` and follow it instead of the loop below. "Keep going" never means pause. For a program with several agents, also read `references/coordination.md` before the first spawn.
+When the user asks to pause, or to pick up a previous run, read `references/pause-and-pickup.md` and follow it instead of the loop below. "Keep going" never means pause. For a program with several agents, also read `references/coordination.md` before the first spawn; it says when to register the run with `scripts/watchdog.ts`, which notifies the user from outside any agent when the program's decision log stops moving.
 
 ## 1. Earn trust before the loop
 

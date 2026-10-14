@@ -58,8 +58,9 @@ What it refuses that it need not (the same list is in ADR 0001 and the verify-ag
 - A skip variable assigned for another command on a line that also runs git (`SKIP=1 make && git status`).
 - A child's harmless uses of a refused subcommand, such as `git rebase --abort`.
 
-Bootstrap wires it on install. Its `claude/settings.json` carries this PreToolUse entry, and its installer
-replaces `@AGENT_KIT@` with the agent-kit checkout and `@BOOTSTRAP_ROOT@` with the bootstrap root:
+Bootstrap does not wire it yet: that is a pending bootstrap change, and until it lands no Claude Code
+session runs the guard. The change adds this PreToolUse entry to `settings.json`, where `<kit>` is the
+agent-kit checkout:
 
 ```json
 {
@@ -70,7 +71,7 @@ replaces `@AGENT_KIT@` with the agent-kit checkout and `@BOOTSTRAP_ROOT@` with t
         "hooks": [
           {
             "type": "command",
-            "command": "test ! -f \"@AGENT_KIT@/agentic/tools/git-guard/cli.ts\" || \"@BOOTSTRAP_ROOT@/tools/bin/bun\" --cwd \"@AGENT_KIT@\" \"@AGENT_KIT@/agentic/tools/git-guard/cli.ts\" --claude-hook",
+            "command": "bun --cwd <kit> <kit>/agentic/tools/git-guard/cli.ts --claude-hook",
             "timeout": 5,
             "onFailure": "block"
           }
@@ -81,16 +82,12 @@ replaces `@AGENT_KIT@` with the agent-kit checkout and `@BOOTSTRAP_ROOT@` with t
 }
 ```
 
-- `test ! -f ... ||`: the hook allows the call, without running the guard, when the guard file is absent
-  (no agent-kit checkout, as after uninstall, or a checkout without `agentic/tools/git-guard/cli.ts`).
-- `@BOOTSTRAP_ROOT@/tools/bin/bun`: the hook runs bootstrap's own Bun, not one from Claude Code's `PATH`.
-- `--cwd @AGENT_KIT@`: Claude Code starts the hook in the session's project, and Bun would load that
-  project's `bunfig.toml`, whose preload could print before the decision or exit and turn a deny into an
-  allow.
+- `--cwd <kit>`: Claude Code starts the hook in the session's project, and Bun would load that project's
+  `bunfig.toml`, whose preload could print before the decision or exit and turn a deny into an allow.
 - `"timeout": 5`: the hook answers in well under a second.
 - `"onFailure": "block"`: by default Claude Code lets the tool call continue when a hook cannot start
-  (for example, bootstrap's Bun is missing), times out, or exits other than 0 or 2. This setting, honored
-  from Claude Code 2.1.295, turns those failures into a refusal; before 2.1.295 the guard fails open on them.
+  (for example, `bun` is missing), times out, or exits other than 0 or 2. This setting, honored from Claude
+  Code 2.1.295, turns those failures into a refusal; before 2.1.295 the guard fails open on them.
 
 What the guard does not stop (the same list is in ADR 0001 and the verify-agent-kit `git-guard` feature):
 
@@ -115,8 +112,6 @@ What the guard does not stop (the same list is in ADR 0001 and the verify-agent-
   treated as a main session; a child that holds the Agent tool (the built-in `general-purpose`) can launch an
   `autopilot-owner` grandchild, which may publish; and `agent_id` for teammates is documented but not observed.
 - Other tools: MCP tools that run commands.
-- Any command when the guard file is absent: the hook allows the call without running the guard when
-  `agentic/tools/git-guard/cli.ts` is missing from the agent-kit checkout, or the checkout is missing.
 
 ## Check changes
 

@@ -548,9 +548,12 @@ const isPolicySample = (path: string) => /^\.[^/]*\/skills\/verify-[^/]*(\/SKILL
 function diffHeaderPath(text: string): string {
 	const bare = text.replace(/\t$/, "");
 	if (!bare.startsWith('"')) return bare;
+	// A quoted name ends in its own unescaped closing quote; one without it is unreadable, not shortened.
+	const quoted = /^"((?:[^"\\]|\\.)*)"$/.exec(bare);
+	if (!quoted) throw new Error(`cannot read the quoted diff path ${text}`);
 	const escapes: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, "\\": 92 };
 	const bytes: number[] = [];
-	const body = bare.slice(1, -1);
+	const body = quoted[1]!;
 	for (let i = 0; i < body.length; i++) {
 		if (body[i] !== "\\") {
 			bytes.push(...Buffer.from(body[i]!, "utf8"));
@@ -811,6 +814,16 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 	// Read from the full diff's old and new names, so a rename out of a policy path still counts.
 	const rename = "diff --git a/.agents/skills/verify-app/SKILL.md b/notes.md\nsimilarity index 100%\nrename from .agents/skills/verify-app/SKILL.md\nrename to notes.md\n";
 	rec.check(sameList(diffPaths(rename).filter(isPolicySample), [".agents/skills/verify-app/SKILL.md"]), "the kit reads a renamed file's old name from a diff, so a rename out of a policy path counts as touching it");
+	const unclosed = 'diff --git "a/x y" "b/x y"\n--- "a/x y\n+++ "b/x y"\n';
+	const unclosedRefused = (() => {
+		try {
+			diffPaths(unclosed);
+			return false;
+		} catch {
+			return true;
+		}
+	})();
+	rec.check(unclosedRefused, "the kit refuses a quoted diff name without its closing quote rather than reading it shortened");
 	const changed = diffPaths(diff);
 	const policyTouched = changed.filter(isPolicySample);
 	rec.note("changed-paths.txt", `${changed.join("\n")}\n`);
@@ -977,6 +990,7 @@ function driveGitGuard(run: RunInfo, rec: Recorder): void {
 		{ id: "main-exported-skip", stdin: event("export SKIP=lint && git commit --allow-empty -m probe"), deny: /skipping git hooks with a hook manager's skip variable/ },
 		{ id: "main-assignment-no-verify", stdin: event("GIT_EDITOR=true git commit --amend --no-verify"), deny: /skipping git hooks with --no-verify/ },
 		{ id: "main-assignment-log", stdin: event("LANG=C git log -n 3") },
+		{ id: "main-substitution-no-verify", stdin: event("STAMP=$(date +%s) git commit --no-verify -m x"), deny: /skipping git hooks with --no-verify/ },
 		{ id: "main-am-n", stdin: event("git am -n < 0001-fix.patch"), deny: /skipping git hooks with -n/ },
 		{ id: "main-heredoc-to-sh", stdin: event("cat <<'EOF' | sh\ngit commit --allow-empty -n -m probe\nEOF"), deny: /skipping git hooks with -n/ },
 		{ id: "main-hooks-override", stdin: event("git -c core.hooksPath=/dev/null commit --allow-empty -m probe"), deny: hooksKey },
@@ -1004,6 +1018,8 @@ function driveGitGuard(run: RunInfo, rec: Recorder): void {
 		{ id: "subagent-gh-view", stdin: event("gh pr view 3", worker) },
 		{ id: "subagent-absolute-push", stdin: event("/usr/bin/git push origin agent/x", worker), deny: /child publication\/integration command: git push/ },
 		{ id: "subagent-assignment-push", stdin: event("GIT_SSH_COMMAND='ssh -o BatchMode=yes' git push origin agent/x", worker), deny: /child publication\/integration command: git push/ },
+		{ id: "subagent-substitution-push", stdin: event("STAMP=$(date +%s) git push origin agent/x", worker), deny: /child publication\/integration command: git push/ },
+		{ id: "subagent-escaped-quote-push", stdin: event("X=\\'; git push; echo \\' git tag -l", worker), deny: /child publication\/integration command: git push/ },
 		{ id: "subagent-merge-base", stdin: event("git merge-base HEAD origin/main", worker) },
 		{ id: "subagent-tag-list", stdin: event("git tag -l", worker) },
 		{ id: "subagent-tag-redirect", stdin: event("git tag 2>/dev/null", worker) },

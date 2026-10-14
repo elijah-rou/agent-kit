@@ -17,7 +17,12 @@ export const SHELL_TOOLS: ReadonlySet<string> = new Set(["Bash", "Monitor", "Pow
 const USAGE = `Usage: git-guard --claude-hook
 
 Claude Code PreToolUse hook for the tools that run a shell command (${[...SHELL_TOOLS].join(", ")}).
-Reads the event JSON on stdin and matches the command text; git and gh match by name or absolute path.
+Reads the event JSON on stdin and matches the command text; git and gh match by name or absolute path,
+at the start of a line or after ;, &, or |, past assignments that prefix them on that line
+(GIT_EDITOR=true git commit, X=$(date +%s) git push). It reads a value made, on one line, of quoted
+strings, unquoted characters other than parentheses, a $(...) holding no parenthesis, a \${...} holding
+no brace, a backquoted command, and backslash escapes of anything but ;, &, or |. git after another
+value (a nested substitution, a value spanning lines) is not seen.
 It denies, in every session:
   - --no-verify after git on its line, or on a later line that a quoted string or a line-ending
     backslash carries the command onto;

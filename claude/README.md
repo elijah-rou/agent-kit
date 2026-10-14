@@ -20,8 +20,10 @@ Mods enabled); model, effort, and permissions stay user choices.
 `git-interceptor` applies, to every tool that runs a shell command: Bash, Monitor, and PowerShell (Claude
 Code 2.1.296's tools that execute code and take a command). The policy is text patterns; the guard does not
 read the command as a shell would. They find `git` or `gh`, by name or by absolute path (`/usr/bin/git`), at
-the start of a line or after `;`, `&`, or `|`, past any assignments that prefix it for that command
-(`GIT_EDITOR=true git commit`). In every session they refuse skipping hooks:
+the start of a line or after `;`, `&`, or `|`, past assignments that prefix it for that command on its
+line, including values with `$(...)`, `${...}`, backquotes, and backslash escapes (`GIT_EDITOR=true git
+commit`, `X=$(date +%s) git push`; the values it does not read are listed under what it does not stop).
+In every session they refuse skipping hooks:
 
 - `--no-verify` after `git` (but not `--no-verify-signatures`), on the same line or on a later line that a
   quoted string or a line-ending backslash carries the command onto, as in Claude Code's usual commit form
@@ -94,8 +96,11 @@ What the guard does not stop (the same list is in ADR 0001 and the verify-agent-
 
 - A git or gh command the patterns do not see in the text: one not at the start of a line or after `;`,
   `&`, or `|` (leading spaces, a path that does not start with `/` such as `./git` or `~/bin/git`, a name
-  with an extension such as `git.exe push`, a redirection, a keyword, or an assignment whose quoted value
-  spans lines before it, a wrapper such as `command`, `env`, `sh -c`, `eval`, or `xargs`, a subshell or
+  with an extension such as `git.exe push`, a redirection, a keyword, or an assignment whose value it does
+  not read before it (one that spans lines; a `$(...)` holding a parenthesis, such as a nested `$(...)`,
+  `$((...))`, or a quoted `)`; a `${...}` holding a brace; an unquoted parenthesis, as in `X=(a b)`; a
+  backslash-escaped `;`, `&`, or `|`; an escaped quote inside `$'...'`; or double quotes inside a
+  double-quoted substitution, as in `X="$(echo "a b")"`), a wrapper such as `command`, `env`, `sh -c`, `eval`, or `xargs`, a subshell or
   substitution, PowerShell's call operator or backtick escapes), git options before the subcommand other
   than `-C` (`git --git-dir=x push`; `-c` and `--config-env` are read only for hook keys), `--no-verify` on
   a later line that the command reaches another way (an unquoted `$(...)` spanning lines, or a here

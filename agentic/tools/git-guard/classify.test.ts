@@ -117,12 +117,50 @@ describe("patterns for what the shell reader alone used to find", () => {
 		allowedForAll(["GIT_EDITOR=true git commit --amend", "LANG=C git log -n 3", "X=1 git config hook.lint.enabled", "FOO=1 echo git push", "FOO=1 npm test --no-verify"]);
 		for (const command of ["X=1 git tag -l", "PAGER=cat git merge-base a b", "GH_HOST=github.com gh pr view 3"]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
 	});
+	test("an assignment's substitution, expansion, or escape is read as part of its value", () => {
+		refusedForAll(["X=$(date +%s) git commit --no-verify", "X=`date +%s` git commit --no-verify", "X=${A:-b c} git commit --no-verify", "X=a\\ b git commit --no-verify", "X=\"a\\\" b\" git commit --no-verify", "X=$(a b) Y=`c d` git commit --no-verify"], /skipping git hooks with --no-verify/);
+		refusedForAll(["X=$(date +%s) git commit -nm x", "X=$(date +%s) HUSKY=0 git commit -m x"], /skipping git hooks with (-n|a hook manager's skip variable)/);
+		for (const [command, name] of [["X=$(date +%s) git push", "git push"], ["X=`date +%s` git push", "git push"], ["X=a\\ b git rebase main", "git rebase"], ["X=$(cd a; pwd) gh pr merge 3", "gh pr merge"]] as const) {
+			for (const actor of [child, unnamed]) expect([command, blockReason(command, actor)]).toEqual([command, expect.stringContaining(`child publication/integration command: ${name}.`)]);
+			for (const actor of [main, owner]) expect([command, blockReason(command, actor)]).toEqual([command, undefined]);
+		}
+		allowedForAll(["X=$(date +%s) git commit -m x", "X=`date` git log -n 3", "X=a\\ b git status"]);
+	});
+	test("an escaped quote in a value is not a quote, and a command inside a value's substitution is still seen", () => {
+		// \' is an escaped quote, so the ; after it ends the assignment and git push runs.
+		for (const command of ["X=\\'; git push; echo \\' git tag -l", "X=$(true; git push) git tag -l", "X=\\\"; git push; echo \\\" git tag -l"]) {
+			for (const actor of [child, unnamed]) expect([command, blockReason(command, actor)]).toEqual([command, expect.stringContaining("child publication/integration command: git push.")]);
+		}
+		refusedForAll(["X=$(true; git config core.hooksPath /dev/null) git config user.name x"], /skipping git hooks by setting or unsetting core.hooksPath/);
+		refusedForAll(["X=$(true; git commit -m \"a) git status\nb\" --no-verify)", "X=$(true; Y=`a; git commit --no-verify` git status) git status"], /skipping git hooks with --no-verify/);
+		for (const command of ["X='a b' git tag -l", "X=$(date) git tag -l"]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
+	});
 	test("a long run of assignments before a command is read in linear time", () => {
 		const assignments = "A=1 B='x y' ".repeat(200);
 		const started = performance.now();
 		for (const command of [`${assignments}echo hi`, `${assignments}git status`, `${"a=b=".repeat(400)} x`, `${"X=1;".repeat(400)}`]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
 		expect(blockReason(`${assignments}git push`, child)).toMatch(/git push/);
 		expect(performance.now() - started).toBeLessThan(500);
+	});
+	test("a long text of assignments on separate lines is read in linear time", () => {
+		const lines = "KEY=value\n".repeat(2000);
+		const started = performance.now();
+		for (const command of [`cat <<EOF\n${lines}EOF`, lines, `${"KEY=value \n".repeat(2000)}git status`]) expect([command.slice(0, 20), blockReason(command, child)]).toEqual([command.slice(0, 20), undefined]);
+		expect(blockReason(`${lines}git push`, child)).toMatch(/git push/);
+		expect(performance.now() - started).toBeLessThan(1000);
+	});
+	test("10,000 assignments of each value form are read in linear time", () => {
+		const started = performance.now();
+		for (const assignment of ["X=$(date +%s) ", "X=`date +%s` ", "X=a\\ b ", "X=${A:-b c} ", "X=\"a\\\" b\" ", "X=$(a; b) "]) {
+			const run = assignment.repeat(10_000);
+			expect([assignment, blockReason(`${run}echo hi`, child)]).toEqual([assignment, undefined]);
+			expect([assignment, blockReason(`${run}git tag -l`, child)]).toEqual([assignment, undefined]);
+			expect([assignment, blockReason(`${run}git push`, child)]).toEqual([assignment, expect.stringContaining("git push")]);
+		}
+		// Commands inside one value's substitution are each read once, not from every separator before them.
+		expect(blockReason(`X=$(${";git ".repeat(10_000)}) git status`, child)).toBeUndefined();
+		expect(blockReason(`X=$(${";git status".repeat(10_000)}; git push) git status`, child)).toMatch(/git push/);
+		expect(performance.now() - started).toBeLessThan(5000);
 	});
 	test("gh pr merge is refused for every child but an owner", () => {
 		for (const command of ["gh pr merge 3", "gh pr merge 3 --squash", "gh pr merge -R owner/repo 3", "cd repo && gh pr merge 3 --auto", "/opt/homebrew/bin/gh pr merge 3"]) {

@@ -12,7 +12,7 @@ agent-kit's skills, instructions, and subagent roles reach two runtimes through 
 
 ## How to get to it (user POV)
 
-- Bootstrap links the Claude export and roles into the Claude configuration directory; a Claude Code session then offers the skills and the subagent roles.
+- An install links the Claude export and roles into the Claude configuration directory (`claude/README.md`, Install); a Claude Code session then offers the skills and the subagent roles.
 - Pi loads the agent-kit package and offers every skill under `skills/`.
 - Opening a session in a repository offers its `.agents/skills/` skills (Claude Code through `.claude/skills/`).
 

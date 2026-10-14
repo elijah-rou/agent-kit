@@ -19,7 +19,7 @@ The user is retiring the Codex subscription and asked for an initial version bui
 
 What is built:
 
-- `claude/agents/{explore,quick,build,review,pr-review,autopilot-owner}.md`, in Claude Code's own agent format, hold the opinion (model and effort in the frontmatter) and each role's charter (the body). Bootstrap links them into `~/.claude/agents/` the same way it links `CLAUDE.md` (a bootstrap PR, live once bootstrap's agent-kit pin advances), so there is no renderer.
+- `claude/agents/{explore,quick,build,review,pr-review,autopilot-owner}.md`, in Claude Code's own agent format, hold the opinion (model and effort in the frontmatter) and each role's charter (the body). An install links them into the Claude configuration directory's `agents/` the same way it links `CLAUDE.md` (`claude/README.md`, Install), so there is no renderer.
 - `claude/CLAUDE.md` names the six roles and tells the parent to launch by role, pass no model or effort, and not delegate what it can finish in a handful of tool calls. The rules no longer ask for a reviewer on an alternate model. `review` is a real read-only boundary (an allowlist of read tools), so reflect's transcript lenses, the Attention review and the design-checkpoint judge use it, and the pull-request reviewer uses `pr-review`, the same boundary with the review procedure built into its charter; verifiers that must run the product and record a verdict use `build`. The reviewer states its own model on its first line, because a parent that launches by role no longer chooses it.
 - `scripts/check-skills.ts` fails when a role file names a model other than Haiku 5.5 or Opus 5.5, sets an unknown effort, or allows `Agent`; when the roles named in `claude/CLAUDE.md` and the role files disagree; and when `claude/CLAUDE.md` or any skill names a model ID.
 
@@ -33,23 +33,23 @@ Verified on 2026-10-12 with Claude Code 2.1.296 in a scratch project: the four f
 
 ## The door
 
-Two things here become contracts shared between agent-kit and bootstrap. The first is the role names (`explore`, `quick`, `build`, `review`): skills and instructions name them, native agent types and T3 delegations carry them, and Jev routing records will store them. The second is the per-machine overlay format, `~/.config/bootstrap/roles.json`, which each machine's private dotfiles persist. Everything else is reversible: which model and effort a role gets, the renderer, and the wording.
+Two things here become contracts shared between agent-kit and every install of it. The first is the role names (`explore`, `quick`, `build`, `review`): skills and instructions name them, native agent types and T3 delegations carry them, and Jev routing records will store them. The second is the per-machine overlay format, the `roles.json` file an install passes to `agentic roles render --overlay`, which each machine keeps in its own private configuration. Everything else is reversible: which model and effort a role gets, the renderer, and the wording.
 
 ## Problem
 
-agent-kit needs one opinion on which model and effort each kind of child task gets. That opinion has to reach a Claude Code or Codex parent on any machine as a launch the parent can make without looking anything up. Each machine says what it can reach in bootstrap, and nothing guesses.
+agent-kit needs one opinion on which model and effort each kind of child task gets. That opinion has to reach a Claude Code or Codex parent on any machine as a launch the parent can make without looking anything up. Each machine says what it can reach in its overlay, and nothing guesses.
 
 Today the opinion is scattered, and the copies disagree:
 
 - `codex/AGENTS.md` has a six-row table that is out of date: it names `gpt-5.6-sol` for the second opinion, and `gpt-6.1-sol` exists.
 - `claude/CLAUDE.md` has a rule ("match model and effort to each task") but no table.
-- `pi/AGENTS.md` defers to role profiles that live in bootstrap's `pi/agents/`. Four of those route through `opencode/grok-4.6`, against the no-OpenCode decision.
-- Bootstrap's `codex/config.toml` sets the default for untyped spawns to `gpt-6-astra` at `low`.
+- `pi/AGENTS.md` defers to role profiles kept outside agent-kit. Four of those route through `opencode/grok-4.6`, against the no-OpenCode decision.
+- The installed Codex `config.toml` sets the default for untyped spawns to `gpt-6-astra` at `low`.
 - Ten places in instructions and skills require the reviewer to run on a different model family. The user no longer requires that.
 
 Already decided by the user:
 
-- The opinion lives in agent-kit. What each machine can reach lives in bootstrap.
+- The opinion lives in agent-kit. What each machine can reach lives in that machine's overlay, outside agent-kit.
 - The bindings are: bulk or quick work on `claude-haiku-5-5`, independent or adversarial review on `gpt-6.1-sol`, and implementation (with the review done while building) on `claude-opus-5-5`.
 - A reviewer is defined by independence, not by model family. It did not write the change, starts from a brief, changes nothing, and reports only blocking findings.
 - No OpenCode routes.
@@ -76,14 +76,14 @@ delegate_task(target: {providerInstanceId: "codex", model: "gpt-6.1-sol", option
 
 **Outside T3.** A Claude Code parent in a plain terminal has no route to `gpt-6.1-sol`. It reports `review` as unavailable and launches nothing in its place. A Codex parent is in the same position for `explore`, `quick` and `build` (see open question 2).
 
-**Changing the opinion.** Edit one line in one file, open a PR, advance bootstrap's agent-kit pin, then run `install.sh link`:
+**Changing the opinion.** Edit one line in one file, open a PR, then update the installed kit and rerun its render:
 
 ```
 # agent-kit/roles/review.md
 model: gpt-6.1-sol      ->  model: gpt-6.2-sol
 ```
 
-**A machine without an Anthropic subscription.** Its private dotfiles carry this file:
+**A machine without an Anthropic subscription.** Its overlay holds:
 
 ```json
 { "unavailable": ["anthropic"],
@@ -139,7 +139,7 @@ A role may also set `nativeName` for a harness, which makes its rendered agent r
 
 ### Overlay
 
-`~/.config/bootstrap/roles.json` sits next to the existing `claude-settings.json` and `pi-settings.json` overlays. It accepts these keys:
+The overlay is a JSON file the install passes to `agentic roles render --overlay`. It accepts these keys:
 
 - `unavailable`: a list of providers.
 - `roles.<name>`: `{model, effort, reason}`, all three required.
@@ -189,7 +189,7 @@ The CLI is `agentic roles show|render|check`, registered in `agentic/bin/agentic
 
 ### Rendered files
 
-`install.sh` runs `agentic roles render --harness H --overlay FILE --out DIR` for each harness:
+An install runs `agentic roles render --harness H --overlay FILE --out DIR` for each harness:
 
 | File | Claude Code (`~/.claude`) | Codex (`~/.codex`) |
 | --- | --- | --- |
@@ -205,7 +205,7 @@ The table for this machine with no overlay, as Claude Code sees it:
 ```markdown
 # Roles on this machine
 
-Rendered from agent-kit roles/ and ~/.config/bootstrap/roles.json; do not edit.
+Rendered from agent-kit roles/ and this machine's overlay; do not edit.
 
 | Role | Use for | Native here | T3 delegate_task target |
 | --- | --- | --- | --- |
@@ -221,12 +221,12 @@ Machine overrides: none.
 
 ### How the table reaches context
 
-Both harnesses load it with a `SessionStart` hook, and bootstrap installs the hooks.
+Both harnesses load it with a `SessionStart` hook, which the install adds to each harness's settings.
 
-- **Claude Code.** The hook in bootstrap's `claude/settings.json` is `cat "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/roles.md" 2>/dev/null || true`. Claude Code adds plain-text stdout from `SessionStart` hooks to context, and the event fires on startup, resume, clear and compact, so the table survives compaction. Source: code.claude.com/docs/en/hooks.
-- **Codex.** The hook goes in bootstrap's `codex/hooks.json`, next to the Jev hook that #19 adds: `cat "${CODEX_HOME:-$HOME/.codex}/roles-session-start.json"`. Codex 0.162.1 defines `SessionStart` with `hookSpecificOutput.additionalContext`. This comes from the binary's schema and has not been run end to end. Like the Jev hook, it needs the user's one-time `/hooks` approval.
+- **Claude Code.** The hook in Claude Code's `settings.json` is `cat "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/roles.md" 2>/dev/null || true`. Claude Code adds plain-text stdout from `SessionStart` hooks to context, and the event fires on startup, resume, clear and compact, so the table survives compaction. Source: code.claude.com/docs/en/hooks.
+- **Codex.** The hook goes in Codex's `hooks.json`, next to the Jev hook that #19 adds: `cat "${CODEX_HOME:-$HOME/.codex}/roles-session-start.json"`. Codex 0.162.1 defines `SessionStart` with `hookSpecificOutput.additionalContext`. This comes from the binary's schema and has not been run end to end. Like the Jev hook, it needs the user's one-time `/hooks` approval.
 
-`CLAUDE.md` and `AGENTS.md` stay symlinks into agent-kit. Development through `BOOTSTRAP_AGENT_KIT` therefore keeps working, and no instruction file is generated.
+`CLAUDE.md` and `AGENTS.md` stay symlinks into agent-kit. Development against a local checkout therefore keeps working, and no instruction file is generated.
 
 ### Instruction prose
 
@@ -250,17 +250,17 @@ The skills stop saying "different model family" and name the role instead:
 
 - **agent-kit `scripts/validate`** runs `agentic roles check --repo`. It parses the roles and the catalog, then renders both harnesses in memory twice: with no overlay and with `roles/fixtures/no-anthropic.json`. It fails on any error, on any `opencode/` string, and on a model ID shaped like `claude-<digit>`, `claude-<word>-<digit>` or `gpt-<digit>` in `claude/`, `codex/`, `pi/AGENTS.md` or `skills/`, so the prose cannot grow a table back.
 - **Tests** cover: an unknown role, model or key; an effort the model does not accept; a missing `reason`; `unavailable` without rebinding; a byte-identical rerender; drift detection; a foreign file kept; and read-only rendering in each harness.
-- **bootstrap `install.sh doctor`** runs `agentic roles check` against the machine overlay and the installed directories.
+- **An install's health check** runs `agentic roles check` against the machine overlay and the installed directories.
 
 ### Who writes what
 
-| File | Writer | On `install.sh` rerun |
+| File | Writer | On a reinstall |
 | --- | --- | --- |
 | `agent-kit/roles/*.md`, `roles/catalog.json` | the user, by PR | read only |
-| `~/.config/bootstrap/roles.json` | the user, in private dotfiles | read only |
-| `<harness>/agents/<role>.*`, `roles.md`, `roles-session-start.json`, `roles.json` | `install.sh` through `agentic roles render`, recorded in `state.tsv` | rendered to a temporary directory, validated, and moved into place only when the bytes differ. A file at a role's path that bootstrap did not record is kept and reported as foreign. |
-| hook entries in `claude/settings.json` and `codex/hooks.json` | bootstrap, by PR | the existing `render_config` path |
-| `~/.codex/config.toml` | the user (bootstrap copies it once) | untouched. Its `[agents]` default stays the binding for untyped spawns, which the instructions make the exception. |
+| the machine's overlay `roles.json` | the user, in the machine's private configuration | read only |
+| `<harness>/agents/<role>.*`, `roles.md`, `roles-session-start.json`, `roles.json` | the install, through `agentic roles render`, recording what it wrote | rendered to a temporary directory, validated, and moved into place only when the bytes differ. A file at a role's path that the install did not record is kept and reported as foreign. |
+| hook entries in Claude Code's `settings.json` and Codex's `hooks.json` | the install | the install's settings rendering |
+| `~/.codex/config.toml` | the user (an install may copy it once) | untouched. Its `[agents]` default stays the binding for untyped spawns, which the instructions make the exception. |
 
 Running install twice writes nothing the second time. When render fails, the step returns 1 and the previously rendered files stay in place, consistent with each other.
 
@@ -277,10 +277,6 @@ agent-kit/
   claude/CLAUDE.md, codex/AGENTS.md, pi/AGENTS.md   role paragraph replaces table and sentence
   skills/...                           role names replace "different model family"
   scripts/validate                     + agentic roles check --repo
-bootstrap/
-  install.sh                           render_roles in step_claude and step_codex; doctor runs check
-  claude/settings.json, codex/hooks.json   + SessionStart hook
-  README.md                            document ~/.config/bootstrap/roles.json
 ```
 
 ### What it does not do
@@ -289,11 +285,11 @@ bootstrap/
 - No automatic fallback, and no ordered list of preferences.
 - No per-launch model or effort overrides. A role fixes both. A harder variant is a new role. Codex could not honor a per-launch override anyway, because the agent file's value takes precedence.
 - No generated instruction files.
-- Nothing for Pi yet. The catalog has Pi's spelling slot, and the Pi render arrives with the Pi project. That project also retires bootstrap's `pi/agents` model choices and its `opencode/*` routes.
+- Nothing for Pi yet. The catalog has Pi's spelling slot, and the Pi render arrives with the Pi project.
 
 ## Vendor and pi-subagents guidance
 
-Checked 2026-10-12 against the Claude Code docs (code.claude.com/docs/en/sub-agents, best-practices), the Codex docs (learn.chatgpt.com/docs/agent-configuration/subagents, config reference), and the user's pi-subagents fork (`docs/agents.md`, `docs/models.md`, `skills/pi-subagents/references/prompting-and-roles.md`, from a local worktree that may be newer than bootstrap's pin).
+Checked 2026-10-12 against the Claude Code docs (code.claude.com/docs/en/sub-agents, best-practices), the Codex docs (learn.chatgpt.com/docs/agent-configuration/subagents, config reference), and a pi-subagents fork (`docs/agents.md`, `docs/models.md`, `skills/pi-subagents/references/prompting-and-roles.md`, from a local worktree).
 
 - **One file per agent, model in the file.** All three use one definition per agent: Markdown with frontmatter (Claude, Pi) or TOML (Codex), carrying model, effort, tools and a system prompt. Claude says "design focused subagents" and "limit tool access". Codex says "the best custom agents are narrow and opinionated". This design follows that shape.
 - **Built-in roles can be overridden by name.**
@@ -338,7 +334,7 @@ A's per-kind `stay_native` idea became open question 2.
 
 **Rejected:**
 
-- **B's generation directories with an atomic pointer, which turn the instruction files into generated copies.** This breaks live development through `BOOTSTRAP_AGENT_KIT` and adds machinery that only versioning needs.
+- **B's generation directories with an atomic pointer, which turn the instruction files into generated copies.** This breaks live development against a local checkout and adds machinery that only versioning needs.
 - **B's rule that Claude roles launch only through T3, even from Claude Code.** B said native aliases cannot pin a versioned model. Agent files can: they accept full IDs and `effort`.
 - **A's ordered `prefer` lists, which fall back automatically to a second model.** agent-kit would be guessing each machine's second choice, at launch time.
 - **A's and B's marker blocks rendered into the instruction files.** Same cost as B's generations.
@@ -354,7 +350,7 @@ A's per-kind `stay_native` idea became open question 2.
 | Honest about reach, no silent substitution | 2 (automatic fallback) | 3 | 3 | 3 |
 | Agent acts from context, text stays short | 2 | 3 | 2 (Codex reads a file) | 3 |
 | Finer roles are additive | 3 | 3 | 3 | 3 |
-| Fits bootstrap and agent-kit, no service | 1 (generated instructions) | 1 (generations, pointer) | 3 | 3 |
+| Fits agent-kit and its install, no service | 1 (generated instructions) | 1 (generations, pointer) | 3 | 3 |
 
 No separate judge ran. The skill makes one optional, and the scores above are mine.
 
@@ -362,7 +358,7 @@ No separate judge ran. The skill makes one optional, and the scores above are mi
 
 - We accept that cross-provider roles need T3 in exchange for having no runtime router. Outside T3, a Claude parent cannot run `review` and a Codex parent cannot run `quick` or `build`. Both report the role as unavailable.
 - We accept read-only enforcement by tool restriction rather than by sandbox, in exchange for reviewers that can still run the product and write evidence. Claude loses `Edit`, `Write` and `NotebookEdit`. Codex stays at the user's sandbox: `sandbox_mode = "read-only"` in an agent file would not be a boundary anyway, because Codex reapplies the parent turn's live runtime overrides (such as full access) when it spawns a child. A sandboxed `verify` role is the later split.
-- We accept that rendered files are copies in exchange for symlinked instructions: a role change goes live only after `install.sh link`.
+- We accept that rendered files are copies in exchange for symlinked instructions: a role change goes live only after the install renders again.
 - We accept Codex's `[agents]` default (`gpt-6-astra` at `low`) for untyped spawns, because `config.toml` belongs to the user after the first copy.
 - We accept that a parent can still pass `model` to Claude's Agent tool and override a role, in exchange for not building an enforcement hook now. The instruction forbids it, and the review record names the model that ran.
 
@@ -373,11 +369,11 @@ No separate judge ran. The skill makes one optional, and the scores above are mi
 - **An agent-kit MCP server with `resolve(role)` or `launch(role, brief)` tools.** All three harnesses support MCP, but a server cannot do the parts that matter:
   - It cannot register native agent types. Claude Code's own routing to `Explore`, and Codex's `agent_type`, read only agent files. So the files are needed anyway, and an MCP path would be a second way to do one task.
   - `resolve` spends a tool call per launch on an answer that is fixed per machine at install time. The `SessionStart` table gives the same answer with no call.
-  - `launch` would be a second executor beside T3's `delegate_task`. The Hermes and pi-t3-runtime designs give T3 sole ownership of delegated launches.
-  - It costs a server process in every session, tool schemas in context, and MCP registration in each harness, which bootstrap would have to keep in step with the agent-kit pin.
+  - `launch` would be a second executor beside T3's `delegate_task`. The Hermes design and the design of T3's Pi runtime give T3 sole ownership of delegated launches.
+  - It costs a server process in every session, tool schemas in context, and MCP registration in each harness, which every install would have to keep in step with the installed kit.
 
   Enforcing the binding is a hook's job, not a server's: a Claude `PreToolUse` hook on `Agent` can refuse a launch that passes its own `model`.
-- **Keeping the opinion in bootstrap**, through Pi agent overrides, Codex `[agents]`, or agent files. Wrong owner by the user's decision, and it is how the OpenCode routes crept in.
+- **Keeping the opinion in the install**, through Pi agent overrides, Codex `[agents]`, or agent files. Wrong owner by the user's decision, and it is how the OpenCode routes crept in.
 - **pstack's setup skill, which writes one always-applied rule.** Its override semantics are right (one line per role, delete a line to fall back, values validated), and the overlay keeps them. But the skill is interactive, Cursor-only, and produces no native agent files.
 
 ## Open questions
@@ -386,7 +382,7 @@ No separate judge ran. The skill makes one optional, and the scores above are mi
    - (a) `quick` medium, `build` high, `review` xhigh.
    - (b) low, high, high, which A and B proposed.
 
-   I recommend (a). Medium is Haiku 5.5's default in T3's catalog, so `quick` claims no tuning that nobody has measured. High is one step above Opus 5.5's default of medium, because implementation is the work that most needs it. Xhigh matches both reviewer configs the user already wrote (bootstrap `pi/settings.json` and pi-t3-runtime's reviewer profile). If review effort is left unstated, T3 runs `gpt-6.1-sol` at its catalog default of `low`. Against this, the Codex docs suggest `high` for "reviewer or security-focused agents", and their example reviewer runs `gpt-6.1-sol` at `medium`. Default: (a), revisited once routing records show cost and quality.
+   I recommend (a). Medium is Haiku 5.5's default in T3's catalog, so `quick` claims no tuning that nobody has measured. High is one step above Opus 5.5's default of medium, because implementation is the work that most needs it. Xhigh matches both reviewer configs the user already wrote (the user's Pi settings and the reviewer profile of T3's Pi runtime). If review effort is left unstated, T3 runs `gpt-6.1-sol` at its catalog default of `low`. Against this, the Codex docs suggest `high` for "reviewer or security-focused agents", and their example reviewer runs `gpt-6.1-sol` at `medium`. Default: (a), revisited once routing records show cost and quality.
 
 2. **Cross-harness `quick` and `explore`.** From Codex, either role on Haiku means a T3 child thread per lookup, and it is unavailable outside T3. Options:
    - (a) Strict: T3 or unavailable.
@@ -430,7 +426,7 @@ On `agent/model-roles`, add `roles/` (four roles, catalog, fixture) and `agentic
 - An overlay that marks `anthropic` unavailable without rebinding is refused with exit 1 and writes nothing.
 - Copying the Claude agent files into `~/.claude/agents/` makes `build` and `quick` appear in `/agents` with the right model and effort.
 
-The later slices, in order: the bootstrap install step and the hooks, then the wording in instructions and skills.
+The later slices, in order: the install step and the hooks, then the wording in instructions and skills.
 
 ## Rubric used
 
@@ -439,4 +435,4 @@ The later slices, in order: the bootstrap install step and the hooks, then the w
 3. Honest about reach: for each harness, it says how each role launches and what happens when the model cannot be reached, with no silent substitution.
 4. Agent ergonomics: the agent can act from context in the common case, and the text in context stays short.
 5. Growth: finer roles are additive.
-6. Fit: it reuses bootstrap's render and overlay and agent-kit's patterns, adds no runtime service, and needs nothing that stock Codex forbids.
+6. Fit: it reuses an install's settings rendering and overlay, and agent-kit's patterns, adds no runtime service, and needs nothing that stock Codex forbids.

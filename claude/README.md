@@ -1,18 +1,64 @@
 # Claude Code
 
-What bootstrap's `--tools claude` selection installs into the Claude configuration directory
-(`CLAUDE_CONFIG_DIR`, or `~/.claude`):
+What a Claude Code install of agent-kit consists of. `<kit>` is the installed kit, a checkout of this
+repository; `<config>` is the Claude configuration directory (`CLAUDE_CONFIG_DIR`, or `~/.claude`).
+Everything here runs on Bun.
 
-- `CLAUDE.md`: the global working rules.
-- `skills.txt`: the skills exported to Claude, from `skills/` or the Claude-specific adaptations in
-  `claude/skills/`. Exports stay runtime-neutral; `scripts/check-skills.ts` enforces it.
-- `mods/trial-tools`: a Claude Code Mod with clipboard, Git, throughput, and validation commands. See
-  its [README](mods/trial-tools/README.md).
-- `statusline.ts`: a quota footer that renders the rate limits Claude supplies on stdin. It never reads
-  credentials or calls provider APIs; missing, invalid, or stale data shows `limits: n/a`.
+## Install
 
-Everything here runs on Bun. Bootstrap writes the machine-specific `settings.json` (status line command,
-Mods enabled); model, effort, and permissions stay user choices.
+In `<kit>`, run `bun install --frozen-lockfile --production` (`agentic watch-pr` and `orch` need the
+dependencies), and put `<kit>/agentic/bin/agentic` on `PATH`. Set up a timer outside any agent (launchd,
+systemd, or cron) that runs `bun <kit>/skills/background-run/scripts/watchdog.ts scan` every 15 minutes with the
+same `HOME` and `XDG_STATE_HOME` Claude Code sees: `background-run` counts a run as watched only where that timer
+runs, and reports every run as "never scanned" without it. The timer must find `bun` (give its absolute path or
+set `PATH`, since a timer's default `PATH` often lacks it), and when Claude Code sets `AGENTIC_WATCHDOG_DIR`, which
+overrides the registry location, the timer needs the same value. Then link into `<config>`:
+
+- `claude/CLAUDE.md` as `<config>/CLAUDE.md`: the global working rules.
+- each `claude/agents/*.md` into `<config>/agents/`: the subagent roles, each fixing a child's model and
+  effort. A role named like a built-in, such as `Explore`, replaces it.
+- each path listed in `claude/skills.txt` (relative to `<kit>`) as `<config>/skills/<its last segment>`:
+  the skills exported to Claude, from `skills/` or the Claude-specific adaptations in `claude/skills/`.
+  Exports stay runtime-neutral; `scripts/check-skills.ts` enforces it.
+- `claude/mods/trial-tools` as `<config>/skills/trial-tools`: a Claude Code Mod with clipboard, Git,
+  throughput, and validation commands, whose plugin manifest Claude Code discovers under its skills
+  directory. See its [README](mods/trial-tools/README.md).
+
+`settings.json` in `<config>` needs these entries, with `<kit>` replaced by the kit's absolute path. Model,
+effort, permissions, and every other setting stay the user's choice.
+
+```json
+{
+  "statusLine": { "type": "command", "command": "bun <kit>/claude/statusline.ts", "refreshInterval": 60 },
+  "env": { "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1" },
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "bun <kit>/agentic/tools/jev/cli.ts task-class --claude-hook", "timeout": 5 }] }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Monitor|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun --cwd <kit> <kit>/agentic/tools/git-guard/cli.ts --claude-hook",
+            "timeout": 5,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- `statusLine`: `claude/statusline.ts` is a quota footer that renders the rate limits Claude supplies on
+  stdin. It never reads credentials or calls provider APIs; missing, invalid, or stale data shows
+  `limits: n/a`.
+- `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`: enables Mods, which the trial-tools Mod needs.
+- `UserPromptSubmit`: the Jev prompt-routing hook (ADR 0002), which routes every task prompt.
+- `PreToolUse`: the git guard (next section). A session runs the guard only when its `settings.json`
+  holds this entry.
 
 ## Git guard
 
@@ -58,29 +104,7 @@ What it refuses that it need not (the same list is in ADR 0001 and the verify-ag
 - A skip variable assigned for another command on a line that also runs git (`SKIP=1 make && git status`).
 - A child's harmless uses of a refused subcommand, such as `git rebase --abort`.
 
-Bootstrap does not wire it yet: that is a pending bootstrap change, and until it lands no Claude Code
-session runs the guard. The change adds this PreToolUse entry to `settings.json`, where `<kit>` is the
-agent-kit checkout:
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash|Monitor|PowerShell",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun --cwd <kit> <kit>/agentic/tools/git-guard/cli.ts --claude-hook",
-            "timeout": 5,
-            "onFailure": "block"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+The `PreToolUse` entry under Install runs it. Its fields:
 
 - `--cwd <kit>`: Claude Code starts the hook in the session's project, and Bun would load that project's
   `bunfig.toml`, whose preload could print before the decision or exit and turn a deny into an allow.

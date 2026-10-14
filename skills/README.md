@@ -102,7 +102,7 @@ Local adaptations:
 
 ## Machine-readable provenance
 
-Read by `agentic upstream-drift`. It covers every skill adapted from cursor/plugins, with one row per
+Read by `agentic upstream-drift --upstream <cursor/plugins checkout>`. It covers every skill adapted from cursor/plugins, with one row per
 local path and upstream source; a local file merged from several upstream files has a row for each.
 A resync advances a row's commit; [`RESYNC.md`](RESYNC.md) records what each resync took and rejected.
 

@@ -1,14 +1,12 @@
 #!/usr/bin/env bun
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { readProvenance, reportItem, upstreamHead, type ItemReport } from "./upstream-drift.ts";
 
-const DEFAULT_UPSTREAM = join(homedir(), "Projects", "cursor-plugins");
 const AGENT_KIT_ROOT = join(import.meta.dir, "..", "..", "..");
 
-const USAGE = `Usage: upstream-drift [--root <dir>] [--upstream <repo>] [--upstream-for <owner/name>=<repo>]... [--fail-on-drift]
+const USAGE = `Usage: upstream-drift --upstream <repo> [--root <dir>] [--upstream-for <owner/name>=<repo>]... [--fail-on-drift]
 
 Report upstream files that changed since each adapted item's recorded commit.
 
@@ -20,8 +18,8 @@ git -C <upstream> diff --numstat --no-renames <commit> HEAD -- <upstream_path>.
 
 Options:
   --root <dir>       Project root (default: the agent-kit checkout holding this tool).
-  --upstream <repo>  Upstream checkout (default: $UPSTREAM_DRIFT_REPO, else
-                     ~/Projects/cursor-plugins).
+  --upstream <repo>  Checkout of the default upstream, cursor/plugins. Required unless
+                     $UPSTREAM_DRIFT_REPO names it.
   --upstream-for <owner/name>=<repo>
                      Checkout for provenance.toml items with that repo; repeatable. An item
                      whose repo has no checkout is reported as an error.
@@ -69,7 +67,11 @@ export function main(argv: readonly string[], io: Io = defaultIo): number {
 		return 0;
 	}
 	const root = values.root ?? AGENT_KIT_ROOT;
-	const upstream = values.upstream ?? io.env.UPSTREAM_DRIFT_REPO ?? DEFAULT_UPSTREAM;
+	const upstream = values.upstream ?? io.env.UPSTREAM_DRIFT_REPO;
+	if (upstream === undefined || upstream === "") {
+		io.stderr(`error: --upstream <repo> is required (or set $UPSTREAM_DRIFT_REPO): a checkout of cursor/plugins\n\n${USAGE}`);
+		return 2;
+	}
 	for (const [flag, path] of [["--root", root], ["--upstream", upstream]] as const) {
 		if (!existsSync(path)) {
 			io.stderr(`error: ${flag} ${path} does not exist\n`);

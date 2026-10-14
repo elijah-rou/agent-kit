@@ -1,8 +1,7 @@
 # agent-kit
 
-Instructions, skills, Pi extensions, and Claude Code mods shared by Pi and Claude Code.
-[bootstrap](https://github.com/elijah-rou/bootstrap) pins a commit of this repository and links it
-for whichever agents a machine selects; agent configuration (models, providers, settings) stays there.
+Instructions, skills, Pi extensions, and Claude Code mods shared by Pi and Claude Code. Agent configuration
+(models, providers, permissions) stays the user's.
 
 | Path | Used by | Contents |
 | --- | --- | --- |
@@ -13,6 +12,25 @@ for whichever agents a machine selects; agent configuration (models, providers, 
 
 The repository root is a [Pi package](https://www.npmjs.com/package/@earendil-works/pi-coding-agent): Pi loads the
 extensions, skills, prompt, and theme from it in place. Claude Code reads linked files.
+
+## Install
+
+The kit runs on Bun. Clone it, run `bun install --frozen-lockfile --production` in the checkout, and put
+`agentic/bin/agentic` on `PATH`. An install that schedules T3 automations (`skills/t3-automation`) keeps the
+checkout detached at a reviewed commit, never on a branch or in a linked worktree.
+
+An install also needs a timer outside any agent (launchd, systemd, or cron) that runs
+`bun <kit>/skills/background-run/scripts/watchdog.ts scan` every 15 minutes, where `<kit>` is the checkout's
+absolute path, with the same `HOME` and `XDG_STATE_HOME` the agents see. The timer must find `bun`: a timer's
+default `PATH` often lacks it, so give `bun`'s absolute path or set `PATH`. When the agents set
+`AGENTIC_WATCHDOG_DIR`, it overrides the registry location, so give the timer the same value. The timer tells
+the user when an unattended run stops; without it, `background-run` reports every run as not watched ("never
+scanned").
+
+- **Claude Code:** link the files and add the `settings.json` entries listed in
+  [claude/README.md](claude/README.md#install).
+- **Pi:** add the checkout as a local package (the root's `package.json` lists the extensions, skills, prompts,
+  and themes Pi loads), and link `pi/AGENTS.md` and `pi/WORKTREE_STREAMS.md` into Pi's agent directory.
 
 To learn how to prompt an agent that has the kit installed (starting a project, adding a feature, prototyping,
 handing work off, and where the agent stops for you), read the [user guide](docs/guide/README.md).
@@ -29,8 +47,7 @@ scripts/validate   # needs Bun, ripgrep, zsh, and Python
 ```
 
 It checks for private literals, validates every skill, and runs the agentic tool, Pi extension, and Claude Mod tests
-with Bun, the runtime bootstrap runs Pi on. Change a skill or extension here, then advance the pin in bootstrap's
-`catalog.tsv`.
+with Bun, the runtime the kit runs on. An install picks up a change once it updates its checkout.
 
 Repository-authored files are MIT licensed. Adapted skills keep their upstream licenses; see
 [skills/README.md](skills/README.md).

@@ -1,5 +1,6 @@
 # Adapted skills from upstreams other than cursor/plugins, for agentic upstream-drift:
-#   agentic upstream-drift --upstream-for humanlayer/skills=<checkout> --upstream-for mattpocock/skills=<checkout>
+#   agentic upstream-drift --upstream <cursor/plugins checkout> --upstream-for humanlayer/skills=<checkout> \
+#     --upstream-for mattpocock/skills=<checkout>
 
 [[item]]
 local = "skills/show-me"

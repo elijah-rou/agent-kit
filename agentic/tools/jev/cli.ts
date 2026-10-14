@@ -11,8 +11,8 @@ const CURRENT_POLICY = policyId(POLICY);
 
 const USAGE = `Usage: jev <pr-risk | task-class | route-report> ...
 
-Advisory Jev calls, calibrated in the agentic evals. The key comes from TYPESAFE_API_KEY or, on
-macOS, the keychain item "typesafe-jev".
+Advisory Jev calls, calibrated on samples in a separate evaluation repository. The key comes from
+TYPESAFE_API_KEY or, on macOS, the keychain item "typesafe-jev".
 
   pr-risk <pr> [--repo owner/repo]
       For the landing modes, on each verification round's head. Advisory: it never holds a PR.

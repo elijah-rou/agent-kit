@@ -1,6 +1,6 @@
 # Trial tools
 
-A local Claude Code Mod with clipboard/Git commands, a throughput display, and structured validation. Tested on 2.1.285 with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`. Bootstrap's `--tools claude` selection links it into the Claude configuration directory and enables Mods; restart Claude Code afterwards. It registers one model tool for validation. It does not call models, approve permissions, or fetch quota APIs.
+A local Claude Code Mod with clipboard/Git commands, a throughput display, and structured validation. Tested on 2.1.285 with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`. An install links it into the Claude configuration directory and enables Mods (`claude/README.md`, Install); restart Claude Code afterwards. It registers one model tool for validation. It does not call models, approve permissions, or fetch quota APIs.
 
 | Command | Action |
 | --- | --- |

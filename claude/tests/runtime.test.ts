@@ -60,7 +60,7 @@ test.skipIf(claude === null)("native /changes and /validate run without model us
   expect(existsSync(marker)).toBe(false);
   const before = git("--no-optional-locks", "status", "--porcelain=v1");
 
-  // A disposable profile that loads the mod the way bootstrap links it.
+  // A disposable profile that loads the mod the way an install links it (claude/README.md, Install).
   const profile = join(directory, "profile");
   mkdirSync(join(profile, "skills"), { recursive: true });
   symlinkSync(MOD, join(profile, "skills/trial-tools"));

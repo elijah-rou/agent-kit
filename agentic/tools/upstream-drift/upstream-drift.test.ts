@@ -177,10 +177,17 @@ describe("upstream-drift", () => {
 		expect(help.stdout).toContain("Usage: upstream-drift");
 		const bad = spawnSync(process.execPath, [CLI, "--bogus"], { encoding: "utf8" });
 		expect(bad.status).toBe(2);
-		const missing = spawnSync(process.execPath, [CLI, "--root", join(workspace, "nope")], {
+		const missing = spawnSync(process.execPath, [CLI, "--root", join(workspace, "nope"), "--upstream", upstream], {
 			encoding: "utf8",
 		});
 		expect(missing.status).toBe(2);
+		expect(missing.stderr).toContain("--root");
+		const env = { ...process.env };
+		delete env.UPSTREAM_DRIFT_REPO;
+		const noUpstream = spawnSync(process.execPath, [CLI, "--root", root], { encoding: "utf8", env });
+		expect(noUpstream.status).toBe(2);
+		expect(noUpstream.stderr).toContain("--upstream <repo> is required");
+		expect(help.stdout).not.toContain("Projects");
 	});
 
 	it("reads items from another upstream repository through --upstream-for, and errors without its checkout", () => {

@@ -165,7 +165,7 @@ Every failure delivers nothing beyond what the door rule allows, writes one reco
   - `route-harvest` joins records to local Claude and Pi transcripts by digest. It writes candidates to an ignored local file and skips opted-out repositories. Text stays on the machine whose agent received it. The user's labels are stored by digest, without text, in that machine's ledger directory, so they travel with its records.
   - Sessions where the user typed `/background-run` supply loop positives.
   - The user labels 150 to 200 prompts, about an hour.
-  - The 2026-10-07 door samples are committed in `elijah-rou/agentic` (`evals/jev-risk`: 90 hand-labeled tasks, each asked twice, answered by `jev-1.13.0`), and the pre-2026-10-12 door bar was rechecked on them directly. Since 2026-10-12 the door also needs labeled live records through `route-eval` (ADR 0002, Consequences), so all three notes need new labels.
+  - The 2026-10-07 door samples are committed in a separate evaluation repository (`evals/jev-risk`: 90 hand-labeled tasks, each asked twice, answered by `jev-1.13.0`), and the pre-2026-10-12 door bar was rechecked on them directly. Since 2026-10-12 the door also needs labeled live records through `route-eval` (ADR 0002, Consequences), so all three notes need new labels.
 - **Acting bars.** These are proposals and the user's decision:
   - **door:** before 2026-10-12, with the combined request, no worse than the 2026-10-07 baseline on the same samples: 4 of 60 door calls missed (2 of 30 tasks) and 16 of 120 other calls hinted. Since then the door also has to pass `route-eval` on labeled live records before it becomes advisory.
   - **lookup:** precision of at least 0.95, and no door-labeled sample routed to lookup.
@@ -242,7 +242,7 @@ The main flow is three files deep: the adapter, then `route.ts`, then `egress.ts
 | `pi/extensions/task-class.ts` | the Pi adapter above, including `registryClassifier`, which parses Pi's `ClassifierAnswer` into the shared answer shape, and routing on `input`, before Pi's expansion | built, rewritten in place |
 | `docs/adr/0002-task-routing.md` | amends ADR 0001 decision 5 | accepted |
 
-`taskClass`, `taskHint`, and `taskHintFor` are deleted in the same change that migrates their callers and tests. `pi-t3-runtime` is out of scope for now and needs no routing code.
+`taskClass`, `taskHint`, and `taskHintFor` are deleted in the same change that migrates their callers and tests. T3's Pi runtime is out of scope for now and needs no routing code.
 
 ### Children and Hermes
 
@@ -331,7 +331,7 @@ All three converged on the same core:
 - **A single four-way question (lookup, rigor, loop, door).** It loses the calibrated door question and can't express "a loop that is also a door".
 - **Jev choosing the skill directly.** It needs recalibration on every skill edit, and invites Jev into choosing manual or authority-bearing skills.
 - **Making `background-run` model-invocable, with no Jev for loops.** This sends nothing, but it lets the model start unattended runs on unmeasured judgment. The user kept it manual (open question 3). It is the fallback if Jev's loop precision fails its bar.
-- **Sharing one engine extracted from `pi-t3-runtime`.** That repository is out of scope for now, and sharing `egress.ts` gives one source of truth for the real invariant.
+- **Sharing one engine extracted from T3's Pi runtime.** That code is out of scope for now, and sharing `egress.ts` gives one source of truth for the real invariant.
 
 ## Open questions
 

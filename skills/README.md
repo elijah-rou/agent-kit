@@ -66,7 +66,7 @@ CLI recipes in `create-verification` come from cursor-team-kit (MIT, copyright C
 | Skill | Invocation | Upstream sources |
 | --- | --- | --- |
 | [correct](correct/SKILL.md) | manual | `pstack/skills/correct/` |
-| [create-verification](create-verification/SKILL.md) | manual | `pstack/skills/create-verification-skill/`; recipes from `cursor-team-kit/skills/control-ui/` and `cursor-team-kit/skills/control-cli/`; the control CLI is informed by `cli-for-agent/skills/cli-for-agents/` and `pstack/docs/guide/06-verify-and-ship.md`, not vendored |
+| [create-verification](create-verification/SKILL.md) | model and manual | `pstack/skills/create-verification-skill/`; recipes from `cursor-team-kit/skills/control-ui/` and `cursor-team-kit/skills/control-cli/`; the control CLI is informed by `cli-for-agent/skills/cli-for-agents/` and `pstack/docs/guide/06-verify-and-ship.md`, not vendored |
 | [maintain-verification](maintain-verification/SKILL.md) | manual | `pstack/skills/maintain-verification-skill/` |
 | [teach](teach/SKILL.md) | model and manual | `pstack/skills/teach/`; the failure and surprise trigger is from design D6 |
 | [show-me-your-work](show-me-your-work/SKILL.md) | model and manual | `pstack/skills/show-me-your-work/` |
@@ -74,7 +74,7 @@ CLI recipes in `create-verification` come from cursor-team-kit (MIT, copyright C
 | [design-checkpoint](design-checkpoint/SKILL.md) | model and manual | `pstack/skills/architect/`, `pstack/skills/arena/` |
 | [prototype-to-decide](prototype-to-decide/SKILL.md) | model and manual | `pstack/skills/poteto-mode/playbooks/prototype.md` |
 | [background-run](background-run/SKILL.md) | manual | `pstack/skills/poteto-mode/playbooks/autonomous-run.md`, `pause-safely.md`, `session-pickup.md`, `orchestrate.md`; `pstack/skills/figure-it-out/`; `pstack/docs/guide/07-overnight.md` |
-| [babysit-and-ship](babysit-and-ship/SKILL.md) | manual | `pstack/skills/poteto-mode/playbooks/babysit.md`, `shipping.md`, `opening-a-pr.md`, `autopilot-full.md`; `pstack/skills/poteto-mode/references/bugbot-triage.md` |
+| [babysit-and-ship](babysit-and-ship/SKILL.md) | model and manual | `pstack/skills/poteto-mode/playbooks/babysit.md`, `shipping.md`, `opening-a-pr.md`, `autopilot-full.md`; `pstack/skills/poteto-mode/references/bugbot-triage.md` |
 
 Local adaptations:
 
@@ -84,9 +84,12 @@ Local adaptations:
   to the repository being worked on; never copy a tool into it.
 - The wording is runtime-neutral so one copy serves Pi and the Claude export.
 - Publication follows the standing default in the instructions; landing happens only in the
-  `autopilot-stack`, `ship`, and `autopilot-full` modes that `babysit-and-ship` defines. Messages to people are drafted
+  `autopilot-stack`, `ship`, and `autopilot-full` modes that `babysit-and-ship` defines, invoked by the user's own
+  words, and each merge waits for `agentic verify status` to pass. Messages to people are drafted
   for the user, and a blocked or denied action is final.
-- Expensive or side-effecting workflows set `disable-model-invocation: true`.
+- Expensive or side-effecting workflows set `disable-model-invocation: true`, unless the user's words
+  are what starts them: `babysit-and-ship` loads when the user's words name a landing mode, and
+  `create-verification` when such a mode needs a verification skill first.
 - Transcripts are read only for the active workspace's current session, except that a session pickup reads the prior run it resumes in the same workspace.
 - Decision logs, session learning files, and the verdict ledger each have one writer.
 

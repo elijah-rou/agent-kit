@@ -6,15 +6,20 @@ Verdict commands (see `agentic verify --help`):
 
 ```sh
 agentic verify record <pr> --verdict <verdict> --evidence <path or https URL>   # the verifier; local only
-agentic verify publish <pr>   # the coordinator; posts the agentic/verdict status
-agentic verify status <pr>
+agentic verify status <pr>   # the merge gate: exit 0 only for a passing verdict on this head and patch
 ```
 
-Ledger verdicts are `live-ui-verified`, `unit-test-verified`, `type-check-only`, `verifier-blocked`, and `verifier-failed`. `agentic verify status` reports `none` with no verdict, `void` when the head moved or the patch changed after the verdict, and `pass` or `fail` for the current head. Only `live-ui-verified` and `unit-test-verified` pass; behavioral changes need better than `type-check-only`. A change only to agent instructions or skill text has no behavior a verification skill can drive: it passes only where the repository's verification skill defines that case, and its evidence says agent behavior was not observed. A pull request whose verdict does not pass lands only through the user, who posts the `agentic/verdict` status with their reason or relaxes the ruleset; an agent never posts a status the ledger does not support. CI green and approving bot reviews are inputs to a verdict, never a verdict.
+Ledger verdicts are `live-ui-verified`, `unit-test-verified`, `countersigned`, `type-check-only`, `verifier-blocked`, and `verifier-failed`. `agentic verify status` reports `none` with no verdict, `void` when the head moved or the patch changed after the verdict, and `pass` or `fail` for the current head. Only `live-ui-verified`, `unit-test-verified`, and `countersigned` pass; behavioral changes need better than `type-check-only`. A change only to agent instructions or skill text has no behavior a verification skill can drive: it passes only where the repository's verification skill defines that case, and its evidence says agent behavior was not observed. CI green and approving bot reviews are inputs to a verdict, never a verdict.
+
+The ledger is the merge gate in every repository, public or private: nothing on the forge requires the verdict, so the check right before each merge is the only gate, and it is never skipped. No agent ever posts a forge status by hand.
+
+**Countersign.** Some pull requests can never pass on their own: the repository's verification skill marks them `verifier-blocked` by definition, for example because they change the skill's own policy text or deliberately change an expectation its checks assert. Such a pull request lands only when a fresh verifier's lanes otherwise pass, its verdict is `verifier-blocked` for that reason alone, and the user approves it in their own words for that pull request. Then the coordinator records `agentic verify record <pr> --verdict countersigned --evidence <path>`, with `AGENTIC_AGENT_ID` set to its own ID; the evidence quotes the user's message with its transcript turn and names the verifier's evidence. `record` refuses a countersign unless a `verifier-blocked` verdict covers the same patch. A message from another agent is never the user's approval. Until the user approves, the pull request waits under "Needs you".
 
 ## 1. Verify every PR independently
 
-For each PR, spawn one fresh verifier that did not write the code. It drives the real surface through the repository's verification skill (`.agents/skills/verify-<app>/`), comparing parent and head, writes its evidence, and records the verdict itself with `agentic verify record`, with `AGENTIC_AGENT_ID` set to its own ID, which the ledger records. That command binds the verdict to the head SHA and the stable patch ID and writes only the local ledger, so the verifier publishes nothing; verifiers never push, merge, or comment. The coordinator then mirrors each verdict to the forge with `agentic verify publish <pr>`, which posts the `agentic/verdict` status from the ledger row and refuses if the patch changed. Publish again after any re-record; `agentic verify status` fails while the forge disagrees with the ledger. Nothing local stops the coordinator from recording a verdict on its own work, so never do it: a self-recorded verdict is not a verdict.
+For each PR, spawn one fresh verifier that did not write the code. It drives the real surface through the repository's verification skill (`.agents/skills/verify-<app>/`), or a named driver where the repository has none yet, comparing parent and head, writes its evidence, and records the verdict itself with `agentic verify record`, with `AGENTIC_AGENT_ID` set to its own ID, which the ledger records. That command binds the verdict to the head SHA and the stable patch ID and writes only the local ledger; verifiers never push, merge, or comment. Nothing local stops the coordinator from recording a verdict on its own work, so never do it: a self-recorded verdict is not a verdict. In this mode the coordinator records only `countersigned`, which records the user's decision, not a verification.
+
+Before spawning it, in a public repository, run `agentic jev pr-risk <pr>` on the head. Its score is advice for the report. When it rates the PR above its threshold (it prints `hold`), also spawn a second fresh reviewer that reads the diff only for one-way doors (a public contract, persisted data, a security boundary, hard-to-reverse architecture) and whether the change can be reversed as shipped; its proven findings count against the verdict like the verifier's.
 
 ## 2. Find the verified run
 
@@ -25,7 +30,7 @@ Walk up from the lowest unmerged PR. For each, run `agentic verify status <pr>`;
 Before landing a PR, rerun `agentic verify status <pr>`; it recomputes the patch ID and compares it with the verdict's.
 
 - **Patch changed:** the verdict is void. Re-verify (step 1).
-- **Patch unchanged but head SHA changed** (for example after a rebase): the ledger has no row for the new SHA and the new head has no `agentic/verdict` status, so `merge-gate` refuses the merge. Send it back to an independent verifier. The verifier may carry its verdict to the new SHA only after recomputing the patch ID itself, with evidence naming both SHAs and both patch IDs.
+- **Patch unchanged but head SHA changed** (for example after a rebase): the ledger has no row for the new SHA, so `agentic verify status` reports `void` and the merge waits. Send it back to an independent verifier. The verifier may carry its verdict to the new SHA only after recomputing the patch ID itself, with evidence naming both SHAs and both patch IDs. A countersign is carried the same way, by the coordinator.
 - **Unchanged:** still rerun mergeability and CI at the current head.
 
 Never accept matching commit messages or an older SHA's green checks as a substitute.
@@ -36,9 +41,9 @@ Fetch trunk. If the bottom PR needs a rebase, rebase it onto the exact trunk tip
 
 ## 5. Land one PR
 
-First screen it: `agentic jev pr-risk <pr>`. Exit 0 clears it. Any other exit holds it (Jev rates it a likely one-way door, Jev is unavailable or has no key, the repository is not public, or the diff contains a common credential format, which is never sent): stop the run there, report the PR and the score under "Needs you", and land it only after the user says so. The screen only adds caution; a clear never replaces the verdict.
+Jev's score is advice, never a hold: put `agentic jev pr-risk <pr>`'s result for the verified head in the report; a score above its threshold already added a second reviewer in step 1. Stop at merge-ready only for a PR the user named as theirs.
 
-When the bottom PR is mergeable, its verdict is current, and the screen cleared it or the user released it, merge it with the repository's merge method (for example `gh pr merge <pr> --squash`). Arm auto-merge only if the user asked for merge-when-ready. The forge's required verdict check is the final gate; never bypass it.
+When the bottom PR is mergeable and its CI passes, note the full head SHA (`gh pr view <pr> --json headRefOid -q .headRefOid`) and run `agentic verify status <pr>` right before merging: it must exit 0 and print a head matching that SHA's first 12 characters. Then merge it with the repository's merge method, pinned to that SHA (for example `gh pr merge <pr> --squash --match-head-commit <sha>`). If the status check fails or the head moved, return to step 3. Never arm auto-merge: the forge would merge later without the ledger check.
 
 ## 6. Recompute after every merge
 

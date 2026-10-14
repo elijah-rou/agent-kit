@@ -1,7 +1,6 @@
 ---
 name: create-verification
-description: Generate and prove a repository-local verification skill at `.agents/skills/verify-<app>/` whose control CLI launches the app, health-checks it, drives it the way a user does, captures evidence that survives cleanup, and carries a seeded feature map. Covers web, CLI and TUI, systems, and game projects. Use when the user invokes create-verification or asks for a scripted way to verify this repository's app. Not for a one-off check of a single change.
-disable-model-invocation: true
+description: Generate and prove a repository-local verification skill at `.agents/skills/verify-<app>/` whose control CLI launches the app, health-checks it, drives it the way a user does, captures evidence that survives cleanup, and carries a seeded feature map. Covers web, CLI and TUI, systems, and game projects. Use when the user invokes create-verification or asks for a scripted way to verify this repository's app, or as the first unit when a landing mode (`babysit-and-ship`) starts in a repository with no `.agents/skills/verify-*/` skill. Not for a one-off check of a single change.
 ---
 
 # Create a verification skill

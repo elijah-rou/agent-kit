@@ -39,7 +39,7 @@ Each feature file starts with an H1 title and one paragraph describing the behav
 - [Skill catalog](./skill-catalog.md): the skills and subagent roles each runtime receives, and repository skill discovery.
 - [Claude Code surface](./claude-surface.md): the quota status line and the trial-tools Mod.
 - [Git guard](./git-guard.md): the PreToolUse hook that matches command text to refuse skipping hooks (`--no-verify`, `-n` on `commit` or `am`, skip variables, `core.hooksPath` and `hook.*` changes) everywhere and git publication and `gh pr merge` from subagents other than an `autopilot-owner`, and what it over-refuses and misses.
-- [Skill reminder](./skill-reminder.md): the PreToolUse hook that reminds a session, and each subagent, to load `code-design` on its first source edit, and never refuses an edit.
+- [Skill reminder](./skill-reminder.md): the PreToolUse hook that reminds a session, and each subagent, on its first file edit to load `code-design` if the file is code, and never refuses an edit.
 
 ## Not mapped yet
 

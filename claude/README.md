@@ -64,9 +64,9 @@ effort, permissions, and every other setting stay the user's choice.
 - `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`: enables Mods, which the trial-tools Mod needs.
 - `UserPromptSubmit`: the Jev prompt-routing hook (ADR 0002), which routes every task prompt.
 - `PreToolUse`: the first entry is the git guard (next section); a session runs the guard only when its
-  `settings.json` holds that entry. The second is the skill reminder: the first edit of a source file in
-  a session, and in each subagent, gets a reminder to load `code-design`, which an agent otherwise skips
-  when an edit looks too small to be code. It takes the guard's `--cwd <kit>` and timeout but not
+  `settings.json` holds that entry. The second is the skill reminder: the first file edit in a session,
+  and in each subagent, gets a reminder to load `code-design` if the file is code, which an agent otherwise
+  skips when an edit looks too small to count. It takes the guard's `--cwd <kit>` and timeout but not
   `onFailure`, because it only adds context: a failure lets the edit go ahead.
 
 ## Git guard

@@ -42,7 +42,7 @@ function edit(path: string, options: { tool?: string; session?: string; agent?: 
 const reminded = JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: REMINDER } });
 
 describe("skill-reminder --claude-hook", () => {
-	test("the first source edit in a session is reminded, later ones are not", () => {
+	test("the first file edit in a session is reminded, later ones are not", () => {
 		const state = freshState();
 		expect(hook(edit("/repo/src/a.ts"), state)).toEqual({ status: 0, stdout: reminded });
 		expect(hook(edit("/repo/src/b.py", { tool: "Write" }), state)).toEqual({ status: 0, stdout: "" });
@@ -56,10 +56,12 @@ describe("skill-reminder --claude-hook", () => {
 		expect(hook(edit("/repo/a.rs", { session: "s2" }), state).stdout).toBe(reminded);
 	});
 
-	test("prose and configuration edits are not reminded and leave the reminder for the first source edit", () => {
-		const state = freshState();
-		for (const path of ["/repo/README.md", "/repo/package.json", "/repo/rules.toml", "/repo/Makefile"]) expect(hook(edit(path), state).stdout).toBe("");
-		expect(hook(edit("/repo/nb.ipynb", { tool: "NotebookEdit" }), state).stdout).toBe(reminded);
+	test("any file counts, with or without an extension, and the agent decides whether it is code", () => {
+		for (const path of ["/repo/README.md", "/repo/scripts/validate", "/repo/nb.ipynb"]) {
+			const tool = path.endsWith(".ipynb") ? "NotebookEdit" : "Edit";
+			expect(hook(edit(path, { tool }), freshState()).stdout).toBe(reminded);
+		}
+		expect(REMINDER).toContain("If this file is code");
 	});
 
 	test("tools that edit no file and unreadable events print nothing and exit 0", () => {

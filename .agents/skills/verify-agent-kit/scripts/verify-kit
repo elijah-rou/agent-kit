@@ -1068,14 +1068,13 @@ function driveSkillReminder(run: RunInfo, rec: Recorder): void {
 	const file = (name: string) => ({ file_path: join(project, name), old_string: "1", new_string: "2" });
 	// Order matters: each case reads the markers the cases before it left.
 	const cases: { id: string; stdin: string; remind: boolean }[] = [
-		{ id: "main-markdown", stdin: event("Edit", file("README.md")), remind: false },
-		{ id: "main-config", stdin: event("Write", { file_path: join(project, "package.json"), content: "{}" }), remind: false },
-		{ id: "main-first-source", stdin: event("Edit", file("a.ts")), remind: true },
-		{ id: "main-second-source", stdin: event("MultiEdit", file("b.py")), remind: false },
-		{ id: "subagent-first-source", stdin: event("Write", { file_path: join(project, "c.rs"), content: "fn main() {}" }, child), remind: true },
-		{ id: "subagent-second-source", stdin: event("Edit", file("c.rs"), child), remind: false },
-		{ id: "subagent-notebook", stdin: event("NotebookEdit", { notebook_path: join(project, "n.ipynb"), new_source: "x = 1" }, "a-verify-notebook"), remind: true },
 		{ id: "main-bash", stdin: event("Bash", { command: "vim a.ts" }), remind: false },
+		{ id: "main-first-edit", stdin: event("Edit", file("README.md")), remind: true },
+		{ id: "main-second-edit", stdin: event("MultiEdit", file("a.ts")), remind: false },
+		{ id: "main-config", stdin: event("Write", { file_path: join(project, "package.json"), content: "{}" }), remind: false },
+		{ id: "subagent-first-edit", stdin: event("Write", { file_path: join(project, "validate"), content: "#!/bin/sh" }, child), remind: true },
+		{ id: "subagent-second-edit", stdin: event("Edit", file("c.rs"), child), remind: false },
+		{ id: "subagent-notebook", stdin: event("NotebookEdit", { notebook_path: join(project, "n.ipynb"), new_source: "x = 1" }, "a-verify-notebook"), remind: true },
 		{ id: "malformed", stdin: "not json", remind: false },
 	];
 	const exposed = rec.step("hook-project-bunfig-without-cwd", ["bun", hookCli, "--claude-hook"], { cwd: project, env: { XDG_STATE_HOME: mkdtempSync(join(runDir(run.runId), "skill-reminder-exposed-")) }, input: event("Edit", file("a.ts")) });
@@ -1090,7 +1089,7 @@ function driveSkillReminder(run: RunInfo, rec: Recorder): void {
 		const output = parseJson(result.stdout) as { hookSpecificOutput?: Record<string, unknown> } | undefined;
 		const fields = output?.hookSpecificOutput;
 		rec.check(output !== undefined && Object.keys(output).length === 1 && fields?.hookEventName === "PreToolUse" && Object.keys(fields).length === 2, `${c.id}: the hook prints only PreToolUse additionalContext, never a permission decision (got "${result.stdout.trim()}")`);
-		rec.check(typeof fields?.additionalContext === "string" && /load it now/.test(fields.additionalContext) && /code-design/.test(fields.additionalContext), `${c.id}: the context tells the agent to load code-design (got ${JSON.stringify(fields?.additionalContext)})`);
+		rec.check(typeof fields?.additionalContext === "string" && /If this file is code/.test(fields.additionalContext) && /load it now/.test(fields.additionalContext) && /code-design/.test(fields.additionalContext), `${c.id}: the context tells the agent to load code-design if the file is code (got ${JSON.stringify(fields?.additionalContext)})`);
 	}
 	const markers = join(state, "agentic", "skill-reminder", session);
 	rec.check(["main", child, "a-verify-notebook"].every((agent) => existsSync(join(markers, agent))), "the main session and each subagent left their own marker under XDG_STATE_HOME/agentic/skill-reminder");

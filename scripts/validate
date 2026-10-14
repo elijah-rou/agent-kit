@@ -14,5 +14,8 @@ bun test pi/tests
 # The agentic tools (rulesets, upstream-drift).
 bun test agentic
 
+# Scripts that ship inside skills (repo-baseline).
+bun test skills
+
 # Claude mods are Bun TypeScript; the runtime test runs only where a `claude` CLI exists.
 bun test claude/tests

@@ -58,7 +58,7 @@ None of these happens by default. Each needs the user's authorization naming the
 
 - **Remote:** create the GitHub repository under the user's account and push `main` (`gh repo create <name> --private --source <repository root> --remote origin --push`). Visibility is the user's call, and private is the default.
 - **CI:** one workflow that checks out the code, installs the toolchain, and runs the validate command, with actions pinned to commit SHAs. Land it through a pull request.
-- **Ruleset:** apply the `baseline` tier right after the first push, as `github-rulesets` describes, in the same authorization as creating the repository.
+- **Ruleset:** apply the `agentic-backstop` ruleset right after the first push, as `github-rulesets` describes, in the same authorization as creating the repository.
 
 Completion criterion: each of the three is done with the user's authorization, or reported as not set up.
 

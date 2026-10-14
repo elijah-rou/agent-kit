@@ -13,6 +13,11 @@ import { parseAnswers, QUESTIONS, type Classify, type ClassifyFailure, type Send
 export const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 export const JEV_MODEL = "jev-latest";
 
+/** Every request opts into TypeSafe's longer context window. */
+function jevHeaders(key: string): Record<string, string> {
+	return { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "TypeSafe-Danger-Zone-Long-Context": "true" };
+}
+
 /** Prompts shorter than this ("yes", "continue") are follow-ups, not tasks. */
 export const MIN_TASK_WORDS = 6;
 /** Longer prompts are withheld: pasted logs and files hide secrets the screen does not know. */
@@ -32,7 +37,7 @@ export async function askJev(question: Record<string, unknown>, state: string, o
 	try {
 		const response = await (options.fetch ?? fetch)(JEV_ENDPOINT, {
 			method: "POST",
-			headers: { Authorization: `Bearer ${options.apiKey}`, "Content-Type": "application/json" },
+			headers: jevHeaders(options.apiKey),
 			body: JSON.stringify({ model: JEV_MODEL, state, questions: { q: question } }),
 			signal: AbortSignal.timeout(options.timeoutMs),
 		});
@@ -216,7 +221,7 @@ export function httpClassifier(key: () => Promise<string | undefined>, fetchImpl
 		try {
 			const response = await fetchImpl(JEV_ENDPOINT, {
 				method: "POST",
-				headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+				headers: jevHeaders(token),
 				body: JSON.stringify({ model: JEV_MODEL, state, questions: QUESTIONS }),
 				signal,
 			});

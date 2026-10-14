@@ -33,9 +33,9 @@ In every session they refuse skipping hooks:
   `-only`, `-no-op`) does not count;
 - a hook manager's skip variable (`HUSKY`, `HUSKY_SKIP_HOOKS`, `SKIP`, `PRE_COMMIT_ALLOW_NO_CONFIG`,
   `LEFTHOOK`, `LEFTHOOK_EXCLUDE`, `OVERCOMMIT_DISABLE`) assigned at the start of a command, alone or after
-  `export` and its kin, on a line that runs git, or on a line of only assignments just before a line that
-  starts git (`HUSKY=0 git commit`, `export SKIP=lint && git commit`, `export HUSKY=0` then `git commit` on
-  the next line);
+  `export` and its kin, on a line that runs git, or exported on an earlier line with only assignments between
+  it and a line that starts git (`HUSKY=0 git commit`, `export SKIP=lint && git commit`, `export HUSKY=0`
+  then `git commit` on the next line); a value is also read as one word, so `HUSKY=$((0)) git commit` counts;
 - `core.hooksPath` or a `hook.*` key set with `git -c` or `--config-env` before the subcommand, or set,
   unset, or removed with `git config` (reading one with `git config <key>` or `--get` passes, and
   redirections such as `2>/dev/null` and a trailing `# comment` are not read as a value).
@@ -109,8 +109,8 @@ What the guard does not stop (the same list is in ADR 0001 and the verify-agent-
 - Hooks skipped another way: a prefix of `--no-verify` such as `--no-veri`; `-n` after a quoted `;`, `&`,
   or `|` in its `git commit` command, or on a later line than its `git commit` (after a commit message in a
   here document); a `GIT_CONFIG_*` variable carrying a hook key; a skip variable set through a wrapper
-  (`env HUSKY=0 git commit`), set on an earlier line unless that line holds only assignments and the next line starts
-  with git (`export HUSKY=0`, then `make`, then `git commit`, one per line), or set the PowerShell way (`$env:HUSKY = '0'; git commit`,
+  (`env HUSKY=0 git commit`), set on an earlier line unless exported there with only assignments between it and a line that starts
+  with git (`HUSKY=0`, then `git commit`; `export HUSKY=0`, then `make`, then `git commit`; one per line), or set the PowerShell way (`$env:HUSKY = '0'; git commit`,
   `Set-Item env:HUSKY 0; git commit`); and editing `.git/hooks` or `.git/config`.
 - Other programs that publish: `git send-pack`, `git http-push`, `git subtree push`, `pull`, or `merge`,
   `gh pr create` or `comment`, and `gh api`.

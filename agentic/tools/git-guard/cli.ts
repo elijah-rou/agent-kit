@@ -28,7 +28,7 @@ It denies, in every session:
     backslash carries the command onto;
   - -n on git commit or git am, alone or after short flags that take no value (-an, -nm);
   - a hook manager's skip variable (HUSKY, SKIP, LEFTHOOK, and the like) assigned on a line that runs
-    git, or on a line of only assignments just before one that starts git;
+    git, or exported on an earlier line with only assignments between it and one that starts git;
   - core.hooksPath or a hook.* key set or unset with git -c, --config-env, or git config.
 Inside a subagent (the event carries agent_id), unless its agent_type is autopilot-owner, it also denies a
 line (or a command after ;, &, or |) starting git push, pull, merge, rebase, cherry-pick, revert, am,

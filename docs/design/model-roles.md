@@ -1,6 +1,6 @@
 # Model roles: which model each kind of child task gets
 
-- **Status:** the initial version (Claude only, below) is built on 2026-10-12. The rest of this document is the full design, kept for when a second provider returns. Codex support was removed on 2026-10-14 (plan item R3), so wherever the full design names Codex as the second harness, that part is superseded and kept only as a record.
+- **Status:** the initial version (Claude only, below) is built on 2026-10-12. The rest of this document is the full design, kept for when a second provider returns. Codex support was removed on 2026-10-14 (PR #39), so wherever the full design names Codex as the second harness, that part is superseded and kept only as a record.
 - **Reader:** the user, then whoever builds it.
 - **Method:** `design-checkpoint`. Candidates came from GPT-6.1 Sol (B) and Claude Fable 5.1 (C). Candidate A (Claude Opus 5.5) hit a session limit and left a partial sketch, which was read. The rubric is at the end.
 

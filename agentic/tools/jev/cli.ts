@@ -95,14 +95,14 @@ function run(command: string, args: string[], input?: string): string {
 	return result.stdout;
 }
 
-async function main(args: string[]): Promise<number> {
+export async function main(args: string[], deps: RouteDeps = routeDeps(process.env)): Promise<number> {
 	const [command, ...rest] = args;
 	if (command === "--help" || command === "-h") return console.log(USAGE), 0;
 
 	if (command === "task-class") {
 		if (rest[0] === "--claude-hook") {
 			try {
-				const { answer, record } = await promptHook(await Bun.stdin.text(), routeDeps(process.env));
+				const { answer, record } = await promptHook(await Bun.stdin.text(), deps);
 				if (answer) console.log(answer);
 				appendRecord(record, process.env);
 			} catch {
@@ -113,7 +113,7 @@ async function main(args: string[]): Promise<number> {
 		const text = rest.join(" ").trim();
 		// An unknown flag is a usage error, never task text sent to Jev.
 		if (!text || text.startsWith("-")) return console.error(USAGE), 2;
-		const { note, record } = await routeTask({ prompt: text, cwd: process.cwd(), runtime: "cli", sessionId: "manual", origin: "user" as const, queued: false }, routeDeps(process.env));
+		const { note, record } = await routeTask({ prompt: text, cwd: process.cwd(), runtime: "cli", sessionId: "manual", origin: "user" as const, queued: false }, deps);
 		console.log(JSON.stringify({ repo: record.repo, advised: record.advised, delivered: record.delivered, fallbacks: record.fallbacks, model: record.answers?.model }));
 		console.log(note ?? "no note");
 		return 0;

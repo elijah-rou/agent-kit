@@ -1,11 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hookAnswer, promptHook } from "./cli.ts";
+import { hookAnswer, main, promptHook } from "./cli.ts";
 import type { RouteDeps } from "./route-task.ts";
-import { POLICY, type Answers, type Level } from "./route.ts";
+import { POLICY, type Answers, type Classify, type Level } from "./route.ts";
 
 const CLI = join(import.meta.dir, "cli.ts");
 const SKILLS = join(import.meta.dir, "..", "..", "..", "skills");
@@ -100,5 +100,34 @@ describe("agentic jev pr-risk, end to end", () => {
 		expect(help.stdout).toMatch(/not scored +exit 4 /);
 		expect(help.stdout).toContain("Exit 1 is an error");
 		expect(help.stdout).not.toContain("waits for the user");
+	});
+});
+
+const TASK = "Where does the config loader read XDG paths from?";
+
+function harness() {
+	const sent: string[] = [];
+	const classify: Classify = async (state) => (sent.push(state.task), { kind: "failed", reason: "error" });
+	const deps: RouteDeps = { policy: POLICY, classify, repo: async () => ({ slug: "o/r", optedOut: false }), env: {}, now: Date.now, skillsDir: SKILLS };
+	return { deps, sent };
+}
+
+describe("jev task-class", () => {
+	let quiet: ReturnType<typeof spyOn>[] = [];
+	beforeEach(() => (quiet = [spyOn(console, "log").mockImplementation(() => {}), spyOn(console, "error").mockImplementation(() => {})]));
+	afterEach(() => quiet.forEach((spy) => spy.mockRestore()));
+
+	test("text starting with a dash is a usage error and is never sent", async () => {
+		for (const args of [["--codex-hook"], ["-x", ...TASK.split(" ")], ["  --unknown"]]) {
+			const { deps, sent } = harness();
+			expect(await main(["task-class", ...args], deps)).toBe(2);
+			expect(sent).toEqual([]);
+		}
+	});
+
+	test("ordinary text routes", async () => {
+		const { deps, sent } = harness();
+		expect(await main(["task-class", ...TASK.split(" ")], deps)).toBe(0);
+		expect(sent).toEqual([TASK]);
 	});
 });

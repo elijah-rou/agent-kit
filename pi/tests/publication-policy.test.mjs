@@ -6,6 +6,7 @@ import register from "../extensions/git-interceptor.ts";
 const agents = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
 const gitWorkflow = await readFile(new URL("../../skills/git-workflow/SKILL.md", import.meta.url), "utf8");
 const claude = await readFile(new URL("../../claude/CLAUDE.md", import.meta.url), "utf8");
+const verification = await readFile(new URL("../../skills/verification/SKILL.md", import.meta.url), "utf8");
 const worktrees = await readFile(new URL("../extensions/worktrees.ts", import.meta.url), "utf8");
 
 function interceptor() {
@@ -161,7 +162,13 @@ test("both harnesses carry the same standing default and interaction contract", 
   }
   // The stop list and the asking rule are the same text in both harnesses; the stop list names one-way doors by
   // reference, so a partial list cannot drop core data structures or the ownership and concurrency model.
-  for (const start of ["- Keep going when the next step", "- Ask only decisions that are the user's.", "- Judge each finding before acting on it."]) {
+  // The push-time validate rule is one line in both harnesses, and git-workflow and verification state the same gate.
+  for (const text of [agents, claude, gitWorkflow, verification]) {
+    assert.match(text, /push only a head (?:it|that validate) passed on this host/i);
+    assert.match(text, /A missing tool is a failure[^\n]*not a pass/);
+    assert.match(text, /only a part of validate that targets another platform \(a container or OS the host is not\) may be left to CI/i);
+  }
+  for (const start of ["- Keep going when the next step", "- Ask only decisions that are the user's.", "- Judge each finding before acting on it.", "- Before every push, commit, then run the repository's one validate command"]) {
     const line = (text) => text.split("\n").find((candidate) => candidate.startsWith(start));
     assert.ok(line(claude), start);
     if (start.startsWith("- Judge")) assert.ok(line(agents).endsWith(line(claude).slice(line(claude).indexOf("Allow at most two"))), start);

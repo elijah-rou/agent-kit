@@ -61,7 +61,7 @@ describe("skill-reminder --claude-hook", () => {
 			const tool = path.endsWith(".ipynb") ? "NotebookEdit" : "Edit";
 			expect(hook(edit(path, { tool }), freshState()).stdout).toBe(reminded);
 		}
-		expect(REMINDER).toContain("If this file is code");
+		expect(REMINDER).toContain("before you edit code in this session");
 	});
 
 	test("tools that edit no file and unreadable events print nothing and exit 0", () => {

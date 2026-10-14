@@ -1089,7 +1089,7 @@ function driveSkillReminder(run: RunInfo, rec: Recorder): void {
 		const output = parseJson(result.stdout) as { hookSpecificOutput?: Record<string, unknown> } | undefined;
 		const fields = output?.hookSpecificOutput;
 		rec.check(output !== undefined && Object.keys(output).length === 1 && fields?.hookEventName === "PreToolUse" && Object.keys(fields).length === 2, `${c.id}: the hook prints only PreToolUse additionalContext, never a permission decision (got "${result.stdout.trim()}")`);
-		rec.check(typeof fields?.additionalContext === "string" && /If this file is code/.test(fields.additionalContext) && /load it now/.test(fields.additionalContext) && /code-design/.test(fields.additionalContext), `${c.id}: the context tells the agent to load code-design if the file is code (got ${JSON.stringify(fields?.additionalContext)})`);
+		rec.check(typeof fields?.additionalContext === "string" && /before you edit code in this session/.test(fields.additionalContext) && /If this edit was to code, load it now/.test(fields.additionalContext) && /code-design/.test(fields.additionalContext), `${c.id}: the context tells the agent to load code-design before editing code in the session, and now if this edit was to code (got ${JSON.stringify(fields?.additionalContext)})`);
 	}
 	const markers = join(state, "agentic", "skill-reminder", session);
 	rec.check(["main", child, "a-verify-notebook"].every((agent) => existsSync(join(markers, agent))), "the main session and each subagent left their own marker under XDG_STATE_HOME/agentic/skill-reminder");

@@ -18,7 +18,7 @@ export const EDIT_TOOLS: ReadonlyMap<string, string> = new Map([
 ]);
 
 export const REMINDER =
-	"If this file is code and this session has not loaded the code-design skill, load it now and check this edit against it: its rules apply to every code edit, comment-only and one-line edits included. This reminder appears once per session and per subagent, on its first file edit.";
+	"Load the code-design skill before you edit code in this session, if it is not loaded: its rules apply to every code edit, comment-only and one-line edits included. If this edit was to code, load it now and check this edit against it. This reminder appears once per session and per subagent, on its first file edit.";
 
 const USAGE = `Usage: skill-reminder --claude-hook
 

@@ -77,4 +77,4 @@ Ship only in the `ship` mode, with its preconditions holding. Land only the cont
 
 ## Reply
 
-"Needs you" first: drafted replies to people, threads escalated, rebases needed, blocked actions waiting on the user, policy PRs waiting for a countersign, refused modes and why. Then the mode and the user's words that invoked it, the frontier and its watcher state, what you fixed versus dismissed and why, what is pending, and for Ship, the verified run, its ceiling, each PR's Jev score, and what landed.
+"Needs you" first: drafted replies to people, threads escalated, rebases needed, blocked actions waiting on the user, policy PRs waiting for a countersign, refused modes and why. Then the mode and the user's words that invoked it, the frontier and its watcher state, what you fixed versus dismissed and why, what is pending, and for Ship, the verified run, its ceiling, each PR's Jev score, and what landed; for agent-kit, bootstrap's pin PR and the reinstall the workstation waits on.

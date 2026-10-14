@@ -30,7 +30,7 @@ Before Claude Code runs a shell command through Bash, Monitor, or PowerShell, ag
 
 ## How to get to it (user POV)
 
-- Not yet: bootstrap does not wire the hook (a pending bootstrap change), so no Claude Code session runs it today. Once wired, any Bash, Monitor, or PowerShell command in Claude Code, in the main session or a subagent, in any permission mode including bypass, runs `bun --cwd <kit> <kit>/agentic/tools/git-guard/cli.ts --claude-hook` with the event on stdin (the entry is in `claude/README.md`).
+- Bootstrap wires the hook on install. Any Bash, Monitor, or PowerShell command in Claude Code, in the main session or a subagent, in any permission mode including bypass, runs `bun --cwd <kit> <kit>/agentic/tools/git-guard/cli.ts --claude-hook` with the event on stdin (the entry is in `claude/README.md`).
 - A refused command shows the hook's reason as the tool's error, and the command does not run.
 
 ## Driving it with verify-kit

@@ -58,9 +58,8 @@ What it refuses that it need not (the same list is in ADR 0001 and the verify-ag
 - A skip variable assigned for another command on a line that also runs git (`SKIP=1 make && git status`).
 - A child's harmless uses of a refused subcommand, such as `git rebase --abort`.
 
-Bootstrap does not wire it yet: that is a pending bootstrap change, and until it lands no Claude Code
-session runs the guard. The change adds this PreToolUse entry to `settings.json`, where `<kit>` is the
-agent-kit checkout:
+Bootstrap wires it on install: the `settings.json` it writes carries this PreToolUse entry, where `<kit>`
+is the agent-kit checkout:
 
 ```json
 {

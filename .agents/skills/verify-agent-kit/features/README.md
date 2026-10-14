@@ -27,16 +27,18 @@ This directory is the maintained source for verifying what agent-kit does for th
 
 ## Feature file contract
 
+Feature files are not policy paths: a change to one takes an ordinary verdict, which trunk's kit decides, and the audit lane treats a removed or loosened step as a finding. This index (the proof and skip rules) and the kit's `SKILL.md` (the verdict rules and the path table) are policy paths.
+
 Each feature file starts with an H1 title and one paragraph describing the behavior a user sees. It then has exactly four H2 sections, in this order: `Sub-features`, `How to get to it (user POV)`, `Driving it with verify-kit` (starting with `Preconditions:` and the drive target), and `Gotchas`.
 
 ## Features
 
-- [Prompt routing](./task-route.md): the Claude Code UserPromptSubmit hook, its records, its withheld and opted-out prompts, and the manual route command.
+- [Prompt routing](./task-route.md): the Claude Code UserPromptSubmit hook, its records, its withheld and opted-out prompts, the manual route command, and the route report.
 - [Verdict gate](./verdict-gate.md): recording a fresh verifier's verdict, the local gate that checks it before each merge, the countersign refusal, planning the GitHub history backstop, and the advisory PR-risk score.
 - [Pull request state](./pr-state.md): reading a pull request's feedback, checks, and readiness, and watching it.
 - [Skill catalog](./skill-catalog.md): the skills and subagent roles each runtime receives, and repository skill discovery.
 - [Claude Code surface](./claude-surface.md): the quota status line and the trial-tools Mod.
-- [Git guard](./git-guard.md): the PreToolUse hook (not yet wired by bootstrap) that matches command text to refuse skipping hooks (`--no-verify`, `commit -n`, skip variables, `core.hooksPath` and `hook.*` changes) everywhere and git publication and `gh pr merge` from subagents other than an `autopilot-owner`, and what it over-refuses and misses.
+- [Git guard](./git-guard.md): the PreToolUse hook (not yet wired by bootstrap) that matches command text to refuse skipping hooks (`--no-verify`, `-n` on `commit` or `am`, skip variables, `core.hooksPath` and `hook.*` changes) everywhere and git publication and `gh pr merge` from subagents other than an `autopilot-owner`, and what it over-refuses and misses.
 
 ## Not mapped yet
 
@@ -44,3 +46,4 @@ Each feature file starts with an H1 title and one paragraph describing the behav
 - `agentic rulesets apply` changes GitHub and is not observed here. A passing verdict, including a recorded `countersigned`, is never driven, so the gate's pass path and a carried countersign are covered by the contract step and `agentic/tools/verify/verify.test.ts`, not by a drive.
 - `agentic upstream-drift` and `agentic orch` (outside `verify`) are maintenance tools without a user journey here.
 - `scripts/validate`, `scripts/check-public-safety`, and `.github/workflows/` run in CI; no drive observes them.
+- Scripts that ship inside skills (`skills/*/scripts/`) have no drive; `bun test skills` runs the tests of those that have one.

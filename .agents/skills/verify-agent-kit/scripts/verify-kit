@@ -550,6 +550,76 @@ const POLICY_SAMPLES = [".agents/skills/verify-app/SKILL.md", ".agents/skills/ve
 const NOT_POLICY_SAMPLES = [".agents/skills/verify-app/features/login.md", ".agents/skills/verify-app/scripts/verify-app", ".agents/skills/verify-app/scripts", ".agents/skills/other/SKILL.md", ".claude/skills/verify-app/scripts/verify-app", "claude/skills/verify-app", "skills/create-verification/SKILL.md", "claude/agents/build.md", "agentic/tools/verifyx/cli.ts", "agentic/tools/rulesets/cli.ts", "README.md"];
 const isPolicySample = (path: string) => /^\.[^/]*\/skills\/verify-[^/]*(\/SKILL\.md|\/features(\/README\.md)?)?$|^skills\/babysit-and-ship\/(SKILL\.md$|references(\/|$))|^claude\/agents\/autopilot-owner\.md$|^agentic\/(tools\/verify|vendor\/orch)(\/|$)|^agentic\/bin\/agentic$/i.test(path);
 
+/** A path as a diff header line writes it: C-quoted when git quotes it, with the tab git adds after a name holding a space. */
+function diffHeaderPath(text: string): string {
+	const bare = text.replace(/\t$/, "");
+	if (!bare.startsWith('"')) return bare;
+	// A quoted name ends in its own unescaped closing quote; one without it is unreadable, not shortened.
+	const quoted = /^"((?:[^"\\]|\\.)*)"$/.exec(bare);
+	if (!quoted) throw new Error(`cannot read the quoted diff path ${text}`);
+	const escapes: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, "\\": 92 };
+	const bytes: number[] = [];
+	const body = quoted[1]!;
+	for (let i = 0; i < body.length; i++) {
+		if (body[i] !== "\\") {
+			bytes.push(...Buffer.from(body[i]!, "utf8"));
+			continue;
+		}
+		const octal = /^[0-7]{3}/.exec(body.slice(i + 1));
+		if (octal) bytes.push(parseInt(octal[0], 8)), (i += 3);
+		else if (body[i + 1]! in escapes) bytes.push(escapes[body[i + 1]!]!), (i += 1);
+		else throw new Error(`cannot read the quoted diff path ${text}`);
+	}
+	return Buffer.from(bytes).toString("utf8");
+}
+
+/**
+ * Every path a full git diff touches, old and new names alike (`gh pr diff --name-only` lists only a
+ * rename's new name), read by this kit from the file headers only, never from hunk content. A header it
+ * cannot read is an error, so the policy step fails closed rather than reading as "touches nothing".
+ */
+function diffPaths(diff: string): string[] {
+	const paths = new Set<string>();
+	let header: string | undefined;
+	let found: string[] = [];
+	const finish = () => {
+		if (header === undefined) return;
+		if (found.length === 0) {
+			// Only a header with the same name on both sides (a mode change, a binary or empty file) names no path elsewhere.
+			const rest = header.slice("diff --git ".length);
+			const quoted = /^("(?:[^"\\]|\\.)*") ("(?:[^"\\]|\\.)*")$/.exec(rest);
+			const [a, b] = quoted ? [diffHeaderPath(quoted[1]!), diffHeaderPath(quoted[2]!)] : [rest.slice(0, (rest.length - 1) / 2), rest.slice((rest.length + 1) / 2)];
+			if (!a.startsWith("a/") || b !== `b/${a.slice(2)}`) throw new Error(`cannot read the changed path from the diff header: ${header}`);
+			found.push(a.slice(2));
+		}
+		for (const path of found) paths.add(path);
+		header = undefined;
+		found = [];
+	};
+	for (const line of diff.split("\n")) {
+		if (line.startsWith("diff --git ")) {
+			finish();
+			header = line;
+			continue;
+		}
+		if (header === undefined) continue;
+		if (line.startsWith("@@")) {
+			finish();
+			continue;
+		}
+		const named = /^(?:rename from|rename to|copy from|copy to) (.+)$/.exec(line);
+		if (named) found.push(diffHeaderPath(named[1]!));
+		const side = /^(?:---|\+\+\+) (.+)$/.exec(line);
+		if (side && side[1] !== "/dev/null") {
+			const path = diffHeaderPath(side[1]!);
+			if (!/^[ab]\//.test(path)) throw new Error(`cannot read the changed path from the diff line: ${line}`);
+			found.push(path.slice(2));
+		}
+	}
+	finish();
+	return [...paths];
+}
+
 function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 	const agentic = join(run.checkout, "agentic/bin/agentic");
 	// publish and --tier are gone: both must be usage errors that reach neither the ledger nor GitHub.
@@ -747,7 +817,22 @@ function driveVerdictGate(run: RunInfo, rec: Recorder, options: Options): void {
 	rec.check(unapproved.status === 1 && unapproved.stderr.includes("a changed patch needs new words from the user") && ledgerText() === blockedLedger, `verify record refuses a countersign over verifier-blocked whose --patch is not #${open}'s current patch, and the ledger is unchanged (exit ${unapproved.status})`);
 	// A passing verdict for a pull request that touches a policy path is refused; attempted only when it does,
 	// so this drive never records a passing verdict that record would accept.
-	const policyTouched = ghText(["pr", "diff", String(open), "-R", slug, "--name-only"]).split("\n").filter((path) => path !== "" && isPolicySample(path));
+	// Read from the full diff's old and new names, so a rename out of a policy path still counts.
+	const rename = "diff --git a/.agents/skills/verify-app/SKILL.md b/notes.md\nsimilarity index 100%\nrename from .agents/skills/verify-app/SKILL.md\nrename to notes.md\n";
+	rec.check(sameList(diffPaths(rename).filter(isPolicySample), [".agents/skills/verify-app/SKILL.md"]), "the kit reads a renamed file's old name from a diff, so a rename out of a policy path counts as touching it");
+	const unclosed = 'diff --git "a/x y" "b/x y"\n--- "a/x y\n+++ "b/x y"\n';
+	const unclosedRefused = (() => {
+		try {
+			diffPaths(unclosed);
+			return false;
+		} catch {
+			return true;
+		}
+	})();
+	rec.check(unclosedRefused, "the kit refuses a quoted diff name without its closing quote rather than reading it shortened");
+	const changed = diffPaths(diff);
+	const policyTouched = changed.filter(isPolicySample);
+	rec.note("changed-paths.txt", `${changed.join("\n")}\n`);
 	rec.note("policy-files.txt", `${policyTouched.join("\n")}\n`);
 	if (policyTouched.length > 0) {
 		const passing = rec.step("verify-record-policy-passing", ["bun", agentic, "verify", "record", String(open), "--repo", slug, "--verdict", "unit-test-verified", "--evidence", evidence], { env, cwd: fixture });
@@ -907,9 +992,15 @@ function driveGitGuard(run: RunInfo, rec: Recorder): void {
 		{ id: "main-long-option-typo", stdin: event("git commit -m \"Pass -include to clang\"") },
 		{ id: "main-heredoc-no-verify", stdin: event("git commit -m \"$(cat <<'EOF'\nDon't skip hooks\nEOF\n)\" --no-verify"), deny: /skipping git hooks with --no-verify/ },
 		{ id: "main-skip-variable", stdin: event("HUSKY=0 git commit --allow-empty -m probe"), deny: /skipping git hooks with a hook manager's skip variable/ },
+		{ id: "main-exported-skip", stdin: event("export SKIP=lint && git commit --allow-empty -m probe"), deny: /skipping git hooks with a hook manager's skip variable/ },
+		{ id: "main-am-n", stdin: event("git am -n < 0001-fix.patch"), deny: /skipping git hooks with -n/ },
+		{ id: "main-heredoc-to-sh", stdin: event("cat <<'EOF' | sh\ngit commit --allow-empty -n -m probe\nEOF"), deny: /skipping git hooks with -n/ },
 		{ id: "main-hooks-override", stdin: event("git -c core.hooksPath=/dev/null commit --allow-empty -m probe"), deny: hooksKey },
 		{ id: "main-hooks-config", stdin: event("git config core.hooksPath /dev/null"), deny: hooksKey },
 		{ id: "main-hooks-unset", stdin: event("git config --unset core.hooksPath"), deny: hooksKey },
+		{ id: "main-hook-key-override", stdin: event("git -c hook.pre-commit.enabled=false commit --allow-empty -m probe"), deny: hooksKey },
+		{ id: "main-hook-key-write", stdin: event("git config hook.pre-commit.enabled false"), deny: hooksKey },
+		{ id: "main-remove-section", stdin: event("git config remove-section hook.lint"), deny: hooksKey },
 		{ id: "main-hooks-read", stdin: event("git config --get core.hooksPath") },
 		{ id: "main-hooks-read-redirect", stdin: event("git config core.hooksPath 2>/dev/null || echo unset") },
 		{ id: "main-config-user", stdin: event("git config user.name probe") },

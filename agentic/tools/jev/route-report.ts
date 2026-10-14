@@ -280,7 +280,7 @@ export function formatReport(report: Report): string {
 	if (c.kind === "none") out.push(`Corrections: ${c.reason}.`);
 	else
 		out.push(
-			`Corrections in ${c.repo} sessions, from ${c.dir}: ${c.records} records, ${c.unmatched} in sessions without a record in the window, ${c.malformed} unreadable.`,
+			`Corrections in this repository's sessions (recorded as ${c.repo}), from ${c.dir}: ${c.records} records, ${c.unmatched} in sessions without a record in the window, ${c.malformed} unreadable.`,
 			table(
 				["sessions with", "sessions", "corrected", "corrections"],
 				c.rows.map((r) => [r.group, String(r.sessions), String(r.corrected), String(r.corrections)]),

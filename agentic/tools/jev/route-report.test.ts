@@ -163,6 +163,7 @@ describe("formatReport", () => {
 		const text = formatReport(report());
 		expect(text).toContain("Task-route report, 2026-10-14 to 2026-10-21 (7 days)");
 		expect(text.split("\n")).toContain("  lookup  claude   5        2          3         model-drift 1, policy-shadow 1, session-shadow 1");
+		expect(text).toContain("Corrections in this repository's sessions (recorded as o/r), from ");
 		expect(text).toContain(CORRELATION_CAVEAT);
 		expect(text).not.toContain("SECRET USER WORDS");
 		expect(formatReport(report(undefined, { kind: "none", reason: "not in a git repository" }))).toContain("Corrections: not in a git repository.");

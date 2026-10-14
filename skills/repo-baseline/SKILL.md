@@ -7,7 +7,7 @@ description: Set up or adopt a repository's baseline with an idempotent script -
 
 Every project stands on the same floor: a local git repository (always), a `.gitignore` for its stack, a README, a license when one is named or implied, `AGENTS.md` with the repository's conventions and its one validate command, and that validate entry point. A remote, CI, and a ruleset are never set up by default.
 
-`scripts/baseline.ts` in this skill's directory audits and applies the baseline. Run it with Bun from anywhere; it acts on the directory you pass. It never overwrites or edits an existing file, creates nothing outside that directory, and never touches a remote, so rerunning it is always safe.
+`scripts/baseline.ts` in this skill's directory audits and applies the baseline. Run it with Bun from anywhere; it acts on the directory you pass. It never overwrites or edits an existing file, creates nothing outside that directory, and never touches a remote, so rerunning it is always safe. It creates each file by hard-linking a finished temporary file into place, so the directory must be on a filesystem that supports hard links; elsewhere apply stops with an error and leaves no temporary file.
 
 ## 1. Audit
 
@@ -17,16 +17,16 @@ bun <this skill's directory>/scripts/baseline.ts audit <repository root>
 
 Each item gets one status: `present`; `create` (apply will create it); `manual` (a gap in an existing file, or a missing input; the detail says what); `decision` (the user's call, with the default); `optional` (case by case, never by default). `--json` gives the same report structured.
 
-If `git` is `manual`, the directory sits inside another repository. Apply refuses there. Ask the user whether this project is the outer repository or a new nested one, recommending the outer one unless the user said this is a separate project.
+If `git` is `manual`, the directory sits inside another repository, and apply refuses there. Ask the user whether this project belongs to the outer repository or is a new nested one, recommending the outer one unless the user said this is a separate project. Until the user answers, take the outer repository: rerun audit at its root. A new nested repository means running `git init -b main` in the subdirectory first; then apply works there.
 
 Completion criterion: you have the report, and nothing changed.
 
 ## 2. Settle the inputs
 
-- **License.** Pass `--license MIT` when the user named MIT. A manifest that declares MIT gets its LICENSE without the flag. For another license the user named or the manifest declares, write its canonical text yourself (`gh api licenses/<key> -q .body`, then fill in the year and holder). Otherwise create none, and do not stop to ask: report the proposed default, MIT, as the user's to change. The holder is `--holder` or `git config user.name`.
-- **`CLAUDE.md`.** Pass `--claude-md` when the project is worked on by a runtime that reads `CLAUDE.md` instead of `AGENTS.md`. The file holds only the line `@AGENTS.md`, so `AGENTS.md` stays the one source of instructions.
+- **License.** Pass `--license MIT` when the user named MIT. A manifest that declares MIT gets its LICENSE without the flag. For another license the user named or the manifest declares, write its canonical text yourself (`gh api licenses/<key> -q .body`, then fill in the year and holder). Otherwise create none, and do not stop to ask: report the proposed default, MIT, as the user's to change. The holder is `--holder` if given. Otherwise, with `--license MIT` it is `git config user.name`, and for a manifest's MIT it is the manifest's author; a manifest with no author leaves license a `decision`: ask the user who holds the copyright and pass `--holder`, never the name of whoever runs the script.
+- **`CLAUDE.md`.** Pass `--claude-md` when the project is worked on by a runtime that reads `CLAUDE.md` instead of `AGENTS.md`. Only this flag creates it, never a `.claude/` folder's presence. The file holds only the line `@AGENTS.md`, so `AGENTS.md` stays the one source of instructions. Where `AGENTS.md` is missing but instructions already live in another file an agent runtime loads (`CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.override.md`, or a project `SYSTEM.md` or `APPEND_SYSTEM.md`; the script lists them), apply creates neither a template `AGENTS.md` nor a root `CLAUDE.md`, and reports `agents-md` as `manual`.
 - **Secret-scan hook.** Pass `--secret-hook` only when the user asked for one. With no hook manager it writes a pre-commit config that runs gitleaks. Where a hook manager exists, audit already reports whether it scans for secrets.
-- **Validate.** The script builds `scripts/validate` only from commands the repository already has: its just recipes and make targets, its package scripts, and the stack's standard tools where the configuration shows them. If none exist, the item stays `manual`. Never add a linter, test framework, or type checker to fill it; rerun apply once the first slice adds tests.
+- **Validate.** The script builds `scripts/validate` only from commands the repository already has: its just recipes and make targets, its package scripts, and a stack's tool only where the repository already uses it (clippy where it is configured or CI runs it, `go vet` where CI, a makefile, or a justfile runs it, mypy with the files its configuration names). A command CI or a makefile already runs is copied with its own arguments. If none exist, the item stays `manual`. Never add a linter, test framework, or type checker to fill it; rerun apply once the first slice adds tests.
 
 Completion criterion: each flag you pass traces to the user's words or the project's own files.
 
@@ -48,7 +48,7 @@ Completion criterion: audit shows no `create` items, and the README is no longer
 
 ## 4. Close the manual items
 
-The script reports gaps in existing files and leaves the edits to you. Make them as ordinary local changes: add the missing `.gitignore` patterns; name the validate command in `AGENTS.md`; move instructions that live only in `CLAUDE.md` into `AGENTS.md` and reduce `CLAUDE.md` to `@AGENTS.md`; add a gitleaks hook to the existing hook manager. For CI that does not run the validate command, propose the change to the user along with step 5.
+The script reports gaps in existing files and leaves the edits to you. Make them as ordinary local changes: add the missing `.gitignore` patterns; name the validate command in `AGENTS.md`; move the shared instructions that live only in `CLAUDE.md` or `.claude/CLAUDE.md` into `AGENTS.md` and reduce that file to its import (`@AGENTS.md` at the root, `@../AGENTS.md` in `.claude/`), leaving personal or runtime-only files such as `CLAUDE.local.md` and a system-prompt file in place; add a gitleaks hook to the existing hook manager. For CI that does not run the validate command, propose the change to the user along with step 5.
 
 Completion criterion: every `manual` item is fixed or listed in your report with the reason it is open.
 

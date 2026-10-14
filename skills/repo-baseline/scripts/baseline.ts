@@ -2,10 +2,11 @@
 // repo-baseline: audit or apply a repository's baseline. `audit` reports what is present or missing and changes
 // nothing. `apply` creates only what is missing and never overwrites a file: each file is written to a temporary
 // name and hard-linked into place, which fails when the target exists, so a race or a rerun never clobbers anything
-// and an interrupted write never leaves a partial file behind under the real name.
+// and an interrupted write never leaves a partial file behind under the real name. The filesystem must support hard
+// links; apply stops with an error where it does not.
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { linkSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
+import { linkSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 const USAGE = `Usage: baseline.ts <audit | apply> [DIR] [--json] [--license MIT] [--holder NAME] [--claude-md] [--secret-hook]
@@ -19,8 +20,9 @@ Set up or adopt a repository's baseline. DIR defaults to the current directory a
 
   --license MIT  The user named MIT: write LICENSE. A license the project's manifest declares as MIT is written
                  without this flag. Other licenses: add their canonical text by hand.
-  --holder NAME  The copyright holder for LICENSE (default: git config user.name).
-  --claude-md    Also create CLAUDE.md importing AGENTS.md (created anyway when a .claude directory exists).
+  --holder NAME  The copyright holder for LICENSE. Default: the manifest's author for a declared MIT license
+                 (none: a decision), git config user.name with --license MIT.
+  --claude-md    Also create CLAUDE.md importing AGENTS.md. Only this flag creates it.
   --secret-hook  The user asked for a secret-scan hook: with no hook manager, write a pre-commit config with gitleaks.
   --json         Print the report as JSON.
 
@@ -52,12 +54,18 @@ export interface Report {
 type Kind = "lint" | "typecheck" | "test";
 
 const KINDS: Kind[] = ["lint", "typecheck", "test"];
-const TASK_NAMES: Record<Kind, string[]> = { lint: ["lint"], typecheck: ["typecheck", "type-check", "check-types", "types"], test: ["test"] };
+const TASK_NAMES: Record<Kind, string[]> = { lint: ["lint"], typecheck: ["typecheck", "type-check", "check-types", "tsc"], test: ["test"] };
 // The README stub carries this line until someone replaces it, so audit can tell a stub from a real README.
 export const README_STUB = "_Replace this line: what this project does, for whom, and how to run it._";
 export const JEV_OPT_OUT = ".agents/jev-opt-out";
-// Pinned to a release tag; run `pre-commit autoupdate` to move it.
-const GITLEAKS_REV = "v8.30.1";
+// The commit the v8.30.1 release tag names, pinned so a moved tag cannot change the hook; `pre-commit autoupdate
+// --freeze` moves it.
+const GITLEAKS_REV = "83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # frozen: v8.30.1";
+// Files Claude Code or Pi loads as a project's agent instructions besides AGENTS.md. When any exists without
+// AGENTS.md, the instructions are already written down: a template AGENTS.md would sit beside them and diverge.
+const INSTRUCTION_FILES = ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md", "AGENTS.override.md", ".pi/SYSTEM.md", ".pi/APPEND_SYSTEM.md"];
+// The shared CLAUDE.md files Claude Code loads, each with the import line that reaches AGENTS.md from its folder.
+const CLAUDE_FILES: [string, string][] = [["CLAUDE.md", "@AGENTS.md"], [".claude/CLAUDE.md", "@../AGENTS.md"]];
 const SECRET_SCANNERS = /\b(?:gitleaks|trufflehog|detect-secrets|git-secrets|ggshield)\b/;
 const IGNORE_ALWAYS = [".DS_Store", ".env", ".env.*", "!.env.example"];
 const IGNORE_BY_STACK: Record<Stack, string[]> = {
@@ -146,9 +154,37 @@ export function existingValidate(dir: string): string[] {
 	return found;
 }
 
+function ciFiles(dir: string): string[] {
+	const workflows = exists(join(dir, ".github/workflows")) ? readdirSync(join(dir, ".github/workflows")).filter(name => /\.ya?ml$/.test(name)).map(name => `.github/workflows/${name}`) : [];
+	return [...workflows, ...(exists(join(dir, ".gitlab-ci.yml")) ? [".gitlab-ci.yml"] : [])];
+}
+
+// The command as the repository's CI, makefile, or justfile already runs it (for example `cargo clippy ...`), with
+// that file's own arguments, or undefined when none runs it.
+function commandAlreadyRun(dir: string, files: string[], command: string): string | undefined {
+	const pattern = new RegExp(`(?<![\\w-])${command.replace(/ /g, "[ \\t]+")}(?![\\w-])[^\\n;&|"'#$\`]*`);
+	for (const name of files) {
+		const match = pattern.exec(read(join(dir, name)));
+		if (match) return match[0].trim();
+	}
+	return undefined;
+}
+
+function clippyConfigured(dir: string): boolean {
+	if (exists(join(dir, "clippy.toml")) || exists(join(dir, ".clippy.toml"))) return true;
+	const cargo = toml(dir, "Cargo.toml");
+	return field(cargo, "lints", "clippy") !== undefined || field(cargo, "workspace", "lints", "clippy") !== undefined;
+}
+
+// mypy with no path uses the files its configuration names; with none named it needs a path.
+function mypyCommand(dir: string): string {
+	const named = field(toml(dir, "pyproject.toml"), "tool", "mypy", "files") !== undefined || /^[ \t]*files[ \t]*=/m.test(read(join(dir, "mypy.ini")));
+	return named ? "mypy" : "mypy .";
+}
+
 // The repository's own lint, type-check, and test commands. A just recipe or make target for a kind stands for
-// that kind; otherwise each stack contributes the commands its configuration shows. Nothing here adds a tool the
-// repository does not already use.
+// that kind; otherwise each stack contributes the commands its configuration or CI shows. Nothing here adds a tool
+// the repository does not already use.
 export function detectCommands(dir: string, stacks: Stack[]): string[] {
 	const recipes = justRecipes(dir);
 	const targets = makeTargets(dir);
@@ -157,6 +193,7 @@ export function detectCommands(dir: string, stacks: Stack[]): string[] {
 	const pyproject = read(join(dir, "pyproject.toml"));
 	const has = (name: string) => exists(join(dir, name));
 	const uv = has("uv.lock") ? "uv run " : "";
+	const runners = [...ciFiles(dir), ...["GNUmakefile", "makefile", "Makefile", "justfile", "Justfile", ".justfile"].filter(has)];
 	const commands: string[] = [];
 	for (const kind of KINDS) {
 		const recipe = TASK_NAMES[kind].find(name => recipes.has(name));
@@ -171,17 +208,21 @@ export function detectCommands(dir: string, stacks: Stack[]): string[] {
 					if (script !== undefined && !/no test specified/.test(scripts[script]!)) commands.push(`${runner} ${script}`);
 					break;
 				}
-				case "rust":
-					if (kind === "lint") commands.push("cargo clippy --all-targets -- -D warnings");
+				case "rust": {
+					const clippy = kind === "lint" ? commandAlreadyRun(dir, runners, "cargo clippy") ?? (clippyConfigured(dir) ? "cargo clippy --all-targets -- -D warnings" : undefined) : undefined;
+					if (clippy !== undefined) commands.push(clippy);
 					if (kind === "test") commands.push("cargo test");
 					break;
-				case "go":
-					if (kind === "lint") commands.push("go vet ./...");
+				}
+				case "go": {
+					const vet = kind === "lint" ? commandAlreadyRun(dir, runners, "go vet") : undefined;
+					if (vet !== undefined) commands.push(vet);
 					if (kind === "test") commands.push("go test ./...");
 					break;
+				}
 				case "python":
 					if (kind === "lint" && (pyproject.includes("[tool.ruff") || has("ruff.toml") || has(".ruff.toml"))) commands.push(`${uv}ruff check .`);
-					if (kind === "typecheck" && (pyproject.includes("[tool.mypy") || has("mypy.ini"))) commands.push(`${uv}mypy .`);
+					if (kind === "typecheck" && (pyproject.includes("[tool.mypy") || has("mypy.ini"))) commands.push(`${uv}${mypyCommand(dir)}`);
 					if (kind === "typecheck" && (pyproject.includes("[tool.pyright") || has("pyrightconfig.json"))) commands.push(`${uv}pyright`);
 					if (kind === "test" && (pyproject.includes("pytest") || has("pytest.ini") || has("conftest.py"))) commands.push(`${uv}pytest`);
 					break;
@@ -202,6 +243,22 @@ function declaredLicense(dir: string): string | undefined {
 		field(toml(dir, "pyproject.toml"), "project", "license", "text"),
 	];
 	return candidates.find((value): value is string => typeof value === "string" && value.trim() !== "")?.trim();
+}
+
+// The names a manifest gives as its authors, without emails or URLs, joined; undefined when it names none.
+function declaredAuthor(dir: string): string | undefined {
+	const name = (value: unknown): string | undefined => {
+		const text = typeof value === "string" ? value : field(value, "name");
+		return typeof text === "string" ? text.replace(/\s*[<(].*$/, "").trim() || undefined : undefined;
+	};
+	const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+	const candidates = [
+		[name(field(packageJson(dir), "author"))],
+		list(field(toml(dir, "Cargo.toml"), "package", "authors")).map(name),
+		list(field(toml(dir, "pyproject.toml"), "project", "authors")).map(name),
+	].map(names => names.filter((value): value is string => value !== undefined));
+	const names = candidates.find(found => found.length > 0);
+	return names === undefined ? undefined : names.join(", ");
 }
 
 function mitLicense(holder: string): string {
@@ -258,7 +315,7 @@ export function audit(target: string, options: Options = {}): Report {
 	const top = git(dir, ["rev-parse", "--show-toplevel"]);
 	const repository = top.ok && realpathSync(top.out) === dir;
 	if (repository) add("git", "present", "git repository at this directory");
-	else if (top.ok) add("git", "manual", `inside the repository at ${top.out}: run at its root, or ask the user before nesting a repository here; apply refuses`);
+	else if (top.ok) add("git", "manual", `inside the repository at ${top.out}: run at its root (the default), or, if the user wants a nested repository, run git init -b main here first; apply refuses until then`);
 	else add("git", "create", "no git repository: git init -b main", { kind: "git-init" });
 
 	const stacks = detectStacks(dir);
@@ -282,12 +339,14 @@ export function audit(target: string, options: Options = {}): Report {
 	// LICENSE: written only when the user named one or the manifest declares MIT; otherwise a default to propose.
 	const licenseFile = readdirSync(dir).find(name => /^(?:licen[cs]e|copying|unlicense)(?:[.-].*)?$/i.test(name));
 	const declared = declaredLicense(dir);
-	const holder = options.holder ?? (git(dir, ["config", "user.name"]).out || undefined);
+	// The user who names MIT is the holder by default; a manifest's MIT belongs to its author, never to whoever runs this.
+	const holder = options.holder ?? (options.license === undefined ? declaredAuthor(dir) : git(dir, ["config", "user.name"]).out || undefined);
 	if (licenseFile !== undefined) add("license", "present", licenseFile);
 	else if (options.license !== undefined && declared !== undefined && declared !== options.license) add("license", "manual", `the user named ${options.license} but the manifest declares ${declared}: ask which one holds`);
 	else if (options.license === undefined && declared === "UNLICENSED") add("license", "decision", "the manifest says UNLICENSED (proprietary): no license file unless the user wants one");
 	else if (options.license === undefined && declared !== undefined && declared !== "MIT") add("license", "manual", `the manifest declares ${declared}: add its canonical text as LICENSE (for example gh api licenses/${declared.toLowerCase()} -q .body)`);
 	else if (options.license === undefined && declared === undefined) add("license", "decision", "no license: propose MIT as the default the user can change (apply --license MIT); this does not block anything");
+	else if (holder === undefined && options.license === undefined) add("license", "decision", "the manifest declares MIT but names no author: ask who holds the copyright, then apply --holder NAME");
 	else if (holder === undefined) add("license", "manual", "MIT LICENSE needs a copyright holder: pass --holder or set git config user.name");
 	else add("license", "create", `MIT LICENSE for ${holder}${options.license === undefined ? " (declared in the manifest)" : ""}`, file("LICENSE", mitLicense(holder)));
 
@@ -306,11 +365,14 @@ export function audit(target: string, options: Options = {}): Report {
 	}
 
 	// AGENTS.md, and CLAUDE.md importing it.
+	const instructions = INSTRUCTION_FILES.filter(has);
+	// AGENTS.md exists after apply only if it exists now or no other instruction file stops apply creating it.
+	const agentsMdAfterApply = has("AGENTS.md") || instructions.length === 0;
 	if (has("AGENTS.md")) {
 		if (validate !== null && !read(at("AGENTS.md")).includes(validate)) add("agents-md", "manual", `AGENTS.md does not name the validate command ${validate}: add it`);
 		else add("agents-md", "present", "AGENTS.md");
-	} else if (has("CLAUDE.md")) {
-		add("agents-md", "manual", "CLAUDE.md holds the instructions: move them to AGENTS.md, then make CLAUDE.md the line @AGENTS.md");
+	} else if (instructions.length > 0) {
+		add("agents-md", "manual", `the agent instructions live in ${instructions.join(", ")}: write AGENTS.md from the shared ones by hand, then have each CLAUDE.md import it; apply creates no template beside them`);
 	} else {
 		const validateSection = validate === null
 			? "There is no validate entry point yet. Once the project has tests, lint, or type checks, add `scripts/validate` and name it here."
@@ -319,11 +381,14 @@ export function audit(target: string, options: Options = {}): Report {
 		const text = `# ${basename(dir)}\n\nInstructions for coding agents working in this repository.\n\n## Validate\n\n${validateSection}\n\n## Conventions\n\n${conventions}- Keep this file the one source of agent instructions; other instruction files import it.\n`;
 		add("agents-md", "create", `AGENTS.md${validate === null ? " (no validate command yet)" : ` naming ${validate}`}`, file("AGENTS.md", text));
 	}
-	if (has("CLAUDE.md")) {
-		const imports = read(at("CLAUDE.md")).split("\n").some(line => line.trim() === "@AGENTS.md");
-		if (has("AGENTS.md") && !imports) add("claude-md", "manual", "CLAUDE.md does not import AGENTS.md: add the line @AGENTS.md");
-		else add("claude-md", "present", "CLAUDE.md");
-	} else if (options.claudeMd === true || has(".claude")) add("claude-md", "create", "CLAUDE.md importing AGENTS.md", file("CLAUDE.md", "@AGENTS.md\n"));
+	const claudeFiles = CLAUDE_FILES.filter(([path]) => has(path));
+	if (claudeFiles.length > 0) {
+		const imports = claudeFiles.some(([path, line]) => read(at(path)).split("\n").some(text => text.trim() === line));
+		const names = claudeFiles.map(([path]) => path).join(", ");
+		if (has("AGENTS.md") && !imports) add("claude-md", "manual", `${names} does not import AGENTS.md: add the line ${claudeFiles[0]![1]}`);
+		else add("claude-md", "present", names);
+	} else if (options.claudeMd === true && agentsMdAfterApply) add("claude-md", "create", "CLAUDE.md importing AGENTS.md", file("CLAUDE.md", "@AGENTS.md\n"));
+	else if (options.claudeMd === true) add("claude-md", "manual", "CLAUDE.md waits for AGENTS.md: once it exists, create CLAUDE.md as the line @AGENTS.md");
 	else add("claude-md", "optional", "only for a runtime that reads CLAUDE.md: apply --claude-md creates it as an import of AGENTS.md");
 
 	// Secret-scan pre-commit hook: only with a hook manager or when the user asks.
@@ -347,8 +412,7 @@ export function audit(target: string, options: Options = {}): Report {
 	const remotes = repository ? git(dir, ["remote"]).out.split("\n").filter(Boolean) : [];
 	if (remotes.length > 0) add("remote", "present", `remotes: ${remotes.join(", ")}`);
 	else add("remote", "optional", "no remote: add one only with the user's authorization");
-	const workflows = has(".github/workflows") ? readdirSync(at(".github/workflows")).filter(name => /\.ya?ml$/.test(name)).map(name => `.github/workflows/${name}`) : [];
-	const ci = [...workflows, ...(has(".gitlab-ci.yml") ? [".gitlab-ci.yml"] : [])];
+	const ci = ciFiles(dir);
 	if (ci.length === 0) add("ci", "optional", "no CI: add one that runs the validate command, only with the user's authorization");
 	else if (validate !== null && !ci.some(path => read(at(path)).includes(validate))) add("ci", "manual", `CI (${ci.join(", ")}) does not run ${validate}`);
 	else add("ci", "present", ci.join(", "));
@@ -367,15 +431,18 @@ export function audit(target: string, options: Options = {}): Report {
 export function createIfAbsent(path: string, content: string, mode: number): boolean {
 	mkdirSync(dirname(path), { recursive: true });
 	const temporary = join(dirname(path), `.repo-baseline-${process.pid}-${randomBytes(6).toString("hex")}.tmp`);
-	writeFileSync(temporary, content, { flag: "wx", mode });
 	try {
-		linkSync(temporary, path);
+		writeFileSync(temporary, content, { flag: "wx", mode });
+		try {
+			linkSync(temporary, path);
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code === "EEXIST") return false;
+			throw new Error(`could not hard-link ${path} into place (${code ?? "unknown error"}): apply needs a filesystem that supports hard links`, { cause: error });
+		}
 		return true;
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
-		throw error;
 	} finally {
-		unlinkSync(temporary);
+		rmSync(temporary, { force: true });
 	}
 }
 

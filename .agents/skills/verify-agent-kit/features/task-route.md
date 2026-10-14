@@ -1,6 +1,6 @@
 # Prompt routing
 
-Every prompt typed in Claude Code or Codex passes through agent-kit's UserPromptSubmit hook. The hook never blocks the prompt: it screens it, asks Jev to classify a real task, appends one record without the prompt's text to the task-route ledger, and answers with a note as added context when a delivered note applies (on trial or calibrated; see `POLICY` in `agentic/tools/jev/route.ts`). Prompts that are not tasks, that the runtime started itself, that carry credential-shaped text, or that come from an opted-out repository are recorded without any request.
+Every prompt typed in Claude Code or Codex passes through agent-kit's UserPromptSubmit hook. The hook never blocks the prompt: it screens it, asks Jev to classify a real task, appends one record without the prompt's text to the task-route ledger, and answers with a note only when a calibrated note applies. Prompts that are not tasks, that the runtime started itself, that carry credential-shaped text, or that come from an opted-out repository are recorded without any request.
 
 ## Sub-features
 
@@ -12,7 +12,6 @@ Every prompt typed in Claude Code or Codex passes through agent-kit's UserPrompt
 - `route-codex` writes the Codex hook's record under the `codex` runtime.
 - `route-jev` classifies a real task with Jev and records both answers.
 - `route-manual` prints a typed task's route without recording it.
-- `route-report` reports the recorded routes per note and runtime, and joins correction records by session.
 
 ## How to get to it (user POV)
 
@@ -21,7 +20,6 @@ Every prompt typed in Claude Code or Codex passes through agent-kit's UserPrompt
 - Run `agentic jev task-class "<task>"` in a terminal to see a task's route.
 - Set `AGENTIC_ROUTE=off` (or `shadow`) for a session, or commit `.agents/jev-opt-out` in a repository.
 - Read the records under `$XDG_STATE_HOME/agentic/task-route/<machine>/<runtime>-<session>.jsonl`.
-- Run `agentic jev route-report [--days <n>] [--json]` in a repository to see how each note fared.
 
 ## Driving it with verify-kit
 
@@ -36,14 +34,13 @@ Preconditions:
 - **Credential-shaped text.** A prompt holding a `token=` assignment. One record whose `fallbacks` are exactly `["unsafe-input"]`, and no `answers`.
 - **Opted out.** The real task from `fixture-optout/`. One record whose `fallbacks` are exactly `["opted-out"]`, with `optedOut: true` and no `answers`. A request that was sent and failed would show a different fallback.
 - **Codex.** The off case through `--codex-hook`. The record file is `codex-<session>.jsonl`.
-- **Report.** After the withheld steps, and before the Jev steps, so it runs without a key: one correction record for the not-a-task step's session goes into `fixture/.git/agentic/corrections/`. `agentic jev route-report --json` in `fixture/` exits 0 with a 7-day window, reads exactly the records the drive wrote, shows claude's five fallbacks and codex's `off`, decides no note, joins the correction into the "no note delivered" group, and prints no correction text. The table form with `--days 1` names its window and the correlation caveat, `--days 0` exits 2, and no step adds a file under `state/`.
 - **Jev.** The real task with routing on. Exit 0, one record whose only fallbacks are routing decisions (`low-confidence`, `conflict`, `model-drift`), never a failed request, and whose `answers` hold a door choice (`reversible`, `experiment`, or `one-way-door`), a level choice (`lookup`, `rigor`, or `loop`), and a `jev-` model. A record marked `noted` comes with `hookSpecificOutput.additionalContext` on stdout; otherwise stdout is empty.
 - **Manual.** `agentic jev task-class "<task>"` prints a route naming Jev's model with its advised and delivered levels, and adds no file under `state/`.
-- **Proof.** Every record holds counts and a digest, never the prompt's text. Evidence: `task-route/NN-hook-*.txt` with each event on stdin and the hook's output, `task-route/NN-route-report-*.txt` with the report's output, and `records.jsonl` with every record the drive read back.
+- **Proof.** Every record holds counts and a digest, never the prompt's text. Evidence: `task-route/NN-hook-*.txt` with each event on stdin and the hook's output, and `records.jsonl` with every record the drive read back.
 
 ## Gotchas
 
-- The hook's stdout is the note. Since policy `task-route@2` every note is delivered on trial, so the Jev step's real task often gets the door note; a note in shadow, or a session with `AGENTIC_ROUTE=shadow`, leaves stdout empty.
+- The hook's stdout is the note. An empty stdout is correct while every note is in shadow (`agentic/tools/jev/route.ts`); a note appears only after a note's policy becomes advisory.
 - An inherited `AGENTIC_ROUTE` from the shell would change every case; the drive sets it explicitly for each step.
 - The opt-out check is the file's presence at the checkout root, committed or not, although the help text says "commits".
 - The Jev steps make two real TypeSafe requests per run (the hook and the manual route). Classifications can differ between runs; only their shape is checked.

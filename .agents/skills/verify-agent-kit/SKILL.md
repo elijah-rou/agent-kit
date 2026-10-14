@@ -49,7 +49,7 @@ Which features a change needs. A path matches the first row that names it; anyth
 | --- | --- |
 | test files (`*.test.ts`, `claude/tests/`, `pi/tests/`) | not mapped: read them as code (last row) |
 | `agentic/tools/verify/cli.ts`, `agentic/tools/rulesets/cli.ts` | `merge-gate`, which drives record, status, and plan |
-| `agentic/tools/jev/cli.ts`, `route.ts`, `route-task.ts`, `route-report.ts`, `egress.ts` | `task-route` and `merge-gate` (pr-risk shares the CLI and egress) |
+| `agentic/tools/jev/cli.ts`, `route.ts`, `route-task.ts`, `egress.ts` | `task-route` and `merge-gate` (pr-risk shares the CLI and egress) |
 | `agentic/tools/jev/pr-risk.ts` | `merge-gate` |
 | the rest of `agentic/tools/verify/` and `agentic/tools/rulesets/`, `agentic/vendor/orch/` | `merge-gate` (its contract step checks the verdicts, their statuses, how the ledger decides, and the ruleset's rules and settings) |
 | `agentic/tools/pr-feedback/`, `agentic/vendor/watch-pr/` | `pr-state` |

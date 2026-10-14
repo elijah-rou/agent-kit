@@ -17,9 +17,9 @@ In `autopilot-full`, an owner opens its pull request early by design and does no
 5. **Judge** each finding yourself, as the lead who knows the context the reviewer lacks: accept it, or dismiss it with a concrete reason. Filter hard:
    - A review of only nits and preferences means the change is probably fine; say so rather than fixing them.
    - A "what if" is a finding only when a caller can reach it: trace the call chain before accepting it.
-   - "I would have done it differently" with no concrete failure is dismissed, and so is an abstraction with no second use.
+   - "I would have done it differently" with no concrete failure is dismissed, and so is a suggestion to add an abstraction the code has no second use for.
    - Scrutinize a security or correctness finding hardest before dismissing it.
-   - A finding outside the change's stated scope becomes a follow-up, listed in the report and in the body's `## Scope`, not a fix pass.
+   - A problem the change neither contains nor causes becomes a follow-up, listed in the report and in the body's `## Scope`, not a fix pass.
 
    Fix accepted blocking findings in one pass, rerun the affected checks, and run a focused re-review of the fix.
 6. **Cap the rounds.** At most two focused re-reviews per pull request. After the second, the change goes forward as `PASS+NOTES` with its remaining notes listed, or the part a blocking finding still holds moves into a follow-up pull request; there is no third round. When two fixes that share one premise have failed the same check or review, write the premise down and test it before a third fix, instead of writing another fix that assumes it.
@@ -46,6 +46,6 @@ Completion criterion: the reviewer returned a verdict, every blocking finding is
 > - **Review rules:** each violation cites the rule's id.
 > - **Hard areas:** a change touching one of the user's hard parts or a one-way door goes under "Needs you" with the area and the lines, even with no finding, because the user decides those: the data model, core data structures, concurrency, memory ownership, UX taste, game feel, public contracts, persisted data, security boundaries, or hard-to-reverse architecture.
 >
-> A finding blocks only when it is a concrete instance, in the change's own lines, of a problem a lens names, shown by an input, a scenario, or a command rather than a hypothetical the callers rule out. A preference, a nit, or an abstraction you would have added is a note at most. A problem outside the change's scope is a note marked `out of scope`, which the author turns into a follow-up.
+> A finding blocks only when it is a concrete instance of a problem a lens names that the change contains or causes, shown by an input, a scenario, or a command rather than a hypothetical the callers rule out. A preference, a nit, or an abstraction you would have added is a note at most. A problem the change neither contains nor causes is a note marked `out of scope`, which the author turns into a follow-up.
 >
 > Open the report with one verdict line: `verdict: PASS` (no blocking findings and no notes), `verdict: PASS+NOTES` (no blocking findings, notes listed), or `verdict: FAIL` (at least one blocking finding). Then report only blocking findings, each with its class (the violated rule's id, or a short kebab-case name for the kind of mistake), its location (file:line), why it is wrong, and how to show it fails (an input, a scenario, or a command). Then a "Needs you" list of hard areas touched, or `Needs you: nothing`. Then at most three non-blocking notes, one line each. "No blocking findings" is a valid review. Do not praise or restate the code.

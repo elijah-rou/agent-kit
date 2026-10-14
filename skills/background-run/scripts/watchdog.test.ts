@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appleScriptString, GRACE_MINUTES, registryDir } from "./watchdog.ts";
+import { desktopCommand, GRACE_MINUTES, registryDir } from "./watchdog.ts";
 
 const SCRIPT = join(import.meta.dir, "watchdog.ts");
 const LOG_SH = join(import.meta.dir, "..", "..", "show-me-your-work", "scripts", "log.sh");
@@ -32,6 +32,7 @@ function run(f: Fixture, args: string[], env: Record<string, string> = {}) {
 	const result = spawnSync(process.execPath, [SCRIPT, ...args], {
 		encoding: "utf8",
 		env: { PATH: process.env.PATH, HOME: f.dir, AGENTIC_WATCHDOG_DIR: f.registry, AGENTIC_WATCHDOG_NOTIFY: "log", ...env },
+		timeout: 20_000,
 	});
 	return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 }
@@ -104,7 +105,7 @@ describe("scan", () => {
 		register(f, "2026-10-14T10:00:00Z");
 		expect(scanAt(f, "2026-10-14T12:15:00Z").stdout).toBe("prog-1\tfresh\t-\n");
 		expect(scanAt(f, "2026-10-14T12:16:00Z").stdout).toBe("prog-1\tstale\tnotified\n");
-		expect(notifications(f)[0]).toContain("(last 2026-10-14T10:00:00Z)");
+		expect(notifications(f)[0]).toContain("(registered 2026-10-14T10:00:00Z)");
 	});
 
 	test("the newest row wins, even out of order, and a long log is read from its tail", () => {
@@ -149,9 +150,19 @@ describe("scan", () => {
 		expect(result.stderr).toBe("watchdog: skipping broken.json: not a valid registration\n");
 	});
 
-	test("an empty or absent registry scans to nothing", () => {
+	test("an empty or absent registry scans to nothing and still records the scan", () => {
 		const f = fixture();
 		expect(scanAt(f, "2026-10-14T13:00:00Z")).toEqual({ code: 0, stdout: "", stderr: "" });
+		expect(readFileSync(join(f.registry, "last-scan"), "utf8")).toBe("2026-10-14T13:00:00Z\n");
+	});
+
+	test("a log that is not a regular file counts as missing and never blocks the scan", () => {
+		const f = fixture();
+		register(f);
+		const fifo = join(f.dir, "fifo.tsv");
+		expect(spawnSync("mkfifo", [fifo]).status).toBe(0);
+		writeFileSync(join(f.registry, "prog-1.json"), JSON.stringify({ version: 1, run: "prog-1", log: fifo, intervalMinutes: 60, registeredAt: "2026-10-14T10:00:00Z" }));
+		expect(scanAt(f, "2026-10-14T10:05:00Z")).toEqual({ code: 0, stdout: "prog-1\tmissing\tnotified\n", stderr: "" });
 	});
 });
 
@@ -161,12 +172,64 @@ describe("register and unregister", () => {
 		row(f, "2026-10-14T10:00:00Z");
 		register(f, "2026-10-14T10:00:00Z", ["--title", "Queue"]);
 		expect(readdirSync(f.registry)).toEqual(["prog-1.json"]);
-		expect(JSON.parse(readFileSync(join(f.registry, "prog-1.json"), "utf8"))).toEqual({ run: "prog-1", log: f.log, intervalMinutes: 60, title: "Queue", registeredAt: "2026-10-14T10:00:00Z" });
+		expect(JSON.parse(readFileSync(join(f.registry, "prog-1.json"), "utf8"))).toEqual({ version: 1, run: "prog-1", log: f.log, intervalMinutes: 60, title: "Queue", registeredAt: "2026-10-14T10:00:00Z" });
+		expect(scanAt(f, "2026-10-14T13:00:00Z").stdout).toBe("prog-1\tstale\tnotified\n");
+	});
+
+	test("a re-registration after a long quiet spell is measured from the registration, not the old row", () => {
+		const f = fixture();
+		row(f, "2026-10-14T10:00:00Z");
+		register(f);
 		expect(scanAt(f, "2026-10-14T13:00:00Z").stdout).toBe("prog-1\tstale\tnotified\n");
 
-		register(f, "2026-10-14T13:30:00Z");
-		// The row is still old, so the re-armed run is stale at once, and notifies again for its new registration.
-		expect(scanAt(f, "2026-10-14T13:31:00Z").stdout).toBe("prog-1\tstale\tnotified\n");
+		// A held run resumed overnight: the re-arm proves it alive, though its newest row is old.
+		register(f, "2026-10-15T08:00:00Z");
+		expect(scanAt(f, "2026-10-15T08:15:00Z").stdout).toBe("prog-1\tfresh\t-\n");
+		expect(scanAt(f, "2026-10-15T10:15:00Z").stdout).toBe("prog-1\tfresh\t-\n");
+		expect(scanAt(f, "2026-10-15T10:15:01Z").stdout).toBe("prog-1\tstale\tnotified\n");
+		expect(notifications(f)[1]).toContain("(registered 2026-10-15T08:00:00Z)");
+
+		// A row newer than the registration is measured as before.
+		row(f, "2026-10-15T11:00:00Z");
+		expect(scanAt(f, "2026-10-15T13:15:00Z").stdout).toBe("prog-1\tfresh\t-\n");
+	});
+
+	test("a registration without version 1 is invalid", () => {
+		const f = fixture();
+		row(f, "2026-10-14T10:00:00Z");
+		register(f);
+		const path = join(f.registry, "prog-1.json");
+		const { version: _, ...unversioned } = JSON.parse(readFileSync(path, "utf8"));
+		writeFileSync(path, JSON.stringify(unversioned));
+		expect(scanAt(f, "2026-10-14T13:00:00Z")).toEqual({ code: 0, stdout: "prog-1\tinvalid\t-\n", stderr: "watchdog: skipping prog-1.json: not a valid registration\n" });
+	});
+
+	test("register refuses a run ID already registered for another log unless --replace, and re-arms the same log", () => {
+		const f = fixture();
+		row(f, "2026-10-14T10:00:00Z");
+		register(f);
+		const other = join(f.dir, "other.tsv");
+		writeFileSync(other, "ts\tphase\tdecision\twhy\tevidence\tresult\n");
+		const clash = run(f, ["register", "--run", "prog-1", "--log", other, "--interval-minutes", "60", "--now", "2026-10-14T11:00:00Z"]);
+		expect(clash.code).toBe(1);
+		expect(clash.stderr).toContain(`prog-1 is already registered for another decision log: ${f.log}`);
+		expect(JSON.parse(readFileSync(join(f.registry, "prog-1.json"), "utf8")).log).toBe(f.log);
+
+		register(f, "2026-10-14T11:30:00Z");
+		expect(JSON.parse(readFileSync(join(f.registry, "prog-1.json"), "utf8")).registeredAt).toBe("2026-10-14T11:30:00Z");
+
+		expect(run(f, ["register", "--run", "prog-1", "--log", other, "--interval-minutes", "60", "--replace"]).code).toBe(0);
+		expect(JSON.parse(readFileSync(join(f.registry, "prog-1.json"), "utf8")).log).toBe(other);
+	});
+
+	test("register refuses to overwrite an invalid registration unless --replace", () => {
+		const f = fixture();
+		mkdirSync(f.registry, { recursive: true });
+		writeFileSync(join(f.registry, "prog-1.json"), "{not json");
+		const result = run(f, ["register", "--run", "prog-1", "--log", f.log, "--interval-minutes", "60"]);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("not a valid registration");
+		expect(run(f, ["register", "--run", "prog-1", "--log", f.log, "--interval-minutes", "60", "--replace"]).code).toBe(0);
 	});
 
 	test("unregister removes the registration and its state, is idempotent, and scan then notifies nothing", () => {
@@ -198,6 +261,97 @@ describe("register and unregister", () => {
 	});
 });
 
+describe("status", () => {
+	test("prints the last scan time and each run's state without notifying", () => {
+		const f = fixture();
+		expect(run(f, ["status"])).toEqual({ code: 0, stdout: "last-scan\tnever\n", stderr: "" });
+
+		row(f, "2026-10-14T10:00:00Z");
+		register(f);
+		expect(run(f, ["status", "--now", "2026-10-14T11:00:00Z"]).stdout).toBe("last-scan\tnever\nprog-1\tfresh\t2026-10-14T10:00:00Z\t-\n");
+		expect(run(f, ["status", "--now", "2026-10-14T13:00:00Z"]).stdout).toBe("last-scan\tnever\nprog-1\tstale\t2026-10-14T10:00:00Z\t-\n");
+		expect(notifications(f)).toEqual([]);
+
+		expect(scanAt(f, "2026-10-14T13:00:00Z").stdout).toBe("prog-1\tstale\tnotified\n");
+		expect(run(f, ["status", "--run", "prog-1", "--now", "2026-10-14T13:05:00Z"])).toEqual({
+			code: 0,
+			stdout: "last-scan\t2026-10-14T13:00:00Z\nprog-1\tstale\t2026-10-14T10:00:00Z\tnotified\n",
+			stderr: "",
+		});
+	});
+
+	test("--run names one run, and an unregistered one exits 1", () => {
+		const f = fixture();
+		row(f, "2026-10-14T10:00:00Z");
+		register(f);
+		expect(run(f, ["status", "--run", "other", "--now", "2026-10-14T11:00:00Z"])).toEqual({ code: 1, stdout: "last-scan\tnever\nother\tunregistered\t-\t-\n", stderr: "" });
+	});
+});
+
+describe("registry lock", () => {
+	const lockDir = (f: Fixture) => join(f.registry, ".lock");
+	function holdLock(f: Fixture, pid: number): void {
+		mkdirSync(lockDir(f), { recursive: true });
+		writeFileSync(join(lockDir(f), "owner"), `${pid} test\n`);
+	}
+	function spawnCli(f: Fixture, args: string[]) {
+		return Bun.spawn([process.execPath, SCRIPT, ...args], {
+			env: { PATH: process.env.PATH, HOME: f.dir, AGENTIC_WATCHDOG_DIR: f.registry, AGENTIC_WATCHDOG_NOTIFY: "log" },
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+	}
+
+	test("scan waits while another process holds the lock, then runs", async () => {
+		const f = fixture();
+		row(f, "2026-10-14T10:00:00Z");
+		register(f);
+		holdLock(f, process.pid);
+		const scan = spawnCli(f, ["scan", "--now", "2026-10-14T13:00:00Z"]);
+		await Bun.sleep(1500);
+		expect(notifications(f)).toEqual([]);
+		rmSync(lockDir(f), { recursive: true });
+		expect(await scan.exited).toBe(0);
+		expect(await new Response(scan.stdout).text()).toBe("prog-1\tstale\tnotified\n");
+		expect(notifications(f)).toHaveLength(1);
+		expect(existsSync(lockDir(f))).toBe(false);
+	});
+
+	test("register waits while another process holds the lock", async () => {
+		const f = fixture();
+		mkdirSync(f.registry, { recursive: true });
+		holdLock(f, process.pid);
+		const reg = spawnCli(f, ["register", "--run", "prog-1", "--log", f.log, "--interval-minutes", "60"]);
+		await Bun.sleep(1500);
+		expect(existsSync(join(f.registry, "prog-1.json"))).toBe(false);
+		rmSync(lockDir(f), { recursive: true });
+		expect(await reg.exited).toBe(0);
+		expect(existsSync(join(f.registry, "prog-1.json"))).toBe(true);
+	});
+
+	test("a lock whose owner has exited is broken at once", () => {
+		const f = fixture();
+		row(f, "2026-10-14T10:00:00Z");
+		register(f);
+		const exited = spawnSync("true");
+		holdLock(f, exited.pid);
+		const result = scanAt(f, "2026-10-14T13:00:00Z");
+		expect(result.stdout).toBe("prog-1\tstale\tnotified\n");
+		expect(result.stderr).toContain("removed a stale lock");
+		expect(existsSync(lockDir(f))).toBe(false);
+	});
+
+	test("a lock older than the stale timeout is broken even if its owner looks alive", () => {
+		const f = fixture();
+		row(f, "2026-10-14T10:00:00Z");
+		register(f);
+		holdLock(f, process.pid);
+		const old = new Date(Date.now() - 60 * 60_000);
+		utimesSync(lockDir(f), old, old);
+		expect(scanAt(f, "2026-10-14T13:00:00Z").stdout).toBe("prog-1\tstale\tnotified\n");
+	});
+});
+
 describe("notify", () => {
 	test("works for an unregistered run, after its unregister, and appends one line", () => {
 		const f = fixture();
@@ -207,22 +361,39 @@ describe("notify", () => {
 		expect(notifications(f)).toEqual(["2026-10-14T11:00:00Z\tprog-1\tPaused: three ticks without progress"]);
 	});
 
-	test("the AppleScript literal escapes quotes and backslashes and drops control characters", () => {
-		expect(appleScriptString('say "hi" \\ then\nquit')).toBe('"say \\"hi\\" \\\\ then quit"');
+	const hostile = '-e do shell script "x" \\ then\nquit';
+	const hostileTitle = 'Run "q"; display dialog "x"';
+
+	test("osascript gets the message and title as argv after --, never inside the script", () => {
+		const [file, args] = desktopCommand("darwin", hostileTitle, hostile)!;
+		expect(file).toBe("osascript");
+		expect(args).toEqual(["-e", "on run argv", "-e", "display notification (item 1 of argv) with title (item 2 of argv)", "-e", "end run", "--", '-e do shell script "x" \\ then quit', hostileTitle]);
 	});
 
-	// Compiles and evaluates the literal without displaying anything.
-	test.if(process.platform === "darwin")("osascript reads the literal back as the original text", () => {
-		const text = 'Run "q" \\ paused; display dialog "x"';
-		const result = spawnSync("osascript", ["-e", `return ${appleScriptString(text)}`], { encoding: "utf8" });
-		expect(result).toMatchObject({ status: 0, stdout: `${text}\n` });
+	test("notify-send gets the title and message as argv after --, and is skipped where it is absent", () => {
+		expect(desktopCommand("linux", hostileTitle, hostile, () => "/usr/bin/notify-send")).toEqual(["/usr/bin/notify-send", ["--app-name=agentic watchdog", "--", hostileTitle, '-e do shell script "x" \\ then quit']]);
+		expect(desktopCommand("linux", "t", "m", () => null)).toBeUndefined();
+		expect(desktopCommand("win32", "t", "m")).toBeUndefined();
+	});
+
+	// Runs the same argv with the display line swapped for one that returns the arguments, so nothing is shown.
+	test.if(process.platform === "darwin")("osascript hands the argv to the script unchanged", () => {
+		const [file, args] = desktopCommand("darwin", hostileTitle, hostile)!;
+		const echo = args.map(arg => (arg.startsWith("display notification") ? 'return (item 1 of argv) & "|" & (item 2 of argv) & "|" & (count of argv)' : arg));
+		const result = spawnSync(file, echo, { encoding: "utf8" });
+		expect(result).toMatchObject({ status: 0, stdout: `-e do shell script "x" \\ then quit|${hostileTitle}|2\n` });
+		const compiled = join(mkdtempSync(join(tmpdir(), "watchdog-osa-")), "notify.scpt");
+		made.push(join(compiled, ".."));
+		expect(spawnSync("osacompile", ["-o", compiled, ...args.slice(0, args.indexOf("--"))]).status).toBe(0);
 	});
 });
 
 describe("usage", () => {
 	const cases: [string, string[]][] = [
 		["no command", []],
-		["an unknown command", ["status"]],
+		["an unknown command", ["watch"]],
+		["status with an unknown option", ["status", "--verbose", "1"]],
+		["--replace with a value", ["register", "--run", "a", "--log", "/tmp/x.tsv", "--interval-minutes", "5", "--replace", "yes"]],
 		["scan with an argument", ["scan", "extra"]],
 		["scan with an unknown option", ["scan", "--verbose", "1"]],
 		["a bad clock", ["scan", "--now", "yesterday"]],

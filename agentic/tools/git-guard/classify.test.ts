@@ -106,6 +106,24 @@ describe("patterns for what the shell reader alone used to find", () => {
 		refusedForAll(["git -c core.hooksPath=/dev/null commit -m x", "git -c core.hookspath=/dev/null push", "git -c 'core.hooksPath=/dev/null' commit -m x", "git -C repo -c hook.pre-commit.command=true commit -m x", "git -c user.name=x -c hook.lint.enabled=false commit -m y", "git --config-env=core.hooksPath=EMPTY commit -m x", "git --config-env core.hooksPath=EMPTY commit -m x", "git config core.hooksPath /dev/null", "git config --global core.hooksPath ''", "git config --unset core.hooksPath", "git config unset core.hooksPath", "git config set core.hooksPath /tmp/none", "git config --add hook.lint.command true", "git config hook.lint.enabled false", "git config --remove-section hook.lint", "git -C repo config core.hooksPath x", "/usr/bin/git config core.hooksPath x"], /skipping git hooks by setting or unsetting core.hooksPath or a hook.\* key.*git commit -F <file>/);
 		allowedForAll(["git config user.name x", "git config core.hooksPath", "git config --get core.hooksPath", "git config get core.hooksPath", "git config --list", "git config --get-regexp '^hook\\.'", "git -c user.name=x commit -m y", "git commit -c HEAD"]);
 	});
+	test("assignments that prefix git or gh for one command do not hide it", () => {
+		refusedForAll(["GIT_EDITOR=true git commit --amend --no-verify", "A=1 B='x y' git push --no-verify", "cd repo && FOO=bar git commit -m x --no-verify", "GIT_DIR=.git /usr/bin/git commit -m \"a\nb\" --no-verify"], /skipping git hooks with --no-verify/);
+		refusedForAll(["LANG=C git commit -nm x", "X=1 git am -n patch"], /skipping git hooks with -n/);
+		refusedForAll(["GIT_TRACE=1 git -c core.hooksPath=/dev/null commit -m x", "X=1 git config hook.lint.enabled false"], /skipping git hooks by setting or unsetting core.hooksPath or a hook.\* key/);
+		for (const [command, name] of [["FOO=1 git push origin x", "git push"], ["GIT_SSH_COMMAND='ssh -i k' git -C repo push", "git push"], ["make && X=\"a b\" git rebase main", "git rebase"], ["X=1 git tag v1", "git tag"], ["GH_HOST=github.com gh pr merge 3", "gh pr merge"]] as const) {
+			for (const actor of [child, unnamed]) expect([command, blockReason(command, actor)]).toEqual([command, expect.stringContaining(`child publication/integration command: ${name}.`)]);
+			for (const actor of [main, owner]) expect([command, blockReason(command, actor)]).toEqual([command, undefined]);
+		}
+		allowedForAll(["GIT_EDITOR=true git commit --amend", "LANG=C git log -n 3", "X=1 git config hook.lint.enabled", "FOO=1 echo git push", "FOO=1 npm test --no-verify"]);
+		for (const command of ["X=1 git tag -l", "PAGER=cat git merge-base a b", "GH_HOST=github.com gh pr view 3"]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
+	});
+	test("a long run of assignments before a command is read in linear time", () => {
+		const assignments = "A=1 B='x y' ".repeat(200);
+		const started = performance.now();
+		for (const command of [`${assignments}echo hi`, `${assignments}git status`, `${"a=b=".repeat(400)} x`, `${"X=1;".repeat(400)}`]) expect([command, blockReason(command, child)]).toEqual([command, undefined]);
+		expect(blockReason(`${assignments}git push`, child)).toMatch(/git push/);
+		expect(performance.now() - started).toBeLessThan(500);
+	});
 	test("gh pr merge is refused for every child but an owner", () => {
 		for (const command of ["gh pr merge 3", "gh pr merge 3 --squash", "gh pr merge -R owner/repo 3", "cd repo && gh pr merge 3 --auto", "/opt/homebrew/bin/gh pr merge 3"]) {
 			for (const actor of [child, unnamed]) expect([command, blockReason(command, actor)]).toEqual([command, expect.stringMatching(/child publication\/integration command: gh pr merge.*commit locally.*git commit -F <file>.*without gh in front/)]);

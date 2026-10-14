@@ -7,7 +7,8 @@
 // merge-base, and listing tags), and patterns for what a shell reader, since removed, used to find:
 // git commit or am -n, a hook manager's skip variable, a core.hooksPath or hook.* override or config
 // write, and gh pr merge. They find git or gh, by name or absolute path, at the start of a line or after
-// ;, &, or |, so they also match a mention in a quoted message or a search, and each reason says how to
+// ;, &, or |, past any assignments that prefix it (GIT_EDITOR=true git commit), so they also match a
+// mention in a quoted message or a search, and each reason says how to
 // rephrase one. --no-verify also counts on a later line that a quoted string or a line-ending backslash
 // carries git's command onto. They do not read the shell otherwise: git reached another way (a wrapper,
 // a substitution, a `sh -c` string) is not seen.
@@ -33,16 +34,20 @@ const WORD = String.raw`(?:'[^'\n]*'|"[^"\n]*"|[^\s;&|'"]+)`;
 // a separator, or the end) so a long value cannot backtrack into many shorter ones.
 const VALUE = String.raw`(?:'[^'\n]*'|"[^"\n]*"|[^\s;&|'"])*(?![^\s;&|])`;
 const ASSIGNMENT = String.raw`[A-Za-z_]\w*=${VALUE}`;
+// Where a git or gh command starts: a command's start and any assignments that prefix it for that one
+// command (GIT_EDITOR=true git commit). Each assignment reads to its whole value, so a run of them
+// reads one way.
+const COMMAND_START = String.raw`${START}(?:${ASSIGNMENT}\s+)*`;
 
 // --no-verify, but not git's own --no-verify-signatures.
 const NO_VERIFY_FLAG = new RegExp(String.raw`--no-verify(?![\w-])`);
 // --no-verify after a git at the start of a line.
-const NO_VERIFY = new RegExp(String.raw`${START}${GIT}\s+[^\n]*${NO_VERIFY_FLAG.source}`);
+const NO_VERIFY = new RegExp(String.raw`${COMMAND_START}${GIT}\s+[^\n]*${NO_VERIFY_FLAG.source}`);
 // A git at the start of a line, and the rest of its command: unquoted text up to a newline or a comment,
 // with quoted strings and backslash escapes that may carry it onto later lines (a commit message in a
 // here document, or a backslash at a line's end). Each alternative starts with a different character,
 // so the text reads one way.
-const GIT_COMMAND = new RegExp(String.raw`${START}${GIT}[^\S\n]((?:[^\n'"\\\s#]|[^\S\n](?!#)|(?<!\s)#|\\[\s\S]|'[^']*'|"(?:[^"\\]|\\[\s\S])*")*)`, "g");
+const GIT_COMMAND = new RegExp(String.raw`${COMMAND_START}${GIT}[^\S\n]((?:[^\n'"\\\s#]|[^\S\n](?!#)|(?<!\s)#|\\[\s\S]|'[^']*'|"(?:[^"\\]|\\[\s\S])*")*)`, "g");
 // git commit's and git am's short options that take no value, and their long options that begin like a
 // cluster holding n (git refuses a single-dash word of three or more letters that begins a long option's
 // name or begins with no-, as in -include or -no-op, before any hook runs).
@@ -58,7 +63,7 @@ function shortN(flags: string, longNames: string[]): string {
 // -n (--no-verify) on git commit or git am, alone or after short options that take no value (-an), and
 // before any option, which may take the rest of the cluster as its value (-nm). The search stops at ;,
 // &, or | so a later command's -n (git log -n 3) is not taken for it.
-const NO_VERIFY_SHORT = new RegExp(String.raw`${START}${GIT}${GIT_DASH_C}\s+(?:commit(?![\w-])[^\n;&|]*?${shortN(COMMIT_SHORT_FLAGS, COMMIT_LONG_LIKE_N)}|am(?![\w-])[^\n;&|]*?${shortN(AM_SHORT_FLAGS, AM_LONG_LIKE_N)})`);
+const NO_VERIFY_SHORT = new RegExp(String.raw`${COMMAND_START}${GIT}${GIT_DASH_C}\s+(?:commit(?![\w-])[^\n;&|]*?${shortN(COMMIT_SHORT_FLAGS, COMMIT_LONG_LIKE_N)}|am(?![\w-])[^\n;&|]*?${shortN(AM_SHORT_FLAGS, AM_LONG_LIKE_N)})`);
 // Variables hook managers read to skip hooks: husky, pre-commit, lefthook, overcommit.
 const SKIP_VARIABLES = ["HUSKY_SKIP_HOOKS", "HUSKY", "SKIP", "PRE_COMMIT_ALLOW_NO_CONFIG", "LEFTHOOK_EXCLUDE", "LEFTHOOK", "OVERCOMMIT_DISABLE"];
 // A skip variable assigned where a command starts (alone, among other assignments, or after export and
@@ -74,15 +79,15 @@ function option(valued: string[]): string {
 const anyCase = (text: string) => [...text].map((letter) => (/[a-z]/i.test(letter) ? `[${letter.toLowerCase()}${letter.toUpperCase()}]` : `\\${letter}`)).join("");
 // A core.hooksPath or hook.* key (git config keys ignore case) set by -c or --config-env among git's
 // options before its subcommand.
-const HOOKS_OVERRIDE = new RegExp(String.raw`${START}${GIT}${option(["-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace"])}*?\s+(?:-c\s+|--config-env(?:=|\s+))['"]?(?:${anyCase("core.hookspath")}|${anyCase("hook.")})`);
+const HOOKS_OVERRIDE = new RegExp(String.raw`${COMMAND_START}${GIT}${option(["-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace"])}*?\s+(?:-c\s+|--config-env(?:=|\s+))['"]?(?:${anyCase("core.hookspath")}|${anyCase("hook.")})`);
 // git config at the start of a line; its words decide whether it writes a hook key.
-const GIT_CONFIG = new RegExp(String.raw`${START}${GIT}${GIT_DASH_C}\s+config(?![\w-])`, "g");
+const GIT_CONFIG = new RegExp(String.raw`${COMMAND_START}${GIT}${GIT_DASH_C}\s+config(?![\w-])`, "g");
 // A git invocation (at the start or after ;, &, |, or a newline, past any -C <path> options) that
 // publishes or integrates history; merge-base and other hyphenated subcommands are not these.
-const PUBLICATION = new RegExp(String.raw`${START}${GIT}${GIT_DASH_C}\s+(push|pull|merge|rebase|cherry-pick|revert|am|apply|tag)(?![\w-])`, "g");
+const PUBLICATION = new RegExp(String.raw`${COMMAND_START}${GIT}${GIT_DASH_C}\s+(push|pull|merge|rebase|cherry-pick|revert|am|apply|tag)(?![\w-])`, "g");
 // gh pr merge, with any options between its words.
 const GH_OPTIONS = `${option(["-R", "--repo", "--hostname"])}*`;
-const GH_PR_MERGE = new RegExp(String.raw`${START}${program("gh")}${GH_OPTIONS}\s+pr${GH_OPTIONS}\s+merge(?![\w-])`);
+const GH_PR_MERGE = new RegExp(String.raw`${COMMAND_START}${program("gh")}${GH_OPTIONS}\s+pr${GH_OPTIONS}\s+merge(?![\w-])`);
 
 // `git tag` options: those that make it list or verify tags, those that create or delete one, and
 // those that take the next word as their value.

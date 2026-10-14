@@ -157,3 +157,19 @@ Upstream: `pstack/skills/ketchup`, added in 978ca6e (#539) and changed in `11713
 | Scope is one chat | Changed | Where the thread tools exist, the scope is the user's top-level threads in the project that are not settled, and their linked PRs; elsewhere it is this conversation, and the reply says so. |
 | `disable-model-invocation: true` | Rejected | The skill is read-only and should load when the user asks "catch me up" or "what's waiting on me" in their own words. A catch-up on one unattended run's decision log stays with `show-me-your-work`. |
 | A visual of at most four boxes, before-and-after visuals for every action item, screenshots, Mermaid, `/visualize` | Rejected | The reply is a few plain sentences; agent-kit draws only on an explicit request (`show-me`). |
+
+## 2026-10-14: comments lens adopted from no-comments at 837067b
+
+Upstream: `pstack/skills/no-comments/SKILL.md` and `pstack/agents/comment-sicko.md` at `837067b`, last changed in de2dba6 (#486, an agent ID rename). Earlier resyncs did not adopt them. agent-kit adopts the check because its pull-request review reported only blocking findings, so comments were checked only by the author, who defends them (gap 5 of `docs/analysis/2026-10-13-pstack-interaction-flows.md`). It lands as a lens in `git-workflow/references/pr-review.md`, not a skill: the independent part is the reviewer's check, and the rest of `no-comments` is the author's fix pass, which the review procedure already defines.
+
+| Upstream text | Decision | Reason |
+| --- | --- | --- |
+| A reviewer that did not write the comments judges them, not the author | Taken | The lens is part of the adversarial reviewer's brief, and the `pr-review` role names it. |
+| Keep list: license headers, a non-obvious behavior forced by something we cannot reshape, a doc comment that defines a public API contract, an issue or RFC link for a constraint code cannot express | Taken | Merged with `code-design`'s comment rule, which also keeps a test's goal and method; a language's invariant convention such as `// SAFETY:` is added because `code-design`'s Rust reference requires it. |
+| A surprise in our own code is a reshape target on the exact symbol, not a comment | Taken | The note names the symbol to rename, extract, or type. |
+| Narration, banners, and commented-out code are deleted | Changed | The reviewer is read-only, so each is a note listed with its location, and the author decides in the fix pass; a comment blocks only when it states something false. |
+| A long justification without a proven keep is a confession; kill it and flag the workaround | Changed | Weighed under the Root cause and Precedent lenses as that workaround, which `code-design` already forbids extending. |
+| Suppressions that catch real bugs are killed and their symbol flagged | Changed | Folded into the same Root cause and Precedent weighing. Style-only suppressions carry no separate rule. |
+| Run `/how` or `/why` on a thin `IMPORTANT` or `do not remove` claim before judging | Rejected | The reviewer reads the surrounding code under the review procedure and launches no children. |
+| The author edits comments, runs `/architect`, implements root-cause fixes, and offers to encode constraint comments as types, tests, or lints | Rejected | The review procedure's judge-and-fix pass owns fixes, and the Precedent lens already flags a rule left as prose where a type, lint, or check could hold it. |
+| Persona voice, the opening line, and `disable-model-invocation: true` | Rejected | Not part of a reviewer lens. |

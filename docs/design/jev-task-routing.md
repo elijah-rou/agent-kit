@@ -123,7 +123,7 @@ Notes are fixed templates. No Jev text reaches the model, only a route key and n
 
 | Runtime | Delivery | lookup | loop | rigor or any failure |
 | --- | --- | --- | --- | --- |
-| Claude Code | hook `additionalContext` | "Answer directly: no plan, subagents, or headings. If it turns out to need a change, treat it as a task." | "If the user's words hand the work off, suggest `/background-run` to the user (its skill is at <path>, for reference). It stays the user's to invoke: suggest it, never start it yourself. This invokes no landing mode." | nothing (the door note when the door rule fires) |
+| Claude Code | hook `additionalContext` | "Answer directly: no plan, subagents, or headings. If it turns out to need a change, treat it as a task." | "If the user's words hand the work off, suggest the `background-run` skill to the user (its skill is at <path>, for reference). It stays the user's to invoke: suggest it, never start it yourself. This invokes no landing mode." | nothing (the door note when the door rule fires) |
 | Pi, and Pi roots under T3 | a custom message from `before_agent_start`, persisted and visible, for the turn whose prompt is the routed text. Its pointer survives short follow-ups, and the system prompt stays byte-stable for the provider cache. A prompt queued while the agent works gets no note (`queued`), since Pi would drain a queued note as its own turn ahead of the prompt. | same | same | nothing |
 | Pi and T3 children | none: children work from their brief, whose `Route:` line the parent fills | – | – | – |
 | Codex | hook `additionalContext`, the same mechanism as Claude | same | same | nothing |

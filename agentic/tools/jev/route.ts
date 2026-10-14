@@ -201,7 +201,7 @@ export function noteFor(delivered: Route, backgroundRunSkill: string): string | 
 			return `Task-route note, advisory: Jev rates this a lookup. Answer directly: no plan, subagents, or headings. If it turns out to need a change, treat it as a task. ${PRECEDENCE}`;
 		case "loop": {
 			assert(backgroundRunSkill.endsWith("SKILL.md"), `not a skill file: ${backgroundRunSkill}`);
-			const handoff = `Task-route note, advisory: Jev rates this work the user hands off. If the user's words hand the work off, suggest \`/background-run\` to the user (its skill is at ${backgroundRunSkill}, for reference). It stays the user's to invoke: suggest it, never start it yourself. This invokes no landing mode. ${PRECEDENCE}`;
+			const handoff = `Task-route note, advisory: Jev rates this work the user hands off. If the user's words hand the work off, suggest the \`background-run\` skill to the user (its skill is at ${backgroundRunSkill}, for reference). It stays the user's to invoke: suggest it, never start it yourself. This invokes no landing mode. ${PRECEDENCE}`;
 			return delivered.door ? `${handoff}\n\n${doorNote(delivered.door)}` : handoff;
 		}
 		case "rigor":

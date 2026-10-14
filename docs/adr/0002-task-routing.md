@@ -41,7 +41,7 @@ The user chose to keep Jev, enable it, and judge it on measured performance rath
 - Delivery stays advice. The Claude Code and Codex hooks answer only with added context, Pi with a visible message, and every note leaves precedence to the user's words and the instructions. Nothing blocks a prompt.
 - Decision 1 is unchanged: the same prompts are sent and withheld. `AGENTIC_ROUTE=shadow` or `off` and `.agents/jev-opt-out` still lower every note.
 - A trial note was measured on no model, so model drift does not demote it, and Pi delivers its lookup and loop notes too. Records keep the answering model, so a later calibration can be measured per model.
-- The loop note now tells the agent to suggest `/background-run` to the user and never to start it, because the instructions keep `background-run` the user's to invoke. This replaces decision 2's wording of the loop note ("read `background-run` and follow it").
+- The loop note now tells the agent to suggest the `background-run` skill to the user and never to start it, because the instructions keep `background-run` the user's to invoke. This replaces decision 2's wording of the loop note ("read `background-run` and follow it").
 - The PR-risk check in the landing modes is unchanged.
 - Notes now cost tokens and can steer misclassified prompts. In shadow the door note fired on nearly every reversible follow-up, so it is the note most likely to be noise.
 

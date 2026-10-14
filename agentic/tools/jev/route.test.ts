@@ -107,7 +107,7 @@ describe("noteFor", () => {
 		// The instructions keep background-run the user's to invoke, so the note may only suggest it.
 		expect(loop).toBe(
 			"Task-route note, advisory: Jev rates this work the user hands off. If the user's words hand the work off, " +
-				`suggest \`/background-run\` to the user (its skill is at ${SKILL}, for reference). ` +
+				`suggest the \`background-run\` skill to the user (its skill is at ${SKILL}, for reference). ` +
 				"It stays the user's to invoke: suggest it, never start it yourself. This invokes no landing mode. " +
 				"The user's words and your instructions take precedence over this note.",
 		);

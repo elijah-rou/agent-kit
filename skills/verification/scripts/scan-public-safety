@@ -13,8 +13,10 @@ import pathlib
 import re
 import subprocess
 import sys
+from typing import Optional
 
 MAX_FILE_BYTES = 2_000_000
+BINARY_PROBE_BYTES = 8192
 ALLOWED_HOME_USERS = {"linuxbrew"}
 ALLOWED_EMAIL_DOMAINS = {
     "codeberg.org",
@@ -23,8 +25,9 @@ ALLOWED_EMAIL_DOMAINS = {
     "github.com",
     "users.noreply.github.com",
 }
-# A no-reply address names a service, not an account (for example a co-author trailer's bot address).
-ALLOWED_EMAIL_LOCAL_PARTS = {"noreply", "no-reply"}
+# Commit metadata may also name these service addresses (co-author trailers); built from parts so this file never holds them.
+# A forge no-reply identity (users.noreply.github.com) is already an allowed domain in every mode.
+ALLOWED_COMMIT_ADDRESSES = frozenset({"@".join(("noreply", "anthropic.com"))})
 PRIVATE_NETWORKS = tuple(
     ipaddress.ip_network(".".join(map(str, octets)) + f"/{prefix}")
     for octets, prefix in (
@@ -41,6 +44,9 @@ MAC = re.compile(r"(?i)(?<![0-9a-f])(?:[0-9a-f]{2}:){5}[0-9a-f]{2}(?![0-9a-f])")
 PRIVATE_KEY = re.compile(r"-----BEGIN (?:OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----")
 TOKEN = re.compile(r"(?:ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,})")
 
+# A location label, its git mode, and its bytes; None when a text file was over the scan limit and was not read.
+Entry = tuple[str, str, Optional[bytes]]
+
 
 def git(repository: pathlib.Path, *arguments: str) -> bytes:
     return subprocess.run(
@@ -50,8 +56,8 @@ def git(repository: pathlib.Path, *arguments: str) -> bytes:
     ).stdout
 
 
-def index_entries(repository: pathlib.Path) -> list[tuple[str, str, bytes]]:
-    entries: list[tuple[str, str, bytes]] = []
+def index_entries(repository: pathlib.Path) -> list[Entry]:
+    entries: list[Entry] = []
     for raw in git(repository, "ls-files", "-s", "-z").split(b"\0"):
         if not raw:
             continue
@@ -64,8 +70,8 @@ def index_entries(repository: pathlib.Path) -> list[tuple[str, str, bytes]]:
     return entries
 
 
-def worktree_entries(repository: pathlib.Path) -> list[tuple[str, str, bytes]]:
-    entries: list[tuple[str, str, bytes]] = []
+def worktree_entries(repository: pathlib.Path) -> list[Entry]:
+    entries: list[Entry] = []
     for raw in git(repository, "ls-files", "-z").split(b"\0"):
         if not raw:
             continue
@@ -80,37 +86,51 @@ def worktree_entries(repository: pathlib.Path) -> list[tuple[str, str, bytes]]:
     return entries
 
 
-def path_entries(paths: list[str]) -> list[tuple[str, str, bytes]]:
-    """Every file under the given files and directories; links are scanned as their target text, never followed."""
-    entries: list[tuple[str, str, bytes]] = []
+def path_entries(paths: list[str]) -> list[Entry]:
+    """Every file under the given files and directories; links are scanned as their target text, never followed.
 
-    def add(path: pathlib.Path) -> None:
+    Each location is labelled from the scanned argument's own name down, so a report holds no home path.
+    """
+    entries: list[Entry] = []
+
+    def add(path: pathlib.Path, label: str) -> None:
         if path.is_symlink():
-            entries.append((str(path), "120000", str(path.readlink()).encode()))
+            entries.append((label, "120000", str(path.readlink()).encode()))
         elif path.is_file():
-            data = path.read_bytes()
-            if b"\0" in data[:8192]:
-                print(f"{path}: binary file, only its embedded text was scanned; look at images and recordings yourself", file=sys.stderr)
-            entries.append((str(path), "100000", data))
+            with path.open("rb") as file:
+                head = file.read(BINARY_PROBE_BYTES)
+                binary = b"\0" in head
+                if os.fstat(file.fileno()).st_size > MAX_FILE_BYTES:
+                    if binary:
+                        print(f"{label}: binary file over the {MAX_FILE_BYTES} byte scan limit, not scanned; look at images and recordings yourself", file=sys.stderr)
+                    else:
+                        entries.append((label, "100000", None))
+                    return
+                data = head + file.read()
+            if binary:
+                print(f"{label}: binary file, only its embedded text was scanned; look at images and recordings yourself", file=sys.stderr)
+            entries.append((label, "100000", data))
         elif not path.exists():
-            raise RuntimeError(f"no such file or directory: {path}")
+            raise RuntimeError(f"no such file or directory: {label}")
         elif not path.is_dir():
-            raise RuntimeError(f"unsupported file type: {path}")
+            raise RuntimeError(f"unsupported file type: {label}")
 
     for argument in paths:
         root = pathlib.Path(argument)
-        add(root)
+        name = root.name or root.resolve().name
+        add(root, name)
         if root.is_dir() and not root.is_symlink():
             for directory, subdirectories, files in os.walk(root, followlinks=False):
                 subdirectories.sort()
-                for name in sorted(files) + [name for name in subdirectories if (pathlib.Path(directory) / name).is_symlink()]:
-                    add(pathlib.Path(directory) / name)
+                for child in sorted(files) + [child for child in subdirectories if (pathlib.Path(directory) / child).is_symlink()]:
+                    path = pathlib.Path(directory) / child
+                    add(path, str(pathlib.PurePath(name) / path.relative_to(root)))
     return entries
 
 
-def commit_entries(repository: pathlib.Path, revisions: str) -> list[tuple[str, str, bytes]]:
+def commit_entries(repository: pathlib.Path, revisions: str) -> list[Entry]:
     """Each commit's author, committer, and message, labelled by abbreviated SHA."""
-    entries: list[tuple[str, str, bytes]] = []
+    entries: list[Entry] = []
     log = git(repository, "log", "--format=%H%x1f%an <%ae>%x1f%cn <%ce>%x1f%B%x1e", revisions, "--")
     for record in log.split(b"\x1e"):
         record = record.strip(b"\n")
@@ -128,13 +148,13 @@ def report(path: str, line: int, finding: str) -> None:
     print(f"{path}:{line}: {finding}", file=sys.stderr)
 
 
-def line_findings(line: str) -> list[str]:
+def line_findings(line: str, allowed_addresses: frozenset[str]) -> list[str]:
     findings: list[str] = []
     for match in HOME_PATH.finditer(line):
         if match.group(1) not in ALLOWED_HOME_USERS:
             findings.append("literal user home path")
     for match in EMAIL.finditer(line):
-        if match.group(2).lower() not in ALLOWED_EMAIL_DOMAINS and match.group(1).lower() not in ALLOWED_EMAIL_LOCAL_PARTS:
+        if match.group(2).lower() not in ALLOWED_EMAIL_DOMAINS and match.group(0).lower() not in allowed_addresses:
             findings.append("personal email address")
     for match in IPV4.finditer(line):
         try:
@@ -152,10 +172,11 @@ def line_findings(line: str) -> list[str]:
     return findings
 
 
-def scan(entries: list[tuple[str, str, bytes]], source: str) -> int:
+def scan(entries: list[Entry], source: str) -> int:
+    allowed_addresses = ALLOWED_COMMIT_ADDRESSES if source == "commits" else frozenset()
     failures = 0
     for path, mode, data in entries:
-        if len(data) > MAX_FILE_BYTES:
+        if data is None or len(data) > MAX_FILE_BYTES:
             report(path, 1, f"{source} blob exceeds {MAX_FILE_BYTES} byte scan limit")
             failures += 1
             continue
@@ -165,7 +186,7 @@ def scan(entries: list[tuple[str, str, bytes]], source: str) -> int:
             continue
         text = data.decode("utf-8", errors="replace")
         for line_number, line in enumerate(text.splitlines(), 1):
-            for finding in line_findings(line):
+            for finding in line_findings(line, allowed_addresses):
                 report(path, line_number, finding)
                 failures += 1
     return failures

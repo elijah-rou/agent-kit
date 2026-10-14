@@ -46,7 +46,7 @@ and source boundaries. The upstream MIT license is preserved in `PSTACK-LICENSE`
 
 The `catch-up` skill is adapted from pstack's `ketchup` at cursor/plugins commit
 `5108b719a7aa484ef1a9781f587c7bbeac793f92` (MIT, `PSTACK-LICENSE`). It keeps the plain catch-up voice and the
-definition of an action item, extends the scope from one chat to the user's active threads and their linked pull
+definition of an action item, extends the scope from one chat to the user's top-level threads and their linked pull
 requests where the thread tools exist, and drops the visuals and the user-only invocation; [`RESYNC.md`](RESYNC.md)
 records what it took and rejected.
 

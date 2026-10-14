@@ -15,7 +15,7 @@ export const INPUT_SCHEMA = {
   properties: {
     action: { type: "string", enum: ACTIONS },
     command: { type: "string", minLength: 1, maxLength: MAX_COMMAND, description: "Explicit non-mutating test/lint/typecheck/validate command. Never install, fix, format-write, deploy, or publish." },
-    cwd: { type: "string", minLength: 1, maxLength: MAX_CWD, description: "Project directory; relative paths resolve under the session directory. Explicit commands use this exact directory." },
+    cwd: { type: "string", minLength: 1, maxLength: MAX_CWD, description: "Project directory; relative paths resolve under the session directory. Explicit commands use this exact directory, except action validate, which always runs from the repository root." },
     timeoutMs: { type: "integer", minimum: MIN_TIMEOUT, maximum: MAX_TIMEOUT, default: DEFAULT_TIMEOUT },
   },
 };

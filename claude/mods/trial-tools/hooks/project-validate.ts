@@ -229,8 +229,9 @@ function commandFor(root: string, action: Action): string | null {
 async function validate(action: Action, cwd: string, command: string | undefined, timeoutMs: number, actor: string) {
   let root = realpathSync(resolve(cwd));
   if (!statSync(root).isDirectory()) throw new Error(`${root} is not a directory`);
-  // Validate runs from the repository root, where scripts/validate and the AGENTS.md command live.
-  if (command === undefined) root = action === "validate" ? (await repository(root)) ?? root : await discover(root);
+  // Validate runs from the repository root, where scripts/validate and the AGENTS.md command live, even with an explicit command.
+  if (action === "validate") root = (await repository(root)) ?? root;
+  else if (command === undefined) root = await discover(root);
   const selected = command !== undefined ? command.trim() : commandFor(root, action);
   const before = await fingerprint(root);
   const startedAt = new Date().toISOString();

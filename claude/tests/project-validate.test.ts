@@ -220,4 +220,11 @@ test("validate runs scripts/validate from the repository root and names AGENTS.m
   const failed = invoke(nested, undefined, { action: "validate", env: { ...process.env, VALIDATE_EXIT: "4" } });
   expect(failed.outcome).toBe("failed");
   expect(failed.exitCode).toBe(4);
+  // An explicit validate command (the one AGENTS.md names) also runs from the repository root, as in Pi.
+  const explicit = invoke(nested, "pwd", { action: "validate" });
+  expect(explicit.outcome).toBe("passed");
+  expect(explicit.cwd).toBe(repository);
+  expect(String(explicit.output)).toBe(repository);
+  const testAction = invoke(nested, "pwd", { action: "test" });
+  expect(String(testAction.output)).toBe(nested);
 });

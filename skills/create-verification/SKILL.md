@@ -1,6 +1,6 @@
 ---
 name: create-verification
-description: Generate and prove a repository-local verification skill at `.agents/skills/verify-<app>/` whose control CLI launches the app, health-checks it, drives it the way a user does, captures evidence that survives cleanup, and carries a seeded feature map, then schedules its weekly upkeep. Covers web, CLI and TUI, systems, and game projects. Use when the user invokes create-verification or asks for a scripted way to verify this repository's app, or as the first unit when a landing mode (`babysit-and-ship`) starts in a repository with no `.agents/skills/verify-*/` skill. Not for a one-off check of a single change.
+description: Generate and prove a repository-local verification skill at `.agents/skills/verify-<app>/` whose control CLI launches the app, health-checks it, drives it the way a user does, captures evidence that survives cleanup, and carries a seeded feature map. Covers web, CLI and TUI, systems, and game projects. Use when the user invokes create-verification or asks for a scripted way to verify this repository's app, or as the first unit when a landing mode (`babysit-and-ship`) starts in a repository with no `.agents/skills/verify-*/` skill. Not for a one-off check of a single change.
 ---
 
 # Create a verification skill
@@ -82,22 +82,6 @@ When a step fails, fix the generated skill, run its Cleanup, and start again fro
 
 Completion criterion: steps 6, 7, 8, and 9 were observed on the final version of the skill.
 
-## 5. Schedule its upkeep
-
-Once the pull request that adds the skill is open, schedule `maintain-verification` to run weekly for this skill, in a repository the user owns (its `origin` is under the user's own GitHub account). The instructions give `maintain-verification` upkeep schedules the user's standing approval, so this needs no question; report the schedule you create. If no such pull request opens in this run, create no schedule, and report that the user, or the session that opens that pull request, runs this step then. A scheduled run finds the skill's state itself, from origin's trunk and the open pull requests, so the schedule's prompt names no pull request or branch (`maintain-verification`'s Scheduled runs).
-
-- **T3 schedule tools available** (`schedule_task`, `list_scheduled_tasks`) in a repository the user owns: list the scheduled tasks of the repository's T3 project. If one already runs `maintain-verification` for `.agents/skills/verify-<app>/`, report it, leave it unchanged, and create nothing. Otherwise call `schedule_task` with:
-  - `schedule`: `{type: "fixed_time", timeOfDay: "09:00", weekdays: [1]}`, Monday 09:00 local time;
-  - `bindToCurrentThread: false`, so each run gets a fresh thread instead of posting into this one;
-  - `projectId`: the repository's T3 project, omitted when this thread belongs to it;
-  - `title`: `Weekly verification upkeep: <repository> verify-<app>`;
-  - `prompt`: the command that invokes `maintain-verification` by name in the runtime the schedule inherits from this thread (its slash command), followed by `Weekly scheduled upkeep of .agents/skills/verify-<app>/ in <main checkout path>, against origin's <trunk>.` The path is the repository's main checkout (the first entry of `git worktree list`), never a T3 worktree, which T3 may remove.
-
-  Report the returned schedule ID, the cadence, and the returned `nextRunAt`.
-- **Elsewhere** (no T3 schedule tools, or a repository the user does not own): create no schedule. Report that none was created, and that the user runs `maintain-verification` by its command in the repository by hand, weekly or after a change to a mapped feature.
-
-Completion criterion: the reply names the created or existing schedule with its ID, cadence, and next run; or says why no schedule was created and how to create it later or run the pass by hand.
-
 ## Reply
 
-Lead with anything the user must decide or provide (credentials, entitlements, hardware), and that the pull request adding the skill lands only when the user approves it in words (a countersign). Then the skill path, the features mapped, the proof run (feature driven, evidence path, the listing that shows it survived cleanup, and on a stand-in, the setup steps it did that the target will not), every toolchain mismatch Doctor reported, the map check, every skipped feature with its missing prerequisite, and known gaps. End with the upkeep schedule from step 5: its ID, cadence, and next run; or why none was created and how to create it later or run `maintain-verification` by hand.
+Lead with anything the user must decide or provide (credentials, entitlements, hardware), and that the pull request adding the skill lands only when the user approves it in words (a countersign). Then the skill path, the features mapped, the proof run (feature driven, evidence path, the listing that shows it survived cleanup, and on a stand-in, the setup steps it did that the target will not), every toolchain mismatch Doctor reported, the map check, every skipped feature with its missing prerequisite, and known gaps. Point to `maintain-verification` for keeping the map honest as the app changes.

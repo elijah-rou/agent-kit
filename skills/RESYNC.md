@@ -173,5 +173,3 @@ Upstream: `pstack/skills/no-comments/SKILL.md` and `pstack/agents/comment-sicko.
 | Run `/how` or `/why` on a thin `IMPORTANT` or `do not remove` claim before judging | Rejected | The reviewer reads the surrounding code under the review procedure and launches no children. |
 | The author edits comments, runs `/architect`, implements root-cause fixes, and offers to encode constraint comments as types, tests, or lints | Rejected | The review procedure's judge-and-fix pass owns fixes, and the Precedent lens already flags a rule left as prose where a type, lint, or check could hold it. |
 | Persona voice, the opening line, and `disable-model-invocation: true` | Rejected | Not part of a reviewer lens. |
-
-The same pull request adds local text with no upstream counterpart (pstack ships no schedule): `create-verification` step 5 creates a weekly T3 schedule for `maintain-verification`, and `maintain-verification` says how a scheduled run behaves. Their provenance rows stay where they are.

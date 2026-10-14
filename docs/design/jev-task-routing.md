@@ -23,7 +23,7 @@ Two facts shape everything below.
 
 The user types tasks as now, in Claude Code, Codex, or Pi, in any repository the user has not opted out.
 
-- "Going to bed, keep fixing the flaky session tests until CI is green twice in a row." The agent gets a loop note, reads `background-run`, writes the framing, and runs.
+- "Going to bed, keep fixing the flaky session tests until CI is green twice in a row." The agent gets a loop note and suggests `/background-run` to the user, who starts it if they want the run framed and driven to a done predicate.
 - "Where does the config loader read XDG paths?" The agent gets a lookup note and answers directly.
 - "Migrate the ledger store from JSON files to SQLite." No level note, so this is rigor. The door note fires too.
 - `/background-run …` or any other slash command is the user's own choice, so no note is delivered. The text is still classified in shadow and recorded, so each manual invocation becomes a labeled example.
@@ -123,12 +123,12 @@ Notes are fixed templates. No Jev text reaches the model, only a route key and n
 
 | Runtime | Delivery | lookup | loop | rigor or any failure |
 | --- | --- | --- | --- | --- |
-| Claude Code | hook `additionalContext` | "Answer directly: no plan, subagents, or headings. If it turns out to need a change, treat it as a task." | "If the user's words hand the work off, read `background-run`'s SKILL.md at <path> and follow it. This invokes no landing mode." | nothing (the door note when the door rule fires) |
+| Claude Code | hook `additionalContext` | "Answer directly: no plan, subagents, or headings. If it turns out to need a change, treat it as a task." | "If the user's words hand the work off, suggest `/background-run` to the user (its skill is at <path>, for reference). It stays the user's to invoke: suggest it, never start it yourself. This invokes no landing mode." | nothing (the door note when the door rule fires) |
 | Pi, and Pi roots under T3 | a custom message from `before_agent_start`, persisted and visible, for the turn whose prompt is the routed text. Its pointer survives short follow-ups, and the system prompt stays byte-stable for the provider cache. A prompt queued while the agent works gets no note (`queued`), since Pi would drain a queued note as its own turn ahead of the prompt. | same | same | nothing |
 | Pi and T3 children | none: children work from their brief, whose `Route:` line the parent fills | – | – | – |
 | Codex | hook `additionalContext`, the same mechanism as Claude | same | same | nothing |
 
-Jev never points at `babysit-and-ship`, `correct`, `reflect`, or the verification-authoring skills. `background-run` stays `disable-model-invocation: true`. That flag is a cost gate, and a calibrated loop note is the measured exception to it. Landing modes are an authority boundary, so they stay reachable only through the user's own words.
+Jev never points at `babysit-and-ship`, `correct`, `reflect`, or the verification-authoring skills. `background-run` stays `disable-model-invocation: true`, and the instructions keep it the user's to invoke, so the loop note only tells the agent to suggest it to the user and never to start it; the path is there for reference. Landing modes are an authority boundary, so they stay reachable only through the user's own words.
 
 ### What may leave the machine
 
@@ -194,7 +194,7 @@ The two-week review of `background-run` (open question 3) only means something i
 - `runtime`: `claude`, `codex`, or `pi`;
 - `launcher`: `t3` or `direct`;
 - `machine`: the short host name of the machine the agent runs on, such as `bananamac`;
-- `repo`: `owner/name`, or `none` outside a repository;
+- `repo`: `owner/name` for a GitHub origin, `none` outside a repository, and for any other checkout `other:` and 16 hex digits of its common git directory, so each clone and its worktrees form one bucket without the path in the record (records before 2026-10-14 say only `other`);
 - `optedOut`;
 - `explicit`: the agent-kit skill a typed command named, or `other`, so typed text never reaches a record.
 
@@ -202,12 +202,12 @@ They still never hold task text.
 
 **Layout.** Files live at `$XDG_STATE_HOME/agentic/task-route/<machine>/<runtime>-<session>.jsonl`. Each file has one writer, so ledgers from several machines combine by copying directories into one place, with no merge.
 
-**The route report measures the notes.** Built on 2026-10-14 in `route-report.ts`: `agentic jev route-report [--days <n>] [--json]` reads every machine directory in the local ledger and, over the last `n` days (default 7), reports:
+**The route report measures the notes.** Built on 2026-10-14 in `route-report.ts`: `agentic jev route-report [--days <n>] [--policy <id>] [--json]` reads every machine directory in the local ledger and, over the last `n` days (default 7), counts the records of one policy, by default the current one (`task-route@2`). Records of other policies, such as the shadow-era `task-route@1`, are counted only by policy on a line of their own, so shadow and trial records never mix. The report reads its own view of a record, with its own set of runtimes, so it keeps reading records of a runtime the writer no longer names. For the shown policy it reports:
 
 - per runtime: prompts, prompts classified, prompts noted, and every fallback reason;
-- per note and runtime: how often the note was decided (Jev's answers cleared its threshold), delivered, and withheld, with the reason (a fallback, `session-shadow` for `AGENTIC_ROUTE=shadow`, or `policy-shadow`);
+- per note and runtime: how often the note was decided (Jev's answers cleared its threshold), noted, and withheld, with the reason (the record's fallbacks other than `conflict` and `low-confidence`, which change the advised route itself; else `session-shadow` for `AGENTIC_ROUTE=shadow`; else `unknown`, which under a policy that keeps the note in shadow means that policy). Noted means the note was written for the agent. Pi holds a note for the next turn and drops it when that turn's prompt is not the routed text, so for Pi the count is an upper bound;
 - per question, choice, and runtime: the count, its share, and the median confidence of Jev's answers;
-- in a git repository, the correction records under its common directory (`agentic/corrections/`), counted in that repository's sessions that got each note against those that got none. The report labels this correlation, not causation, and prints counts only, never correction or prompt text.
+- in a git repository, the correction records under its common directory (`agentic/corrections/`), counted in that repository's sessions that got each note under the shown policy against those that got none. The report labels this correlation, not causation, and prints counts only, never correction or prompt text.
 
 It reads local files and sends nothing. Duplicate lines from copied ledgers and lines it cannot read are counted and skipped.
 
@@ -236,7 +236,7 @@ The main flow is three files deep: the adapter, then `route.ts`, then `egress.ts
 | Path | Owns | State |
 | --- | --- | --- |
 | `agentic/tools/jev/egress.ts` | Everything that leaves the machine: screen, redaction, length bound, `isPublic`, `originSlug`, `apiKey`, and `httpClassifier`. Only it produces `Sendable`, and both transports accept only `Sendable`. | built, split from the former `jev.ts` |
-| `agentic/tools/jev/route.ts` | Policy `task-route@1`, all pure: `QUESTIONS`, `POLICY`, `decide`, `applyModes`, `noteFor`, `parseAnswers`, `explicitCommand` | built |
+| `agentic/tools/jev/route.ts` | Policy `task-route@2`, all pure: `QUESTIONS`, `POLICY`, `decide`, `applyModes`, `noteFor`, `parseAnswers`, `explicitCommand` | built |
 | `agentic/tools/jev/route-task.ts` | the one I/O pass per prompt: `routeTask`, `RouteRecord`, and the ledger writer | built |
 | `agentic/tools/jev/route-report.ts` | the route report: ledger and correction readers, `buildReport`, `formatReport` | built for note, answer, and correction counts; transcript coverage is not built |
 | `agentic/tools/jev/route-eval.ts` | `harvest`, `score`, and a report without text | not built; follows labeling |

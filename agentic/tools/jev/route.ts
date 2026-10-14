@@ -73,6 +73,11 @@ export type NotePolicy = { mode: "shadow"; threshold: number } | { mode: "trial"
 export type NoteId = "door" | "lookup" | "loop";
 export type Policy = { id: "task-route"; version: number; deadlineMs: number; notes: Record<NoteId, NotePolicy> };
 
+/** The policy as records name it, such as task-route@2. */
+export function policyId(policy: Policy): string {
+	return `${policy.id}@${policy.version}`;
+}
+
 /** The question each note's threshold applies to. */
 export const NOTE_QUESTION: Record<NoteId, QuestionId> = { door: "door", lookup: "level", loop: "level" };
 
@@ -185,14 +190,18 @@ export function doorNote(door: DoorNote): string {
 	return `Task-class hint, advisory: Jev ${why}. Before building, check the task against the one-way-door list in your instructions; if it is one, compare design shapes with design-checkpoint first.`;
 }
 
-/** The note for a delivered route, or undefined for plain rigor. backgroundRunSkill is the path of background-run's SKILL.md. */
+/**
+ * The note for a delivered route, or undefined for plain rigor. backgroundRunSkill is the path of
+ * background-run's SKILL.md. The loop note only suggests background-run: the instructions keep it
+ * the user's to invoke.
+ */
 export function noteFor(delivered: Route, backgroundRunSkill: string): string | undefined {
 	switch (delivered.level) {
 		case "lookup":
 			return `Task-route note, advisory: Jev rates this a lookup. Answer directly: no plan, subagents, or headings. If it turns out to need a change, treat it as a task. ${PRECEDENCE}`;
 		case "loop": {
 			assert(backgroundRunSkill.endsWith("SKILL.md"), `not a skill file: ${backgroundRunSkill}`);
-			const handoff = `Task-route note, advisory: Jev rates this work the user hands off. If the user's words hand the work off, read the background-run skill at ${backgroundRunSkill} and follow it. This invokes no landing mode. ${PRECEDENCE}`;
+			const handoff = `Task-route note, advisory: Jev rates this work the user hands off. If the user's words hand the work off, suggest \`/background-run\` to the user (its skill is at ${backgroundRunSkill}, for reference). It stays the user's to invoke: suggest it, never start it yourself. This invokes no landing mode. ${PRECEDENCE}`;
 			return delivered.door ? `${handoff}\n\n${doorNote(delivered.door)}` : handoff;
 		}
 		case "rigor":

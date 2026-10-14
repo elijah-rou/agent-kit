@@ -4,7 +4,8 @@
 // takes its cautious path.
 
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parseAnswers, QUESTIONS, type Classify, type ClassifyFailure, type Sendable } from "./route.ts";
@@ -152,12 +153,39 @@ export function checkoutRoot(dir: string): string | undefined {
 	throw new Error(`checkoutRoot: no filesystem root above ${dir}`);
 }
 
-/** The repository a prompt was typed in: owner/name for a GitHub origin, "other" for any other checkout, "none" outside one. */
+/**
+ * The git directory every worktree of root's clone shares, found without spawning git: a worktree's
+ * `.git` file names its own git directory, whose `commondir` file names the shared one.
+ */
+export function commonDir(root: string): string {
+	const dotGit = join(root, ".git");
+	let dir = dotGit;
+	if (!statSync(dotGit).isDirectory()) {
+		const gitdir = /^gitdir:\s*(.+?)\s*$/m.exec(readFileSync(dotGit, "utf8"))?.[1];
+		if (gitdir !== undefined) {
+			const own = resolve(root, gitdir);
+			const common = join(own, "commondir");
+			dir = existsSync(common) ? resolve(own, readFileSync(common, "utf8").trim()) : own;
+		}
+	}
+	try {
+		return realpathSync(dir);
+	} catch {
+		return dir;
+	}
+}
+
+/**
+ * The repository a prompt was typed in: owner/name for a GitHub origin, "none" outside a checkout,
+ * and for any other checkout "other:" and 16 hex digits of its common git directory, so each clone,
+ * worktrees included, is its own bucket without its path reaching a record.
+ */
 export async function repoOf(cwd: string, timeoutMs: number): Promise<Repo> {
 	const root = checkoutRoot(cwd);
 	if (root === undefined) return { slug: "none", optedOut: false };
 	const optedOut = existsSync(join(root, OPT_OUT_FILE));
-	return { slug: (await originSlug(root, timeoutMs)) ?? "other", optedOut };
+	const slug = (await originSlug(root, timeoutMs)) ?? `other:${createHash("sha256").update(commonDir(root)).digest("hex").slice(0, 16)}`;
+	return { slug, optedOut };
 }
 
 function failure(error: unknown, signal: AbortSignal): ClassifyFailure {

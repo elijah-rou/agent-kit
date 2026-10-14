@@ -8,7 +8,7 @@ import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { screen, type Origin, type Repo, type Withheld } from "./egress.ts";
-import { applyModes, decide, explicitCommand, noteFor, sessionFor, type Answers, type Classify, type ClassifyFailure, type Policy, type Route, type Session } from "./route.ts";
+import { applyModes, decide, explicitCommand, noteFor, policyId, sessionFor, type Answers, type Classify, type ClassifyFailure, type Policy, type Route, type Session } from "./route.ts";
 
 export type Runtime = "claude" | "codex" | "pi" | "cli";
 export type RouteInput = {
@@ -92,7 +92,7 @@ export async function routeTask(input: RouteInput, deps: RouteDeps): Promise<{ n
 	const repo = mode === "off" ? { slug: "unknown", optedOut: false } : await deps.repo(input.cwd, left());
 	const record = (fields: Pick<RouteRecord, "delivered" | "fallbacks"> & Partial<Pick<RouteRecord, "answers" | "advised" | "noted">>): RouteRecord => ({
 		v: 1,
-		policy: `${policy.id}@${policy.version}`,
+		policy: policyId(policy),
 		at: new Date(started).toISOString(),
 		machine: machineName(),
 		runtime: input.runtime,

@@ -100,12 +100,18 @@ describe("noteFor", () => {
 		expect(noteFor({ level: "rigor", door: { choice: "experiment", confidence: 0.5 } }, SKILL)).toContain("Jev is unsure (experiment, confidence 0.50).");
 	});
 
-	test("lookup answers directly, and loop points at background-run without invoking a landing mode", () => {
+	test("lookup answers directly, and loop suggests background-run to the user without starting it", () => {
 		const lookup = noteFor({ level: "lookup" }, SKILL)!;
 		expect(lookup).toContain("Answer directly");
 		const loop = noteFor({ level: "loop" }, SKILL)!;
-		expect(loop).toContain(`read the background-run skill at ${SKILL}`);
-		expect(loop).toContain("This invokes no landing mode.");
+		// The instructions keep background-run the user's to invoke, so the note may only suggest it.
+		expect(loop).toBe(
+			"Task-route note, advisory: Jev rates this work the user hands off. If the user's words hand the work off, " +
+				`suggest \`/background-run\` to the user (its skill is at ${SKILL}, for reference). ` +
+				"It stays the user's to invoke: suggest it, never start it yourself. This invokes no landing mode. " +
+				"The user's words and your instructions take precedence over this note.",
+		);
+		expect(loop).not.toMatch(/\b(?:read|follow|run|start) (?:the background-run|it)\b(?! yourself)/);
 		expect(noteFor({ level: "loop", door }, SKILL)).toBe(`${loop}\n\n${noteFor({ level: "rigor", door }, SKILL)}`);
 		expect(() => noteFor({ level: "loop" }, "/kit/skills/background-run")).toThrow("not a skill file");
 	});

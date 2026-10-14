@@ -52,7 +52,7 @@ describe("routeTask", () => {
 		expect(lookup.note).toContain("Task-route note, advisory: Jev rates this a lookup.");
 		expect(lookup.record).toMatchObject({ delivered: { level: "lookup" }, noted: true, fallbacks: [] });
 		const loop = await routeTask(input("Going to bed, keep fixing the flaky tests until CI is green"), harness({ answer: answers("loop", 0.97) }).deps);
-		expect(loop.note).toContain(`read the background-run skill at ${SKILL}`);
+		expect(loop.note).toContain(`suggest \`/background-run\` to the user (its skill is at ${SKILL}, for reference)`);
 		expect(loop.record).toMatchObject({ delivered: { level: "loop" }, noted: true, fallbacks: [] });
 		const shadow = await routeTask(input(MIGRATE), harness({ answer: answers("rigor", 0.99, "one-way-door", 0.99), policy: SHADOW }).deps);
 		expect(shadow.note).toBeUndefined();
@@ -155,7 +155,7 @@ describe("routeTask", () => {
 	test("advisory notes are delivered, and a loop whose skill file is missing falls back to rigor", async () => {
 		expect((await routeTask(input("Where does the config loader read XDG paths from?"), harness({ answer: answers("lookup", 0.97), policy: ADVISORY }).deps)).note).toContain("Answer directly");
 		const loop = await routeTask(input("Going to bed, keep fixing the flaky tests until CI is green"), harness({ answer: answers("loop", 0.97), policy: ADVISORY }).deps);
-		expect(loop.note).toContain(`read the background-run skill at ${SKILL}`);
+		expect(loop.note).toContain(`suggest \`/background-run\` to the user (its skill is at ${SKILL}, for reference)`);
 		const missing = await routeTask(input("Going to bed, keep fixing the flaky tests until CI is green"), harness({ answer: answers("loop", 0.97, "one-way-door", 0.99), policy: ADVISORY, skillsDir: "/nowhere/skills" }).deps);
 		expect(missing.note).toBe(doorNote(oneWay));
 		expect(missing.record).toMatchObject({ delivered: { level: "rigor", door: oneWay }, fallbacks: ["skill-missing"] });

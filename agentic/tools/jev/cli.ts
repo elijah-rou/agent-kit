@@ -5,7 +5,9 @@ import { apiKey, httpClassifier, isPublic, originSlug, OPT_OUT_FILE, promptOrigi
 import { HOLD_ABOVE, prDecision, prRisk, prState } from "./pr-risk.ts";
 import { buildReport, DEFAULT_DAYS, formatReport, MAX_DAYS, readCorrections, readLedger, type ReportInput } from "./route-report.ts";
 import { appendRecord, ledgerRoot, routeTask, type RouteDeps, type RouteRecord, type Runtime } from "./route-task.ts";
-import { POLICY } from "./route.ts";
+import { POLICY, policyId } from "./route.ts";
+
+const CURRENT_POLICY = policyId(POLICY);
 
 const USAGE = `Usage: jev <pr-risk | task-class | route-report> ...
 
@@ -22,10 +24,11 @@ macOS, the keychain item "typesafe-jev".
       additionalContext when a note applies. It never blocks the prompt.
   task-class <task text>
       Prints the route for a task typed in the current directory, without recording it.
-  route-report [--days <n>] [--json]
+  route-report [--days <n>] [--policy <id>] [--json]
       Reads the task-route ledger (every machine directory under $XDG_STATE_HOME/agentic/task-route/)
-      and prints, per note and runtime, how often each note was decided, delivered, and withheld,
-      and the distribution of Jev's answers, over the last <n> days (default ${DEFAULT_DAYS}). In a git
+      and prints, per note and runtime, how often each note was decided, noted, and withheld, and
+      the distribution of Jev's answers, over the last <n> days (default ${DEFAULT_DAYS}). It counts the
+      records of one policy (default ${CURRENT_POLICY}) and the others only by policy. In a git
       repository it also counts the correction records in sessions that got a note, as correlation.
       Reads local files only and sends nothing.
 
@@ -68,13 +71,15 @@ async function localCorrections(cwd: string): Promise<ReportInput["corrections"]
 
 async function routeReport(args: string[]): Promise<number> {
 	let days = DEFAULT_DAYS;
+	let policy = CURRENT_POLICY;
 	let json = false;
 	for (let i = 0; i < args.length; i++) {
 		if (args[i] === "--json") json = true;
 		else if (args[i] === "--days" && /^\d+$/.test(args[i + 1] ?? "") && Number(args[i + 1]) >= 1 && Number(args[i + 1]) <= MAX_DAYS) days = Number(args[++i]);
-		else return console.error(`jev route-report: bad argument ${JSON.stringify(args[i])}; --days takes 1 to ${MAX_DAYS}\n\n${USAGE}`), 2;
+		else if (args[i] === "--policy" && /^[a-z][a-z-]*@\d+$/.test(args[i + 1] ?? "")) policy = args[++i]!;
+		else return console.error(`jev route-report: bad argument ${JSON.stringify(args[i])}; --days takes 1 to ${MAX_DAYS}, --policy an id such as ${CURRENT_POLICY}\n\n${USAGE}`), 2;
 	}
-	const report = buildReport({ ledger: readLedger(ledgerRoot(process.env)), corrections: await localCorrections(process.cwd()), now: Date.now(), days });
+	const report = buildReport({ ledger: readLedger(ledgerRoot(process.env)), corrections: await localCorrections(process.cwd()), now: Date.now(), days, policy });
 	process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report));
 	return 0;
 }

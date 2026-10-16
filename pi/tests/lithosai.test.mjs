@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mock, test } from "bun:test";
+import { afterAll, mock, test } from "bun:test";
 
 // Pi supplies the real pi-ai modules at runtime. The stubs keep createProvider's passthrough shape and
 // the completions API handle, so this file exercises the extension's own metadata, auth, and overlay
@@ -8,6 +8,10 @@ mock.module("@earendil-works/pi-ai", () => ({ createProvider: (config) => config
 mock.module("@earendil-works/pi-ai/compat", () => ({ openAICompletionsApi: () => ({ api: "openai-completions" }) }));
 
 const { default: registerLithosai } = await import("../extensions/lithosai.ts");
+
+// The overlay tests replace the global fetch; put it back so a later test file cannot inherit the stub.
+const realFetch = globalThis.fetch;
+afterAll(() => { globalThis.fetch = realFetch; });
 
 function provider() {
   let registered;

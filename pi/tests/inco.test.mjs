@@ -87,10 +87,10 @@ test("the live overlay reads context, prices, modalities, and reasoning from eac
 			JSON.stringify({
 				object: "list",
 				data: [
-					{ id: "kimi-k3", object: "model", name: "Kimi K3", tier: "standard", context_length: 1_048_576, pricing: { input: 3, cached_input: 0.3, output: 15 }, capabilities: { reasoning_effort: true }, parameters: 2_800_000_000_000 },
+					{ id: "kimi-k3", object: "model", name: "Kimi K3", tier: "standard", context_length: 262_144, pricing: { input: 3, cached_input: 0.3, output: 15 }, capabilities: { reasoning_effort: true }, parameters: 2_800_000_000_000 },
 					{ id: "glm-5.3-flash:fast", object: "model", name: "GLM 5.3 Flash (Fast)", tier: "fast", context_length: 1_048_576, pricing: { input: 0.3, cached_input: 0.06, output: 1 }, capabilities: { reasoning_effort: true }, modalities: { input: ["text", "image"], output: ["text"] } },
-					{ id: "minimax-m3:fast", object: "model", context_length: 1_048_576, pricing: { input: 0.6, cached_input: 0.12, output: 2.4 }, capabilities: { reasoning_effort: false }, modalities: { input: ["image"], output: ["text"] } },
-					{ id: "deepseek-v4.1-flash", object: "model", name: "DeepSeek V4.1 Flash", context_length: 1_048_576 },
+					{ id: "minimax-m3:fast", object: "model", pricing: { input: 0.6, cached_input: 0.12, output: 2.4 }, capabilities: { reasoning_effort: false }, modalities: { input: ["image"], output: ["text"] } },
+					{ id: "deepseek-v4.1-flash", object: "model", name: "DeepSeek V4.1 Flash" },
 					{ id: 42 },
 					{},
 					null,
@@ -123,27 +123,32 @@ test("the live overlay reads context, prices, modalities, and reasoning from eac
 	assert.deepEqual(byId("glm-5.3-flash:fast").input, ["text", "image"]);
 	assert.deepEqual(byId("minimax-m3:fast").input, ["text", "image"]);
 	assert.deepEqual(byId("kimi-k3").input, ["text"]);
-	// A model that does not report reasoning effort keeps no reasoning metadata.
+	// A model that does not report reasoning effort keeps the dialect compat without an effort.
 	assert.equal(byId("minimax-m3:fast").reasoning, false);
-	assert.equal(byId("minimax-m3:fast").compat, undefined);
+	assert.deepEqual(byId("minimax-m3:fast").compat, { maxTokensField: "max_tokens" });
 	assert.equal(byId("minimax-m3:fast").thinkingLevelMap, undefined);
 	// An entry without prices keeps zero cost rather than a guess.
 	assert.deepEqual(byId("deepseek-v4.1-flash").cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 	assert.equal(byId("deepseek-v4.1-flash").reasoning, false);
-	// Every entry here serves the same window, and one that omits it falls back to it.
-	assert.deepEqual(models.map((model) => model.contextWindow), [1_048_576, 1_048_576, 1_048_576, 1_048_576]);
+	// Context windows come from the entry, and one that omits the field falls back to the shared window.
+	assert.deepEqual(models.map((model) => model.contextWindow), [262_144, 1_048_576, 1_048_576, 1_048_576]);
 });
 
-test("the overlay asks for the public catalog when no key is configured", async () => {
-	let options;
+test("the overlay sends the key it has, and asks for the public catalog without one", async () => {
+	const requests = [];
 	globalThis.fetch = async (url, request) => {
-		options = request;
+		requests.push(request);
 		return new Response(JSON.stringify({ data: [{ id: "kimi-k3" }] }), { status: 200 });
 	};
 
-	const models = await provider().fetchModels({ credential: undefined, signal: new AbortController().signal });
-	assert.deepEqual(models.map((model) => model.id), ["kimi-k3"]);
-	assert.equal(options.headers.Authorization, undefined);
+	const fetchModels = provider().fetchModels;
+	const signal = new AbortController().signal;
+	assert.deepEqual((await fetchModels({ credential: undefined, signal })).map((model) => model.id), ["kimi-k3"]);
+	assert.equal(requests[0].headers.Authorization, undefined);
+
+	const fromEnv = await fetchModels({ credential: { type: "api_key", env: { [API_KEY_ENV]: " env-key " } }, signal });
+	assert.deepEqual(fromEnv.map((model) => model.id), ["kimi-k3"]);
+	assert.equal(requests[1].headers.Authorization, "Bearer env-key");
 });
 
 test("the overlay fails loudly instead of reporting an empty catalog", async () => {

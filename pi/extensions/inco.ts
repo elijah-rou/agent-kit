@@ -46,11 +46,8 @@ const DEFAULT_CONTEXT_WINDOW = 1_048_576;
 const DEFAULT_MAX_TOKENS = 32_768;
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
-/** Inco's docs describe `reasoning_effort` and `none` on the OpenAI dialect. */
-const OPENAI_COMPAT: NonNullable<IncoChatModel["compat"]> = {
-	supportsReasoningEffort: true,
-	maxTokensField: "max_tokens",
-};
+/** Inco's OpenAI dialect takes `max_tokens`; only a reasoning model also takes an effort. */
+const MAX_TOKENS_COMPAT: NonNullable<IncoChatModel["compat"]> = { maxTokensField: "max_tokens" };
 
 /**
  * `capabilities.reasoning_effort` says a model reasons, not which efforts it
@@ -132,8 +129,9 @@ function buildModel(entry: CatalogEntry): IncoChatModel {
 		maxTokens: DEFAULT_MAX_TOKENS,
 		type: "chat",
 	};
+	// The dialect field is the same for every model; only a reasoner takes an effort.
+	model.compat = reasoning ? { ...MAX_TOKENS_COMPAT, supportsReasoningEffort: true } : MAX_TOKENS_COMPAT;
 	if (reasoning) {
-		model.compat = OPENAI_COMPAT;
 		model.thinkingLevelMap = THINKING_LEVEL_MAP;
 	}
 	return model;

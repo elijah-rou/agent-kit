@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { pace, PACE_EXIT, parseSnapshot, readSnapshot, recordSnapshot, SNAPSHOT_ENTRIES_MAX, SNAPSHOT_MAX_BYTES, type Snapshot, snapshotDirectory, snapshotOf, STALE_AFTER_SECONDS, WINDOW_SECONDS } from "./quota.ts";
 
 // Pace is pure over (snapshot, now), so the boundaries are tested at exact elapsed shares; the file
@@ -49,8 +49,9 @@ describe("pace", () => {
 		expect(pace({ ...fresh, usedPercent: 15 }, NOW).state).toBe("exhausted");
 	});
 
-	test("unknown without a snapshot, after a reset, or when stale", () => {
-		expect(pace(undefined, NOW).state).toBe("unknown");
+	test("unknown without a snapshot, with an unreadable store, after a reset, or when stale", () => {
+		expect(pace(undefined, NOW)).toEqual({ state: "unknown", reason: "no recorded Claude rate limits; a Claude Code session with the statusline records them" });
+		expect(pace({ unreadable: "wedged" }, NOW)).toEqual({ state: "unknown", reason: "the recorded rate limits are unreadable: wedged" });
 		const observed = { usedPercent: 10, resetsAt: NOW + HALF_WEEK, observedAt: NOW - STALE_AFTER_SECONDS };
 		expect(pace(observed, NOW).state).toBe("under");
 		expect(pace({ ...observed, observedAt: observed.observedAt - 1 }, NOW).state).toBe("unknown");
@@ -104,6 +105,8 @@ describe("parseSnapshot", () => {
 });
 
 describe("snapshot directory", () => {
+	/** The temporary file this process writes through, beside the entry directory. */
+	const temporaryOf = (env: { XDG_STATE_HOME: string }) => join(dirname(snapshotDirectory(env)), `.claude-seven-day.${process.pid}.tmp`);
 	/** The entry recordSnapshot writes for a snapshot, named for its week and usage. */
 	const entryOf = (env: { XDG_STATE_HOME: string }, snapshot: Snapshot) => join(snapshotDirectory(env), `${snapshot.resetsAt}_${snapshot.usedPercent}.json`);
 	const at = (usedPercent: number, observedAt: number, resetsAt = NOW + HALF_WEEK): Snapshot => ({ usedPercent, resetsAt, observedAt });
@@ -174,47 +177,79 @@ describe("snapshot directory", () => {
 		mkdirSync(join(entry, "occupied"), { recursive: true });
 		expect(() => recordSnapshot(halfway(7), env)).toThrow();
 		expect(readdirSync(snapshotDirectory(env))).toEqual([basename(entry)]);
-		expect(readSnapshot(env)).toBeUndefined();
+		expect(readdirSync(dirname(snapshotDirectory(env)))).toEqual(["claude-seven-day"]);
+		expect(readSnapshot(env)).toEqual({ unreadable: `${entry} is not a regular file` });
 	});
 
 	test("a temporary file already at its path is refused and left alone", () => {
 		const env = { XDG_STATE_HOME: stateHome() };
 		mkdirSync(snapshotDirectory(env), { recursive: true });
-		const planted = join(snapshotDirectory(env), `.${process.pid}.tmp`);
+		const planted = temporaryOf(env);
 		writeFileSync(planted, "planted");
 		expect(() => recordSnapshot(halfway(7), env)).toThrow();
 		expect(readFileSync(planted, "utf8")).toBe("planted");
 		expect(readSnapshot(env)).toBeUndefined();
 	});
 
-	test("reads nothing from a missing, oversized, irregular, or mislabeled entry", () => {
+	// A render killed between creating its temporary file and renaming it leaves the file behind, and nothing
+	// removes it: however many pile up, the record must stay readable and writable.
+	test("temporary files left by killed renders neither hide the record nor block a write", () => {
+		const env = { XDG_STATE_HOME: stateHome() };
+		recordSnapshot(halfway(7), env);
+		const parent = dirname(snapshotDirectory(env));
+		for (let index = 0; index <= SNAPSHOT_ENTRIES_MAX; index += 1) {
+			writeFileSync(join(parent, `.claude-seven-day.${900_000 + index}.tmp`), "");
+			writeFileSync(join(snapshotDirectory(env), `.${900_000 + index}.tmp`), "");
+		}
+		expect(pace(readSnapshot(env), NOW)).toMatchObject({ state: "under", usedPercent: 7 });
+		recordSnapshot(halfway(8), env);
+		expect(readSnapshot(env)).toEqual(halfway(8));
+		expect(readdirSync(snapshotDirectory(env)).filter(name => name.endsWith(".json"))).toEqual([`${NOW + HALF_WEEK}_8.json`]);
+	});
+
+	// A missing directory is nothing recorded; every other failure is an unreadable store, so a wedged store
+	// reads differently from an empty one.
+	test("tells a missing record from an oversized, malformed, mislabeled, or irregular entry", () => {
 		const env = { XDG_STATE_HOME: stateHome() };
 		const entry = entryOf(env, halfway(7));
 		expect(readSnapshot(env)).toBeUndefined();
 		mkdirSync(snapshotDirectory(env), { recursive: true });
+		expect(readSnapshot(env)).toBeUndefined();
 		writeFileSync(entry, JSON.stringify(halfway(7)).padEnd(SNAPSHOT_MAX_BYTES + 1, " "));
-		expect(readSnapshot(env)).toBeUndefined();
+		expect(readSnapshot(env)).toEqual({ unreadable: `${entry} is larger than ${SNAPSHOT_MAX_BYTES} bytes` });
+		writeFileSync(entry, "not json");
+		expect(readSnapshot(env)).toEqual({ unreadable: `${entry} is not a snapshot of one seven-day window` });
 		writeFileSync(entry, JSON.stringify(halfway(8)));
-		expect(readSnapshot(env)).toBeUndefined();
+		expect(readSnapshot(env)).toEqual({ unreadable: `${entry} disagrees with its name` });
 		rmSync(entry);
 		mkdirSync(entry);
-		expect(readSnapshot(env)).toBeUndefined();
+		expect(readSnapshot(env)).toEqual({ unreadable: `${entry} is not a regular file` });
 		rmSync(entry, { recursive: true });
 		expect(spawnSync("mkfifo", [entry]).status).toBe(0);
 		// A FIFO with no writer would block a plain read forever, and it stats as size 0: the regular-file check
 		// must answer first.
-		expect(readSnapshot(env)).toBeUndefined();
+		expect(readSnapshot(env)).toEqual({ unreadable: `${entry} is not a regular file` });
 	});
 
-	test("ignores names it would not write and refuses an overfull directory", () => {
+	test("a state path that is not a directory is unreadable, not empty", () => {
+		const home = stateHome();
+		writeFileSync(join(home, "agentic"), "a file where the state directory should be");
+		expect(readSnapshot({ XDG_STATE_HOME: home })).toMatchObject({ unreadable: expect.stringContaining("ENOTDIR") });
+	});
+
+	test("ignores names it would not write and counts only entries toward the cap", () => {
 		const env = { XDG_STATE_HOME: stateHome() };
 		recordSnapshot(halfway(7), env);
 		for (const name of [`${NOW + HALF_WEEK}_07.json`, `${NOW + HALF_WEEK}_101.json`, `${NOW + HALF_WEEK}_9.json.tmp`, "0_9.json", "x_9.json"]) {
 			writeFileSync(join(snapshotDirectory(env), name), JSON.stringify(halfway(9)));
 		}
-		expect(readSnapshot(env)).toEqual(halfway(7));
 		for (let index = 0; index < SNAPSHOT_ENTRIES_MAX; index += 1) writeFileSync(join(snapshotDirectory(env), `filler-${index}`), "");
-		expect(readSnapshot(env)).toBeUndefined();
+		expect(readSnapshot(env)).toEqual(halfway(7));
+		// The record plus SNAPSHOT_ENTRIES_MAX earlier-week entries is one past the cap.
+		for (let index = 1; index <= SNAPSHOT_ENTRIES_MAX; index += 1) {
+			writeFileSync(entryOf(env, at(1, NOW - index, NOW + HALF_WEEK - index)), JSON.stringify(at(1, NOW - index, NOW + HALF_WEEK - index)));
+		}
+		expect(readSnapshot(env)).toEqual({ unreadable: `more than ${SNAPSHOT_ENTRIES_MAX} entries in ${snapshotDirectory(env)}` });
 		expect(() => recordSnapshot(halfway(8), env)).toThrow(`more than ${SNAPSHOT_ENTRIES_MAX} entries`);
 	});
 });
@@ -237,6 +272,14 @@ describe("cli", () => {
 			expect(result.status).toBe(PACE_EXIT[state]);
 			expect(result.stdout.toString()).toStartWith(`${state}: ${used}% used, 50% of the week elapsed (`);
 		}
+	});
+
+	test("an unreadable store reads unknown with its own reason", () => {
+		const env = { XDG_STATE_HOME: stateHome() };
+		mkdirSync(join(snapshotDirectory(env), `${Math.floor(Date.now() / 1000) + HALF_WEEK}_7.json`), { recursive: true });
+		const result = run(["pace"], env);
+		expect(result.status).toBe(PACE_EXIT.unknown);
+		expect(result.stdout.toString()).toStartWith("unknown (the recorded rate limits are unreadable: ");
 	});
 
 	// Every open session keeps rendering its own last response: a stale lower view must not flip the reading.

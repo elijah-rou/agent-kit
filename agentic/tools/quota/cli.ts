@@ -12,7 +12,7 @@ Prints and exits with one of:
   under       exit ${PACE_EXIT.under}   usage at or behind the elapsed share
   over        exit ${PACE_EXIT.over}   usage ahead of the elapsed share
   exhausted   exit ${PACE_EXIT.exhausted}   usage ${EXHAUSTED_MARGIN_POINTS} or more points ahead of it, or at least ${EXHAUSTED_AT_PERCENT}% used
-  unknown     exit ${PACE_EXIT.unknown}   no recorded limits, a reset since, or a record older than ${STALE_AFTER_SECONDS / 3600} hours
+  unknown     exit ${PACE_EXIT.unknown}   no recorded limits, an unreadable record, a reset since, or a record older than ${STALE_AFTER_SECONDS / 3600} hours
 Exit 2 is a usage error.
 
   --json   print the result as JSON

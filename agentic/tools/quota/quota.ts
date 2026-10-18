@@ -3,11 +3,14 @@
 // and `agentic quota pace` reads them back.
 import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 export const WINDOW_SECONDS = 7 * 24 * 3600;
 export const SNAPSHOT_MAX_BYTES = 4096;
-/** Entries the snapshot directory may hold; writers keep it to one, or a few while sessions race. */
+/**
+ * Snapshot entries the directory may hold, counting only names keyOf accepts. Each write that lands removes
+ * the entries below its own, so the directory holds the record plus one entry per writer that raced it.
+ */
 export const SNAPSHOT_ENTRIES_MAX = 64;
 /** Older than this, a snapshot no longer describes the week: no session has rendered a statusline lately. */
 export const STALE_AFTER_SECONDS = 2 * 3600;
@@ -20,6 +23,10 @@ export type PaceState = "under" | "over" | "exhausted" | "unknown";
 export const PACE_EXIT: Record<PaceState, number> = { under: 0, over: 3, exhausted: 4, unknown: 5 };
 
 export interface Snapshot { usedPercent: number; resetsAt: number; observedAt: number }
+/** A store readSnapshot could not read, as opposed to one with nothing recorded. */
+export interface Unreadable { unreadable: string }
+/** What readSnapshot found: the record, an unreadable store, or undefined when nothing is recorded. */
+export type Reading = Snapshot | Unreadable | undefined;
 export type Pace =
 	| { state: "unknown"; reason: string }
 	| { state: Exclude<PaceState, "unknown">; reason: string; usedPercent: number; elapsedPercent: number; resetsAt: number };
@@ -52,8 +59,10 @@ export function snapshotOf(statuslineInput: unknown, now: number): Snapshot | un
 
 /**
  * Record the snapshot unless a greater one is recorded. Every open Claude Code session keeps rendering from
- * its own last response, so an idle session supplies an old, lower usage: within a week usage only rises,
- * and a lower view is dropped without touching the record or its observedAt.
+ * its own last response, so an idle session supplies an old, lower usage. The store relies on the premise
+ * that usage only rises within a week, and drops a lower view without touching the record or its
+ * observedAt. Were usage to fall within a week, the record would stop refreshing and age to unknown once
+ * stale, until usage reaches it again or the week resets.
  *
  * Each entry is named for its (resetsAt, usedPercent) key and the greatest entry is the record, so no write
  * replaces a different value: racing writers with different usage leave both entries, and racing writers
@@ -75,9 +84,12 @@ export function recordSnapshot(snapshot: Snapshot, env: Environment): void {
 
 /** Write `text` to `file` whole: a reader never sees a half-written file. */
 function writeWhole(file: string, text: string): void {
-	// The process ID keeps concurrent sessions off each other's temporary file; "wx" refuses one left behind or
-	// planted, and that file is not this call's to remove.
-	const temporary = join(dirname(file), `.${process.pid}.tmp`);
+	// The temporary file sits beside the entry directory, not in it, so one a killed render leaves behind never
+	// counts toward its entry cap; the rename stays within one filesystem and so stays atomic. The process ID
+	// keeps concurrent sessions off each other's temporary file; "wx" refuses one left behind or planted, and
+	// that file is not this call's to remove.
+	const directory = dirname(file);
+	const temporary = join(dirname(directory), `.${basename(directory)}.${process.pid}.tmp`);
 	const descriptor = openSync(temporary, "wx", 0o600);
 	try {
 		try {
@@ -108,37 +120,50 @@ export function parseSnapshot(text: string): Snapshot | undefined {
 }
 
 /**
- * The recorded snapshot: the greatest entry, or undefined when there is none, the entry is anything but a
- * small regular file, or its contents disagree with its name.
+ * The recorded snapshot: the greatest entry, or undefined when the directory holds none. The store is
+ * unreadable when the directory cannot be listed or is overfull, or the greatest entry is anything but a small
+ * regular file whose contents agree with its name.
  */
-export function readSnapshot(env: Environment): Snapshot | undefined {
+export function readSnapshot(env: Environment): Reading {
 	const directory = snapshotDirectory(env);
 	let recorded: Key | undefined;
-	let text: string;
 	try {
 		recorded = listEntries(directory)[0];
-		if (recorded === undefined) return undefined;
-		const file = join(directory, entryName(recorded));
+	} catch (error) {
+		// No directory means no statusline has recorded anything yet.
+		if (fields(error)?.code === "ENOENT") return undefined;
+		return { unreadable: messageOf(error) };
+	}
+	if (recorded === undefined) return undefined;
+	const file = join(directory, entryName(recorded));
+	let text: string;
+	try {
 		// Checked before reading so a directory, a FIFO, or a huge file at the path cannot block or bloat the read.
 		const stat = statSync(file);
-		if (!stat.isFile()) return undefined;
-		if (stat.size > SNAPSHOT_MAX_BYTES) return undefined;
+		if (!stat.isFile()) return { unreadable: `${file} is not a regular file` };
+		if (stat.size > SNAPSHOT_MAX_BYTES) return { unreadable: `${file} is larger than ${SNAPSHOT_MAX_BYTES} bytes` };
 		text = readFileSync(file, "utf8");
-	} catch {
-		return undefined;
+	} catch (error) {
+		return { unreadable: messageOf(error) };
 	}
 	const snapshot = parseSnapshot(text);
-	if (snapshot === undefined) return undefined;
-	return compareKeys(snapshot, recorded) === 0 ? snapshot : undefined;
+	if (snapshot === undefined) return { unreadable: `${file} is not a snapshot of one seven-day window` };
+	if (compareKeys(snapshot, recorded) !== 0) return { unreadable: `${file} disagrees with its name` };
+	return snapshot;
 }
 
+const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error);
+
 /**
- * Pure: the pace of a snapshot at `now`. Unknown without a snapshot, after its week resets, or once it is
- * stale; a snapshot that is not one seven-day window is a programmer error and throws.
+ * Pure: the pace of a reading at `now`. Unknown without a snapshot, with an unreadable store, after the week
+ * resets, or once the snapshot is stale; a snapshot that is not one seven-day window is a programmer error and
+ * throws.
  */
-export function pace(snapshot: Snapshot | undefined, now: number): Pace {
+export function pace(reading: Reading, now: number): Pace {
 	if (!wholeSeconds(now)) throw new Error("now must be whole positive seconds");
-	if (snapshot === undefined) return { state: "unknown", reason: "no recorded Claude rate limits; a Claude Code session with the statusline records them" };
+	if (reading === undefined) return { state: "unknown", reason: "no recorded Claude rate limits; a Claude Code session with the statusline records them" };
+	if ("unreadable" in reading) return { state: "unknown", reason: `the recorded rate limits are unreadable: ${reading.unreadable}` };
+	const snapshot: Snapshot = reading;
 	if (!consistent(snapshot)) throw new Error("snapshot must describe one seven-day window");
 	if (snapshot.resetsAt <= now) return { state: "unknown", reason: "the recorded week has reset since it was observed" };
 	if (now - snapshot.observedAt > STALE_AFTER_SECONDS) return { state: "unknown", reason: `the recorded rate limits are older than ${STALE_AFTER_SECONDS / 3600} hours` };
@@ -168,7 +193,7 @@ type Key = Pick<Snapshot, "resetsAt" | "usedPercent">;
 const compareKeys = (a: Key, b: Key): number => a.resetsAt - b.resetsAt || a.usedPercent - b.usedPercent;
 const entryName = (key: Key): string => `${key.resetsAt}_${key.usedPercent}.json`;
 
-/** The key an entry's name holds, or undefined for any other name, temporary files included. */
+/** The key an entry's name holds, or undefined for any other name. */
 function keyOf(name: string): Key | undefined {
 	const match = /^(\d+)_([^_/]+)\.json$/.exec(name);
 	if (match === null) return undefined;
@@ -179,13 +204,12 @@ function keyOf(name: string): Key | undefined {
 	return entryName(key) === name ? key : undefined;
 }
 
-/** The keys of the snapshot entries in `directory`, greatest first. */
+/** The keys of the snapshot entries in `directory`, greatest first; other names neither count nor matter. */
 function listEntries(directory: string): Key[] {
-	const names = readdirSync(directory);
-	if (names.length > SNAPSHOT_ENTRIES_MAX) throw new Error(`more than ${SNAPSHOT_ENTRIES_MAX} entries in ${directory}`);
-	const keys = names.flatMap(name => {
+	const keys = readdirSync(directory).flatMap(name => {
 		const key = keyOf(name);
 		return key === undefined ? [] : [key];
 	});
+	if (keys.length > SNAPSHOT_ENTRIES_MAX) throw new Error(`more than ${SNAPSHOT_ENTRIES_MAX} entries in ${directory}`);
 	return keys.sort((a, b) => compareKeys(b, a));
 }

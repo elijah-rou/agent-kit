@@ -1,6 +1,6 @@
 # Model roles: which model each kind of child task gets
 
-- **Status:** the initial version (Claude only, below) is built on 2026-10-12. The rest of this document is the full design, kept for when a second provider returns. Codex support was removed on 2026-10-14 (PR #39), so wherever the full design names Codex as the second harness, that part is superseded and kept only as a record.
+- **Status:** the initial version (Claude only, below) is built on 2026-10-12 and rebalanced on 2026-10-18 (see Revision 2026-10-18). The rest of this document is the full design, kept for when a second provider returns. Codex support was removed on 2026-10-14 (PR #39), so wherever the full design names Codex as the second harness, that part is superseded and kept only as a record.
 - **Reader:** the user, then whoever builds it.
 - **Method:** `design-checkpoint`. Candidates came from GPT-6.1 Sol (B) and Claude Fable 5.1 (C). Candidate A (Claude Opus 5.5) hit a session limit and left a partial sketch, which was read. The rubric is at the end.
 
@@ -10,12 +10,14 @@ The user is retiring the Codex subscription and asked for an initial version bui
 
 | Role (agent name) | Use for | Model | Effort | Tools |
 | --- | --- | --- | --- | --- |
-| `Explore` | read-only lookups; replaces Claude Code's built-in `Explore`, which otherwise runs on the main model | `claude-haiku-5-5` | `medium` | no `Agent`, `Edit`, `Write`, `NotebookEdit` |
-| `quick` | bulk or bounded work that writes | `claude-haiku-5-5` | `high` | no `Agent` |
-| `build` | implementation, diagnosis, and fresh verifiers that run the product and record a verdict | `claude-opus-5-5` | `high` | no `Agent` |
-| `review` | read-only review by a child that did not write the change: designs, run transcripts | `claude-opus-5-5` | `xhigh` | only `Read`, `Grep`, `Glob` |
+| `Explore` | read-only lookups; replaces Claude Code's built-in `Explore`, which otherwise runs on the main model | `claude-haiku-5-5` | `low` | no `Agent`, `Edit`, `Write`, `NotebookEdit` |
+| `quick` | small bounded edits whose change is already decided | `claude-opus-5-5` | `low` | no `Agent` |
+| `bulk` | mechanical edits across many files with a deterministic check (added 2026-10-18) | `claude-haiku-5-5` | `medium` | no `Agent` |
+| `build` | implementation, diagnosis, and fresh verifiers that run the product and record a verdict | `claude-opus-5-5` | `medium` | no `Agent` |
+| `review` | read-only review by a child that did not write the change: designs, run transcripts | `claude-opus-5-5` | `high` | only `Read`, `Grep`, `Glob` |
 | `pr-review` | adversarial pull-request review; reads `git-workflow`'s review procedure and the repository's review rules itself (added 2026-10-13) | `claude-opus-5-5` | `xhigh` | only `Read`, `Grep`, `Glob` |
 | `autopilot-owner` | the one child that may publish: an autopilot-full owner carrying its own pull request to merge | `claude-opus-5-5` | `high` | no `Agent` |
+| `general-purpose` | catches a launch that names no role; replaces Claude Code's built-in, which runs on the main model and holds `Agent` (added 2026-10-18) | `claude-opus-5-5` | `low` | no `Agent` |
 
 What is built:
 
@@ -30,6 +32,33 @@ What is deferred, with the reason:
 - **Open questions 2 and 6** (cross-harness `quick` and `explore`, and usage-limit fallback) do not arise with one provider. Question 4 took its default. Question 1 took its default except `quick`, which the user moved to `high` because it writes files. Question 3 kept design-checkpoint's candidate-diversity preference until the user reopened it on 2026-10-13 and removed it: subagents are Claude-only, after a candidate sent to another provider stalled a trial.
 
 Verified on 2026-10-12 with Claude Code 2.1.296 in a scratch project: the four files, copied and also as symlinks, appear in the session's agent list, with `Explore` replacing the built-in. A headless run launched `Explore` on `claude-haiku-5-5` and `review` on `claude-opus-5-5`. Whether `effort` took effect is not visible in the output.
+
+## Revision 2026-10-18
+
+The user rebalanced the roles to fit a workload of three to four threads a day inside the Claude weekly quota,
+after a benchmark of implementers and reviewers on five replayed tasks from 2026-10-12 to 10-16 (one run per setting;
+quality from blinded reviews, cost from ccusage). The evidence, in short:
+
+- Implementers: Opus at `xhigh` scored 44/50 with no failed task; at `medium`, 40/50 with one, at about 65% of the
+  quota and 70% of the agent-hours; at `low`, 35/50 with two, at about 39% of the quota. Haiku at `medium` scored
+  34/50 at about 13% of the quota.
+- Reviewers given a copy of the change they could run found a hook-skip bypass that a read-only reviewer missed.
+  Opus at `high` found 8 of 9 seeded defects with no false findings, at about 56% of `xhigh`'s cost.
+- Last week's spend was 32% coordinator, 33% implementation, 19% review, and 16% other subagents, most of the last
+  through Claude Code's built-in `general-purpose` and untyped launches on the main model.
+
+Decided by the user on 2026-10-18:
+
+- `build` at `medium`, `review` at `high`, `pr-review` stays at `xhigh`, `autopilot-owner` stays at `high`.
+- `quick` moves to `claude-opus-5-5` at `low` for small decided edits; a new `bulk` role on `claude-haiku-5-5` at
+  `medium` takes the mechanical bulk edits `quick` used to take; `Explore` drops to `low`.
+- A `general-purpose` role replaces the built-in so a launch that names no role no longer runs on the main model
+  and cannot launch children.
+- Subagents are no longer Claude-only. An adversarial review of every pull request on a second model family, and
+  an overflow implementer used when the week's quota runs ahead of pace, run outside Claude Code. Both are still to
+  build, through the T3 routing the full design below describes.
+- Reviewers may run tests and probes but not edit. `review` and `pr-review` stay read-only until a design that
+  enforces "no edits" for a reviewer with a shell is reviewed.
 
 ## The door
 

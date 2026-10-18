@@ -1,6 +1,6 @@
 ---
 name: general-purpose
-description: "Fallback for a launch that names no role. Prefer a named role: Explore, quick, bulk, build, review, pr-review, or autopilot-owner."
+description: "Fallback for a launch that names no role; Claude Code sends an Agent call without a subagent_type here. Prefer a named role."
 model: claude-opus-5-5
 effort: low
 disallowedTools: Agent

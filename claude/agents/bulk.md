@@ -1,6 +1,6 @@
 ---
 name: bulk
-description: "Mechanical edits across many files with a deterministic check: renames, format conversions, repeated transformations, and summaries with a known shape. Small edits that need judgment go to quick. Not for design decisions, diagnosis, or review."
+description: "Mechanical edits across many files with a deterministic check: renames, format conversions, repeated transformations, and summaries with a known shape. Small decided edits go to quick, and edits that need judgment go to build. Not for design decisions, diagnosis, or review."
 model: claude-haiku-5-5
 effort: medium
 disallowedTools: Agent

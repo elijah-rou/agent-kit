@@ -21,8 +21,8 @@ The user is retiring the Codex subscription and asked for an initial version bui
 
 What is built:
 
-- `claude/agents/{explore,quick,build,review,pr-review,autopilot-owner}.md`, in Claude Code's own agent format, hold the opinion (model and effort in the frontmatter) and each role's charter (the body). An install links them into the Claude configuration directory's `agents/` the same way it links `CLAUDE.md` (`claude/README.md`, Install), so there is no renderer.
-- `claude/CLAUDE.md` names the six roles and tells the parent to launch by role, pass no model or effort, and not delegate what it can finish in a handful of tool calls. The rules no longer ask for a reviewer on an alternate model. `review` is a real read-only boundary (an allowlist of read tools), so reflect's transcript lenses, the Attention review and the design-checkpoint judge use it, and the pull-request reviewer uses `pr-review`, the same boundary with the review procedure built into its charter; verifiers that must run the product and record a verdict use `build`. The reviewer states its own model on its first line, because a parent that launches by role no longer chooses it.
+- `claude/agents/{explore,quick,bulk,build,review,pr-review,autopilot-owner,general-purpose}.md`, in Claude Code's own agent format, hold the opinion (model and effort in the frontmatter) and each role's charter (the body). An install links them into the Claude configuration directory's `agents/` the same way it links `CLAUDE.md` (`claude/README.md`, Install), so there is no renderer.
+- `claude/CLAUDE.md` names the roles and tells the parent to launch by role, pass no model or effort, and not delegate what it can finish in a handful of tool calls. The rules no longer ask for a reviewer on an alternate model. `review` is a real read-only boundary (an allowlist of read tools), so reflect's transcript lenses, the Attention review and the design-checkpoint judge use it, and the pull-request reviewer uses `pr-review`, the same boundary with the review procedure built into its charter; verifiers that must run the product and record a verdict use `build`. The reviewer states its own model on its first line, because a parent that launches by role no longer chooses it.
 - `scripts/check-skills.ts` fails when a role file names a model other than Haiku 5.5 or Opus 5.5, sets an unknown effort, or allows `Agent`; when the roles named in `claude/CLAUDE.md` and the role files disagree; and when `claude/CLAUDE.md` or any skill names a model ID.
 
 What is deferred, with the reason:
@@ -45,7 +45,7 @@ quality from blinded reviews, cost from ccusage). The evidence, in short:
 - Reviewers given a copy of the change they could run found a hook-skip bypass that a read-only reviewer missed.
   Opus at `high` found 8 of 9 seeded defects with no false findings, at about 56% of `xhigh`'s cost.
 - Last week's spend was 32% coordinator, 33% implementation, 19% review, and 16% other subagents, most of the last
-  through Claude Code's built-in `general-purpose` and untyped launches on the main model.
+  through Claude Code's built-in `general-purpose` and child launches with no recorded type, on the main model.
 
 Decided by the user on 2026-10-18:
 
@@ -59,6 +59,10 @@ Decided by the user on 2026-10-18:
   build, through the T3 routing the full design below describes.
 - Reviewers may run tests and probes but not edit. `review` and `pr-review` stay read-only until a design that
   enforces "no edits" for a reviewer with a shell is reviewed.
+
+Verified on 2026-10-18 with Claude Code 2.1.302 in a scratch project: `general-purpose` ran on `claude-opus-5-5` at `low`,
+`bulk` on `claude-haiku-5-5` at `medium`, and `quick` on `claude-opus-5-5` at `low`, and an Agent call that set no
+`subagent_type` landed on the `general-purpose` override.
 
 ## The door
 

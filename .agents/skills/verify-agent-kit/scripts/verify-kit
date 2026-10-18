@@ -928,11 +928,15 @@ function driveClaudeSurface(run: RunInfo, rec: Recorder): void {
 	const statusline = join(run.checkout, "claude/statusline.ts");
 	const now = Math.floor(Date.now() / 1000);
 	const quota = JSON.stringify({ rate_limits: { five_hour: { used_percentage: 42.4, resets_at: now + 5400 }, seven_day: { used_percentage: 7, resets_at: now + 200_000 } } });
-	const shown = rec.step("statusline-quota", ["bun", statusline], { input: quota });
+	// The status line records the seven-day window under XDG_STATE_HOME; the fixture's window must not reach the real one.
+	const state = mkdtempSync(join(runDir(run.runId), "statusline-state-"));
+	const stateEnv = { XDG_STATE_HOME: state };
+	const shown = rec.step("statusline-quota", ["bun", statusline], { input: quota, env: stateEnv });
 	rec.check(shown.status === 0 && /^claude 5h ▄ 42% ↻1h(29|30)m · 7d ▁ 7% ↻2d7h$/.test(shown.stdout.trim()), `the status line renders both windows with gauges and countdowns (got "${shown.stdout.trim()}")`);
-	const missing = rec.step("statusline-no-limits", ["bun", statusline], { input: "{}" });
+	rec.check(existsSync(join(state, "agentic", "quota", "claude-seven-day.json")), "the status line records the seven-day window under the run's own XDG_STATE_HOME");
+	const missing = rec.step("statusline-no-limits", ["bun", statusline], { input: "{}", env: stateEnv });
 	rec.check(missing.status === 0 && missing.stdout.trim() === "claude limits: n/a", "the status line shows n/a without rate limits");
-	const invalid = rec.step("statusline-invalid", ["bun", statusline], { input: "not json" });
+	const invalid = rec.step("statusline-invalid", ["bun", statusline], { input: "not json", env: stateEnv });
 	rec.check(invalid.status === 0 && invalid.stdout.trim() === "claude limits: n/a", "the status line shows n/a for invalid input");
 	const claude = Bun.which("claude");
 	if (!claude) return rec.skip("the claude CLI is not on PATH for the Mod steps: install Claude Code");

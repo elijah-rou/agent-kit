@@ -8,7 +8,7 @@ Instructions, skills, Pi extensions, and Claude Code mods shared by Pi and Claud
 | `skills/` | Pi, Claude | Shared skills; licenses for adapted skills sit alongside them |
 | `pi/` | Pi | `AGENTS.md`, worktree guidance, extensions and their tests, prompt, theme |
 | `claude/` | Claude Code | `CLAUDE.md`, exported skills and adaptations, the trial-tools Mod, status line |
-| `agentic/` | You and agents | The `agentic` CLI: `rulesets` (the GitHub backstop) and `upstream-drift` (changes in adapted upstream skills) |
+| `agentic/` | You and agents | The `agentic` CLI: `rulesets` (the GitHub backstop) and `upstream-drift` (changes in adapted upstream skills), and `quota` (whether this week's Claude usage is ahead of pace) |
 
 The repository root is a [Pi package](https://www.npmjs.com/package/@earendil-works/pi-coding-agent): Pi loads the
 extensions, skills, prompt, and theme from it in place. Claude Code reads linked files.

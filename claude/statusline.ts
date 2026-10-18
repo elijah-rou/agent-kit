@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
-// Renders the quota data Claude supplies on stdin; never reads credentials or calls provider APIs.
+// Renders the quota data Claude supplies on stdin and records its seven-day window for `agentic quota
+// pace`, which has no other source for it. Never reads credentials or calls provider APIs.
 
 const MAX_INPUT_BYTES = 65_536;
 const MAX_EPOCH_SECONDS = 2 ** 53 - 1;
@@ -42,12 +43,30 @@ export function formatStatusline(data: unknown, now: number): string {
   return parts.length > 0 ? `claude ${parts.join(" · ")}` : UNKNOWN;
 }
 
+function parseInput(raw: Uint8Array): unknown {
+  if (raw.length > MAX_INPUT_BYTES) throw new Error("status line input is over the size limit");
+  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw));
+}
+
 export function render(raw: Uint8Array, now: number): string {
-  if (raw.length > MAX_INPUT_BYTES) return UNKNOWN;
   try {
-    return formatStatusline(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw)), now);
+    return formatStatusline(parseInput(raw), now);
   } catch {
     return UNKNOWN;
+  }
+}
+
+/**
+ * Records the seven-day window when Claude supplied a valid one. Any failure is dropped, the quota module's
+ * loading included, since it is imported here: the status line matters more than the record.
+ */
+export async function recordWindow(raw: Uint8Array, now: number, env: Record<string, string | undefined>): Promise<void> {
+  try {
+    const { recordSnapshot, snapshotOf } = await import("../agentic/tools/quota/quota.ts");
+    const snapshot = snapshotOf(parseInput(raw), now);
+    if (snapshot !== undefined) recordSnapshot(snapshot, env);
+  } catch {
+    return;
   }
 }
 
@@ -62,5 +81,7 @@ if (import.meta.main) {
   const raw = new Uint8Array(size);
   let offset = 0;
   for (const chunk of chunks) { raw.set(chunk, offset); offset += chunk.length; }
-  console.log(render(raw, Math.floor(Date.now() / 1000)));
+  const now = Math.floor(Date.now() / 1000);
+  console.log(render(raw, now));
+  await recordWindow(raw, now, process.env);
 }

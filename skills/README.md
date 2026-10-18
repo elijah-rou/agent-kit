@@ -85,9 +85,10 @@ CLI recipes in `create-verification` come from cursor-team-kit (MIT, copyright C
 Local adaptations:
 
 - Tools are called through the `agentic` CLI (`agentic rulesets`, `agentic upstream-drift`,
-  `agentic verify`, `agentic orch`, `agentic watch-pr`, `agentic jev`, `agentic pr-feedback`). The decision log is a plain TSV appended
-  with pstack's `show-me-your-work/scripts/log.sh`. Paths under `.agents/` and `.audit/` are relative
-  to the repository being worked on; never copy a tool into it.
+  `agentic verify`, `agentic orch`, `agentic watch-pr`, `agentic jev`, `agentic pr-feedback`,
+  `agentic quota`). The decision log is a plain TSV appended with pstack's
+  `show-me-your-work/scripts/log.sh`. Paths under `.agents/` and `.audit/` are relative to the
+  repository being worked on; never copy a tool into it.
 - The wording is runtime-neutral so one copy serves Pi and the Claude export.
 - Publication follows the standing default in the instructions; landing happens only in the
   `autopilot-stack`, `ship`, and `autopilot-full` modes that `babysit-and-ship` defines, invoked by the user's own

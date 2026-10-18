@@ -60,7 +60,9 @@ effort, permissions, and every other setting stay the user's choice.
 
 - `statusLine`: `claude/statusline.ts` is a quota footer that renders the rate limits Claude supplies on
   stdin. It never reads credentials or calls provider APIs; missing, invalid, or stale data shows
-  `limits: n/a`.
+  `limits: n/a`. It also records the seven-day window, when Claude supplies a valid one, to
+  `$XDG_STATE_HOME/agentic/quota/` (default `~/.local/state`), where `agentic quota pace` reads it; a
+  failure to record leaves the line unchanged.
 - `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`: enables Mods, which the trial-tools Mod needs.
 - `UserPromptSubmit`: the Jev prompt-routing hook (ADR 0002), which routes every task prompt.
 - `PreToolUse`: the first entry is the git guard (next section); a session runs the guard only when its

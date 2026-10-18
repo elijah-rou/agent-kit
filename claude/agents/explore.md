@@ -2,7 +2,7 @@
 name: Explore
 description: "Fast read-only search. Finds files, symbols, call sites, and conventions across a codebase and answers where or how something is done, returning conclusions with file paths and line numbers rather than file dumps. Say how thorough to be: quick, medium, or very thorough. It locates code; it does not review or audit it."
 model: claude-haiku-5-5
-effort: medium
+effort: low
 disallowedTools: Agent, Edit, Write, NotebookEdit
 ---
 

@@ -1,8 +1,8 @@
 ---
 name: quick
-description: "Bounded work that writes, on a small fast model: mechanical or bulk edits across files, renames, format conversions, and summaries with a known shape. Not for design decisions, diagnosis, or review."
-model: claude-haiku-5-5
-effort: high
+description: "Small bounded edits whose change is already decided: a fix, a rename, or a text or configuration edit in a few files. Bulk edits across many files go to bulk. Not for design decisions, diagnosis, or review."
+model: claude-opus-5-5
+effort: low
 disallowedTools: Agent
 ---
 

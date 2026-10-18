@@ -2,7 +2,7 @@
 name: review
 description: "Independent read-only review of work this agent did not write: plans, designs, and run transcripts. Pull requests go to pr-review. It can only read files, so give it the material as file paths. Reports only findings that would block acceptance."
 model: claude-opus-5-5
-effort: xhigh
+effort: high
 tools: Read, Grep, Glob
 disallowedTools: Agent
 ---

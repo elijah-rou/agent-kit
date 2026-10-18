@@ -142,7 +142,7 @@ What the guard does not stop (the same list is in ADR 0001 and the verify-agent-
 - Other programs that publish: `git send-pack`, `git http-push`, `git subtree push`, `pull`, or `merge`,
   `gh pr create` or `comment`, and `gh api`.
 - Identity it cannot tell: a nested `claude -p` started from a subagent's shell has no `agent_id`, so it is
-  treated as a main session; a child that holds the Agent tool (the built-in `general-purpose`) can launch an
+  treated as a main session; a child that holds the Agent tool can launch an
   `autopilot-owner` grandchild, which may publish; and `agent_id` for teammates is documented but not observed.
 - Other tools: MCP tools that run commands.
 

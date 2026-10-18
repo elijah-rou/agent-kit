@@ -18,7 +18,7 @@ Collect this session's correction records. The instructions have the agent appen
 
 ## 2. Review through three lenses, in parallel
 
-Spawn three read-only reviewer subagents at once, each with its prompt from `references/` filled in with the transcript path or digest:
+Spawn three read-only reviewer subagents at once (the `review` role where the harness defines one), each with its prompt from `references/` filled in with the transcript path or digest:
 
 | Lens | Prompt |
 |---|---|
@@ -26,13 +26,13 @@ Spawn three read-only reviewer subagents at once, each with its prompt from `ref
 | Tooling | `references/tooling-reviewer.md` |
 | Divergent | `references/divergent-reviewer.md` |
 
-Use a subagent role or type limited to read-only tools, such as the `review` role where the harness defines one. Reviewers never edit files, post, or commit. If subagents are unavailable, apply the three lenses yourself in sequence and say so.
+Where the harness defines no `review` role, use a subagent role or type limited to read-only tools. Reviewers never edit files, post, or commit. If subagents are unavailable, apply the three lenses yourself in sequence and say so.
 
 Completion criterion: three numbered finding lists, or a recorded reason a lens returned nothing.
 
 ## 3. Synthesize
 
-Spawn one synthesizer subagent with `references/synthesizer.md` and the three outputs inlined; if subagents are unavailable, follow that reference yourself and say so. It returns Accepted, Rejected, and Backlog, with a scope (`repo` or `global`) on every Accepted and Backlog item.
+Spawn one synthesizer subagent (the `review` role where the harness defines one) with `references/synthesizer.md` and the three outputs inlined; if subagents are unavailable, follow that reference yourself and say so. It returns Accepted, Rejected, and Backlog, with a scope (`repo` or `global`) on every Accepted and Backlog item.
 
 ## 4. Route enforceable items to Backlog
 

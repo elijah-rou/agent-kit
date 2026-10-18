@@ -12,7 +12,7 @@ const STATE_ROOT = mkdtempSync(join(tmpdir(), "statusline-test-"));
 afterAll(() => rmSync(STATE_ROOT, { recursive: true, force: true }));
 let stateCount = 0;
 const stateHome = () => join(STATE_ROOT, `state-${(stateCount += 1)}`);
-const snapshotPath = (home: string) => join(home, "agentic", "quota", "claude-seven-day.json");
+const snapshotDirectory = (home: string) => join(home, "agentic", "quota", "claude-seven-day");
 const runStatusline = (input: string | Buffer, home: string) =>
   spawnSync("bun", [SCRIPT], { input, env: { ...process.env, XDG_STATE_HOME: home }, timeout: 5000 });
 const NOW = 1_790_000_000;
@@ -44,7 +44,7 @@ test("the command reads bounded stdin and always prints a line", () => {
     const result = runStatusline(input, home);
     expect(result.status).toBe(0);
     expect(result.stdout.toString().trim()).toBe("claude limits: n/a");
-    expect(existsSync(snapshotPath(home))).toBe(false);
+    expect(existsSync(snapshotDirectory(home))).toBe(false);
   }
   const result = runStatusline(JSON.stringify({ rate_limits: { seven_day: { used_percentage: 3 } } }), stateHome());
   expect(result.stdout.toString().trim()).toBe("claude 7d ▁ 3%");
@@ -57,11 +57,12 @@ test("the command records a valid seven-day window for agentic quota pace", () =
   const result = runStatusline(JSON.stringify({ rate_limits: { five_hour: { used_percentage: 80, resets_at: now + 600 }, seven_day: { used_percentage: 42.5, resets_at: resetsAt } } }), home);
   expect(result.status).toBe(0);
   expect(result.stdout.toString().trim()).toStartWith("claude 5h ▇ 80%");
-  const snapshot = JSON.parse(readFileSync(snapshotPath(home), "utf8"));
+  const entry = join(snapshotDirectory(home), `${resetsAt}_42.5.json`);
+  const snapshot = JSON.parse(readFileSync(entry, "utf8"));
   expect(snapshot.usedPercent).toBe(42.5);
   expect(snapshot.resetsAt).toBe(resetsAt);
   expect(Math.abs(snapshot.observedAt - now)).toBeLessThan(60);
-  expect(statSync(snapshotPath(home)).mode & 0o777).toBe(0o600);
+  expect(statSync(entry).mode & 0o777).toBe(0o600);
 });
 
 test("without a seven-day window, or with a broken state directory, the line still prints", () => {

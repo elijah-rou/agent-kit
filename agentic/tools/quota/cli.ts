@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
-import { EXHAUSTED_AT_PERCENT, EXHAUSTED_MARGIN_POINTS, pace, PACE_EXIT, readSnapshot, snapshotFile, STALE_AFTER_SECONDS } from "./quota.ts";
+import { EXHAUSTED_AT_PERCENT, EXHAUSTED_MARGIN_POINTS, pace, PACE_EXIT, readSnapshot, snapshotDirectory, STALE_AFTER_SECONDS } from "./quota.ts";
 
 const USAGE = `Usage: quota pace [--json]
 
 Read-only. Compares the Claude weekly quota's usage with the share of the seven-day window that
-has elapsed. The rate limits come from the last statusline render: claude/statusline.ts records them
-in ${snapshotFile({ XDG_STATE_HOME: "$XDG_STATE_HOME" })} ($XDG_STATE_HOME defaults
-to ~/.local/state). Nothing reads credentials or calls a provider.
+has elapsed. The rate limits come from statusline renders: claude/statusline.ts records the highest
+usage any session has seen this week in ${snapshotDirectory({ XDG_STATE_HOME: "$XDG_STATE_HOME" })}/
+($XDG_STATE_HOME defaults to ~/.local/state). Nothing reads credentials or calls a provider.
 
 Prints and exits with one of:
   under       exit ${PACE_EXIT.under}   usage at or behind the elapsed share

@@ -374,7 +374,7 @@ function doctor(runId: string | undefined): boolean {
 	const moved = bound(run);
 	need(moved === undefined, `checkout ${run.checkout} is at the launched revision ${run.revision.slice(0, 12)} with the launched tree`, moved ?? "");
 	const agentic = sh(["bun", join(run.checkout, "agentic/bin/agentic"), "--help"], { cwd: run.checkout });
-	const tools = ["rulesets", "upstream-drift", "verify", "jev", "pr-feedback", "orch", "watch-pr"];
+	const tools = ["rulesets", "upstream-drift", "verify", "jev", "pr-feedback", "quota", "orch", "watch-pr"];
 	const listed = agentic.status === 0 && tools.every((tool) => agentic.stderr.includes(tool));
 	need(listed, `the checkout's agentic CLI starts and lists ${tools.join(", ")}`, `the checkout's agentic CLI did not start or list ${tools.join(", ")}; read EVIDENCE_DIR/doctor.txt`);
 	const locked = /"commander@([\d.]+)"/.exec(readFileSync(join(run.checkout, "bun.lock"), "utf8"))?.[1];
@@ -933,7 +933,11 @@ function driveClaudeSurface(run: RunInfo, rec: Recorder): void {
 	const stateEnv = { XDG_STATE_HOME: state };
 	const shown = rec.step("statusline-quota", ["bun", statusline], { input: quota, env: stateEnv });
 	rec.check(shown.status === 0 && /^claude 5h ▄ 42% ↻1h(29|30)m · 7d ▁ 7% ↻2d7h$/.test(shown.stdout.trim()), `the status line renders both windows with gauges and countdowns (got "${shown.stdout.trim()}")`);
-	rec.check(existsSync(join(state, "agentic", "quota", "claude-seven-day.json")), "the status line records the seven-day window under the run's own XDG_STATE_HOME");
+	rec.check(existsSync(join(state, "agentic", "quota", "claude-seven-day", `${now + 200_000}_7.json`)), "the status line records the seven-day window under the run's own XDG_STATE_HOME");
+	// The fixture's week resets in 200,000 of its 604,800 seconds, so about 67% has elapsed against 7% used.
+	const pace = rec.step("quota-pace", ["bun", join(run.checkout, "agentic/bin/agentic"), "quota", "pace", "--json"], { env: stateEnv });
+	const reading = parseJson(pace.stdout) as { state?: unknown; usedPercent?: unknown } | undefined;
+	rec.check(pace.status === 0 && reading?.state === "under" && reading.usedPercent === 7, `agentic quota pace reads the recorded window as under at 7% (exit ${pace.status}, got ${pace.stdout.trim()})`);
 	const missing = rec.step("statusline-no-limits", ["bun", statusline], { input: "{}", env: stateEnv });
 	rec.check(missing.status === 0 && missing.stdout.trim() === "claude limits: n/a", "the status line shows n/a without rate limits");
 	const invalid = rec.step("statusline-invalid", ["bun", statusline], { input: "not json", env: stateEnv });

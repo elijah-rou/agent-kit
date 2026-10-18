@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { pace, PACE_EXIT, parseSnapshot, readSnapshot, recordSnapshot, SNAPSHOT_MAX_BYTES, type Snapshot, snapshotFile, snapshotOf, STALE_AFTER_SECONDS, WINDOW_SECONDS } from "./quota.ts";
+import { basename, join } from "node:path";
+import { pace, PACE_EXIT, parseSnapshot, readSnapshot, recordSnapshot, SNAPSHOT_ENTRIES_MAX, SNAPSHOT_MAX_BYTES, type Snapshot, snapshotDirectory, snapshotOf, STALE_AFTER_SECONDS, WINDOW_SECONDS } from "./quota.ts";
 
 // Pace is pure over (snapshot, now), so the boundaries are tested at exact elapsed shares; the file
 // half runs against a temporary XDG_STATE_HOME, and the CLI against snapshots written for the real clock.
@@ -103,58 +103,119 @@ describe("parseSnapshot", () => {
 	});
 });
 
-describe("snapshot file", () => {
+describe("snapshot directory", () => {
+	/** The entry recordSnapshot writes for a snapshot, named for its week and usage. */
+	const entryOf = (env: { XDG_STATE_HOME: string }, snapshot: Snapshot) => join(snapshotDirectory(env), `${snapshot.resetsAt}_${snapshot.usedPercent}.json`);
+	const at = (usedPercent: number, observedAt: number, resetsAt = NOW + HALF_WEEK): Snapshot => ({ usedPercent, resetsAt, observedAt });
+
 	test("lives under XDG_STATE_HOME, else ~/.local/state", () => {
-		expect(snapshotFile({ XDG_STATE_HOME: "/state" })).toBe("/state/agentic/quota/claude-seven-day.json");
-		expect(snapshotFile({})).toEndWith("/.local/state/agentic/quota/claude-seven-day.json");
-		expect(snapshotFile({ XDG_STATE_HOME: "" })).toEndWith("/.local/state/agentic/quota/claude-seven-day.json");
+		expect(snapshotDirectory({ XDG_STATE_HOME: "/state" })).toBe("/state/agentic/quota/claude-seven-day");
+		expect(snapshotDirectory({})).toEndWith("/.local/state/agentic/quota/claude-seven-day");
+		expect(snapshotDirectory({ XDG_STATE_HOME: "" })).toEndWith("/.local/state/agentic/quota/claude-seven-day");
 	});
 
-	test("is written whole, private, and replaced in place", () => {
+	test("is written whole and private, keeping one entry", () => {
 		const env = { XDG_STATE_HOME: stateHome() };
-		const file = snapshotFile(env);
 		recordSnapshot(halfway(7), env);
 		recordSnapshot(halfway(8), env);
 		expect(readSnapshot(env)).toEqual(halfway(8));
-		expect(statSync(file).mode & 0o777).toBe(0o600);
-		expect(statSync(dirname(file)).mode & 0o777).toBe(0o700);
-		expect(readdirSync(dirname(file))).toEqual(["claude-seven-day.json"]);
+		expect(statSync(entryOf(env, halfway(8))).mode & 0o777).toBe(0o600);
+		expect(statSync(snapshotDirectory(env)).mode & 0o777).toBe(0o700);
+		expect(readdirSync(snapshotDirectory(env))).toEqual([`${NOW + HALF_WEEK}_8.json`]);
+	});
+
+	// An idle session keeps rendering its last, lower usage with a fresh clock; within a week only a rise counts.
+	test("a lower view in the same week is ignored and keeps the old observedAt", () => {
+		const env = { XDG_STATE_HOME: stateHome() };
+		recordSnapshot(at(60, NOW), env);
+		recordSnapshot(at(30, NOW + 60), env);
+		expect(readSnapshot(env)).toEqual(at(60, NOW));
+		expect(readdirSync(snapshotDirectory(env))).toEqual([`${NOW + HALF_WEEK}_60.json`]);
+	});
+
+	test("an equal view refreshes observedAt and a higher one raises the usage", () => {
+		const env = { XDG_STATE_HOME: stateHome() };
+		recordSnapshot(at(60, NOW), env);
+		recordSnapshot(at(60, NOW + 60), env);
+		expect(readSnapshot(env)).toEqual(at(60, NOW + 60));
+		recordSnapshot(at(70, NOW + 120), env);
+		expect(readSnapshot(env)).toEqual(at(70, NOW + 120));
+		expect(readdirSync(snapshotDirectory(env))).toEqual([`${NOW + HALF_WEEK}_70.json`]);
+	});
+
+	test("a later week replaces the record and an earlier one is ignored", () => {
+		const env = { XDG_STATE_HOME: stateHome() };
+		recordSnapshot(at(60, NOW), env);
+		const nextWeek = at(5, NOW + 60, NOW + HALF_WEEK + 3600);
+		recordSnapshot(nextWeek, env);
+		expect(readSnapshot(env)).toEqual(nextWeek);
+		recordSnapshot(at(80, NOW + 120), env);
+		expect(readSnapshot(env)).toEqual(nextWeek);
+		expect(readdirSync(snapshotDirectory(env))).toEqual([`${NOW + HALF_WEEK + 3600}_5.json`]);
+	});
+
+	// Two racing writers that both read the old record each write their own entry, so neither can replace
+	// the other's: the reader takes the greater, and the next write removes the lower.
+	test("entries left by racing writers resolve to the greater", () => {
+		const env = { XDG_STATE_HOME: stateHome() };
+		recordSnapshot(at(50, NOW), env);
+		writeFileSync(entryOf(env, at(55, NOW + 1)), JSON.stringify(at(55, NOW + 1)), { mode: 0o600 });
+		writeFileSync(entryOf(env, at(60, NOW + 1)), JSON.stringify(at(60, NOW + 1)), { mode: 0o600 });
+		expect(readSnapshot(env)).toEqual(at(60, NOW + 1));
+		recordSnapshot(at(55, NOW + 60), env);
+		expect(readSnapshot(env)).toEqual(at(60, NOW + 1));
+		recordSnapshot(at(60, NOW + 120), env);
+		expect(readdirSync(snapshotDirectory(env))).toEqual([`${NOW + HALF_WEEK}_60.json`]);
 	});
 
 	test("a failed rename removes its temporary file and leaves no snapshot", () => {
 		const env = { XDG_STATE_HOME: stateHome() };
-		const file = snapshotFile(env);
-		mkdirSync(join(file, "occupied"), { recursive: true });
+		const entry = entryOf(env, halfway(7));
+		mkdirSync(join(entry, "occupied"), { recursive: true });
 		expect(() => recordSnapshot(halfway(7), env)).toThrow();
-		expect(readdirSync(dirname(file))).toEqual(["claude-seven-day.json"]);
+		expect(readdirSync(snapshotDirectory(env))).toEqual([basename(entry)]);
 		expect(readSnapshot(env)).toBeUndefined();
 	});
 
 	test("a temporary file already at its path is refused and left alone", () => {
 		const env = { XDG_STATE_HOME: stateHome() };
-		const file = snapshotFile(env);
-		mkdirSync(dirname(file), { recursive: true });
-		const planted = `${file}.${process.pid}.tmp`;
+		mkdirSync(snapshotDirectory(env), { recursive: true });
+		const planted = join(snapshotDirectory(env), `.${process.pid}.tmp`);
 		writeFileSync(planted, "planted");
 		expect(() => recordSnapshot(halfway(7), env)).toThrow();
 		expect(readFileSync(planted, "utf8")).toBe("planted");
 		expect(readSnapshot(env)).toBeUndefined();
 	});
 
-	test("reads nothing from a missing, oversized, or irregular file", () => {
+	test("reads nothing from a missing, oversized, irregular, or mislabeled entry", () => {
 		const env = { XDG_STATE_HOME: stateHome() };
-		const file = snapshotFile(env);
+		const entry = entryOf(env, halfway(7));
 		expect(readSnapshot(env)).toBeUndefined();
-		mkdirSync(dirname(file), { recursive: true });
-		writeFileSync(file, JSON.stringify(halfway(7)).padEnd(SNAPSHOT_MAX_BYTES + 1, " "));
+		mkdirSync(snapshotDirectory(env), { recursive: true });
+		writeFileSync(entry, JSON.stringify(halfway(7)).padEnd(SNAPSHOT_MAX_BYTES + 1, " "));
 		expect(readSnapshot(env)).toBeUndefined();
-		rmSync(file);
-		mkdirSync(file);
+		writeFileSync(entry, JSON.stringify(halfway(8)));
 		expect(readSnapshot(env)).toBeUndefined();
-		rmSync(file, { recursive: true });
-		expect(spawnSync("mkfifo", [file]).status).toBe(0);
-		// A FIFO with no writer would block a plain read forever; the size check must answer first.
+		rmSync(entry);
+		mkdirSync(entry);
 		expect(readSnapshot(env)).toBeUndefined();
+		rmSync(entry, { recursive: true });
+		expect(spawnSync("mkfifo", [entry]).status).toBe(0);
+		// A FIFO with no writer would block a plain read forever, and it stats as size 0: the regular-file check
+		// must answer first.
+		expect(readSnapshot(env)).toBeUndefined();
+	});
+
+	test("ignores names it would not write and refuses an overfull directory", () => {
+		const env = { XDG_STATE_HOME: stateHome() };
+		recordSnapshot(halfway(7), env);
+		for (const name of [`${NOW + HALF_WEEK}_07.json`, `${NOW + HALF_WEEK}_101.json`, `${NOW + HALF_WEEK}_9.json.tmp`, "0_9.json", "x_9.json"]) {
+			writeFileSync(join(snapshotDirectory(env), name), JSON.stringify(halfway(9)));
+		}
+		expect(readSnapshot(env)).toEqual(halfway(7));
+		for (let index = 0; index < SNAPSHOT_ENTRIES_MAX; index += 1) writeFileSync(join(snapshotDirectory(env), `filler-${index}`), "");
+		expect(readSnapshot(env)).toBeUndefined();
+		expect(() => recordSnapshot(halfway(8), env)).toThrow(`more than ${SNAPSHOT_ENTRIES_MAX} entries`);
 	});
 });
 
@@ -176,6 +237,18 @@ describe("cli", () => {
 			expect(result.status).toBe(PACE_EXIT[state]);
 			expect(result.stdout.toString()).toStartWith(`${state}: ${used}% used, 50% of the week elapsed (`);
 		}
+	});
+
+	// Every open session keeps rendering its own last response: a stale lower view must not flip the reading.
+	test("a lower view rendered later does not lower the reading", () => {
+		const env = { XDG_STATE_HOME: stateHome() };
+		const now = Math.floor(Date.now() / 1000);
+		const week = { resetsAt: now - HALF_WEEK + WINDOW_SECONDS, observedAt: now };
+		recordSnapshot({ usedPercent: 60, ...week }, env);
+		recordSnapshot({ usedPercent: 30, ...week }, env);
+		const result = run(["pace", "--json"], env);
+		expect(result.status).toBe(PACE_EXIT.over);
+		expect(JSON.parse(result.stdout.toString())).toMatchObject({ state: "over", usedPercent: 60 });
 	});
 
 	test("--json prints the result", () => {

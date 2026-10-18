@@ -14,7 +14,7 @@ The user is retiring the Codex subscription and asked for an initial version bui
 | `quick` | small bounded edits whose change is already decided | `claude-opus-5-5` | `low` | no `Agent` |
 | `bulk` | mechanical edits across many files with a deterministic check (added 2026-10-18) | `claude-haiku-5-5` | `medium` | no `Agent` |
 | `build` | implementation, diagnosis, and fresh verifiers that run the product and record a verdict | `claude-opus-5-5` | `medium` | no `Agent` |
-| `review` | read-only review by a child that did not write the change: designs, run transcripts | `claude-opus-5-5` | `high` | only `Read`, `Grep`, `Glob` |
+| `review` | read-only review or analysis by a child that did not write the material: diffs (other than the adversarial pull-request review), plans, designs, run transcripts; the brief sets the report's shape | `claude-opus-5-5` | `high` | only `Read`, `Grep`, `Glob` |
 | `pr-review` | adversarial pull-request review; reads `git-workflow`'s review procedure and the repository's review rules itself (added 2026-10-13) | `claude-opus-5-5` | `xhigh` | only `Read`, `Grep`, `Glob` |
 | `autopilot-owner` | the one child that may publish: an autopilot-full owner carrying its own pull request to merge | `claude-opus-5-5` | `high` | no `Agent` |
 | `general-purpose` | catches a launch that names no role; replaces Claude Code's built-in, which runs on the main model and holds `Agent` (added 2026-10-18) | `claude-opus-5-5` | `low` | no `Agent` |

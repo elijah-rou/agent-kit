@@ -49,7 +49,7 @@ Walk up from the lowest unmerged PR. For each, run `agentic verify status <pr>`;
 Before landing a PR, rerun `agentic verify status <pr>`; it recomputes the patch ID and compares it with the verdict's.
 
 - **Patch changed:** the verdict is void. Re-verify (step 1).
-- **Patch unchanged but head SHA changed** (for example after a rebase): the ledger has no row for the new SHA, so `agentic verify status` reports `void` and the merge waits. Send it back to an independent verifier. The verifier may carry its verdict to the new SHA only after recomputing the patch ID itself, with evidence naming both SHAs and both patch IDs. A countersign is carried the same way, by the coordinator, with `--patch` naming the same approved patch.
+- **Patch unchanged but head SHA changed** (for example after a rebase): the ledger has no row for the new SHA, so `agentic verify status` reports `void` and the merge waits. Send it back to an independent verifier (the `build` role where the harness defines one). The verifier may carry its verdict to the new SHA only after recomputing the patch ID itself, with evidence naming both SHAs and both patch IDs. A countersign is carried the same way, by the coordinator, with `--patch` naming the same approved patch.
 - **Unchanged:** still rerun mergeability and CI at the current head.
 
 Never accept matching commit messages or an older SHA's green checks as a substitute.
